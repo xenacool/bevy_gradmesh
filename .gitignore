@@ -1,0 +1,8 @@
+/target/
+Cargo.lock
+screenshots/
+
+
+# Junie reference docs and backups
+.junie/
+reference/
