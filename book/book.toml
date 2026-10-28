@@ -1,0 +1,13 @@
+[book]
+title = "BevyGradmesh Documentation"
+authors = ["xenacool"]
+description = "Comprehensive guide to using bevy_gradmesh for procedural mesh generation and gradient materials in Bevy"
+language = "en"
+multilingual = false
+src = "src"
+
+[output.html]
+git-repository-url = "https://github.com/xenacool/bevy_gradmesh"
+edit-url-template = "https://github.com/xenacool/bevy_gradmesh/edit/main/book/{path}"
+
+[output.linkcheck]
