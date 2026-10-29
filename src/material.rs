@@ -11,6 +11,7 @@ use bevy::asset::{Asset, AssetPath};
 use bevy::color::Color;
 use bevy::math::Vec3;
 use bevy::pbr::{ExtendedMaterial, MaterialExtension, MaterialExtensionPipeline, MaterialExtensionKey, StandardMaterial};
+use bevy_material::AlphaMode;
 use bevy::reflect::Reflect;
 use bevy::render::render_resource::{AsBindGroup, RenderPipelineDescriptor, ShaderType, SpecializedMeshPipelineError};
 use bevy::mesh::MeshVertexBufferLayoutRef;
@@ -216,6 +217,7 @@ pub fn transparent(r: f32, g: f32, b: f32, alpha: f32) -> GradMeshMaterial {
             base_color: Color::srgba(r, g, b, alpha).into(),
             perceptual_roughness: 0.7,
             cull_mode: None,
+            alpha_mode: AlphaMode::Blend,
             ..StandardMaterial::default()
         },
         extension: GradMeshExtension {
@@ -343,6 +345,7 @@ pub fn dual_radial_oklab(inner: [f32; 4], outer: [f32; 4], boundary: f32) -> Gra
             base_color: Color::srgba(inner[0], inner[1], inner[2], inner[3]).into(),
             perceptual_roughness: 0.3,
             cull_mode: None,
+            alpha_mode: AlphaMode::Blend,
             ..StandardMaterial::default()
         },
         extension: GradMeshExtension {
@@ -406,6 +409,7 @@ pub fn dither(r: f32, g: f32, b: f32, alpha: f32) -> GradMeshMaterial {
             base_color: Color::srgba(r, g, b, alpha).into(),
             perceptual_roughness: 0.7,
             cull_mode: None,
+            alpha_mode: AlphaMode::Blend,
             ..StandardMaterial::default()
         },
         extension: GradMeshExtension {
@@ -420,20 +424,8 @@ pub fn dither(r: f32, g: f32, b: f32, alpha: f32) -> GradMeshMaterial {
     }
 }
 
-/// Creates a GradMeshMaterial with dash pattern.
-///
-/// `dash_count` is the number of dashes (1-4096), `spacing` is the gap ratio (0-1),
-/// `offset` shifts the dash pattern, and `dash_type` selects normal/chevron/rounded.
-pub fn dashed(
-    r: f32, g: f32, b: f32,
-    dash_count: u32,
-    spacing: f32,
-    offset: f32,
-    dash_type: u32,
-) -> GradMeshMaterial {
-    let repeat_span = (dash_count.max(1)) as f32;
-    let gap_ratio = spacing.clamp(0.0, 1.0);
-    let type_code = 0.1 + 0.3 * (dash_type.min(2)) as f32;
+/// Creates a subtractive blend GradMeshMaterial (subtracts color from background).
+pub fn subtractive(r: f32, g: f32, b: f32) -> GradMeshMaterial {
     GradMeshMaterial {
         base: StandardMaterial {
             base_color: Color::srgb(r, g, b).into(),
@@ -446,7 +438,151 @@ pub fn dashed(
                 Vec4::new(r, g, b, 1.0),
                 Vec4::new(r, g, b, 1.0),
                 Vec4::new(0.0, 1.0, 0.0, 0.0),
+                Vec4::new(0.0, 6.0, 0.0, 0.0),
                 Vec4::new(0.0, 0.0, 0.0, 0.0),
+            ),
+        },
+    }
+}
+
+/// Creates a lighten blend GradMeshMaterial (takes maximum of source and destination).
+pub fn lighten(r: f32, g: f32, b: f32) -> GradMeshMaterial {
+    GradMeshMaterial {
+        base: StandardMaterial {
+            base_color: Color::srgb(r, g, b).into(),
+            perceptual_roughness: 0.7,
+            cull_mode: None,
+            ..StandardMaterial::default()
+        },
+        extension: GradMeshExtension {
+            uniforms: GradMeshUniformBuffer::new(
+                Vec4::new(r, g, b, 1.0),
+                Vec4::new(r, g, b, 1.0),
+                Vec4::new(0.0, 1.0, 0.0, 0.0),
+                Vec4::new(0.0, 7.0, 0.0, 0.0),
+                Vec4::new(0.0, 0.0, 0.0, 0.0),
+            ),
+        },
+    }
+}
+
+/// Creates a color dodge blend GradMeshMaterial (brightens destination by source).
+pub fn color_dodge(r: f32, g: f32, b: f32) -> GradMeshMaterial {
+    GradMeshMaterial {
+        base: StandardMaterial {
+            base_color: Color::srgb(r, g, b).into(),
+            perceptual_roughness: 0.7,
+            cull_mode: None,
+            ..StandardMaterial::default()
+        },
+        extension: GradMeshExtension {
+            uniforms: GradMeshUniformBuffer::new(
+                Vec4::new(r, g, b, 1.0),
+                Vec4::new(r, g, b, 1.0),
+                Vec4::new(0.0, 1.0, 0.0, 0.0),
+                Vec4::new(0.0, 8.0, 0.0, 0.0),
+                Vec4::new(0.0, 0.0, 0.0, 0.0),
+            ),
+        },
+    }
+}
+
+/// Creates a linear burn blend GradMeshMaterial (darkens destination by source).
+pub fn linear_burn(r: f32, g: f32, b: f32) -> GradMeshMaterial {
+    GradMeshMaterial {
+        base: StandardMaterial {
+            base_color: Color::srgb(r, g, b).into(),
+            perceptual_roughness: 0.7,
+            cull_mode: None,
+            ..StandardMaterial::default()
+        },
+        extension: GradMeshExtension {
+            uniforms: GradMeshUniformBuffer::new(
+                Vec4::new(r, g, b, 1.0),
+                Vec4::new(r, g, b, 1.0),
+                Vec4::new(0.0, 1.0, 0.0, 0.0),
+                Vec4::new(0.0, 9.0, 0.0, 0.0),
+                Vec4::new(0.0, 0.0, 0.0, 0.0),
+            ),
+        },
+    }
+}
+
+/// Creates a color burn blend GradMeshMaterial (deepens destination by source).
+pub fn color_burn(r: f32, g: f32, b: f32) -> GradMeshMaterial {
+    GradMeshMaterial {
+        base: StandardMaterial {
+            base_color: Color::srgb(r, g, b).into(),
+            perceptual_roughness: 0.7,
+            cull_mode: None,
+            ..StandardMaterial::default()
+        },
+        extension: GradMeshExtension {
+            uniforms: GradMeshUniformBuffer::new(
+                Vec4::new(r, g, b, 1.0),
+                Vec4::new(r, g, b, 1.0),
+                Vec4::new(0.0, 1.0, 0.0, 0.0),
+                Vec4::new(0.0, 10.0, 0.0, 0.0),
+                Vec4::new(0.0, 0.0, 0.0, 0.0),
+            ),
+        },
+    }
+}
+
+/// Creates a darken blend GradMeshMaterial (takes minimum of source and destination).
+pub fn darken(r: f32, g: f32, b: f32) -> GradMeshMaterial {
+    GradMeshMaterial {
+        base: StandardMaterial {
+            base_color: Color::srgb(r, g, b).into(),
+            perceptual_roughness: 0.7,
+            cull_mode: None,
+            ..StandardMaterial::default()
+        },
+        extension: GradMeshExtension {
+            uniforms: GradMeshUniformBuffer::new(
+                Vec4::new(r, g, b, 1.0),
+                Vec4::new(r, g, b, 1.0),
+                Vec4::new(0.0, 1.0, 0.0, 0.0),
+                Vec4::new(0.0, 11.0, 0.0, 0.0),
+                Vec4::new(0.0, 0.0, 0.0, 0.0),
+            ),
+        },
+    }
+}
+
+/// Creates a GradMeshMaterial with dash pattern.
+///
+/// `dash_count` is the number of dashes (1-4096), `spacing` is the gap ratio (0-1),
+/// `offset` shifts the dash pattern, `dash_type` selects normal/chevron/rounded,
+/// `modifier` controls chevron V-shape or rounded end-cap intensity (-1..1),
+/// and `shape_type` selects the perimeter progress function (0=generic, 1=disc, 2=rectangle).
+pub fn dashed(
+    r: f32, g: f32, b: f32,
+    dash_count: u32,
+    spacing: f32,
+    offset: f32,
+    dash_type: u32,
+    modifier: f32,
+    shape_type: u32,
+) -> GradMeshMaterial {
+    let repeat_span = (dash_count.max(1)) as f32;
+    let gap_ratio = spacing.clamp(0.0, 1.0);
+    let type_code = 0.1 + 0.3 * (dash_type.min(2)) as f32 + 0.075 * modifier.clamp(-1.0, 1.0);
+    // Encode shape_type in flags.z so the shader knows which perimeter function to use.
+    let shape_type_code = shape_type.min(2) as f32;
+    GradMeshMaterial {
+        base: StandardMaterial {
+            base_color: Color::srgb(r, g, b).into(),
+            perceptual_roughness: 0.7,
+            cull_mode: None,
+            ..StandardMaterial::default()
+        },
+        extension: GradMeshExtension {
+            uniforms: GradMeshUniformBuffer::new(
+                Vec4::new(r, g, b, 1.0),
+                Vec4::new(r, g, b, 1.0),
+                Vec4::new(0.0, 1.0, 0.0, 0.0),
+                Vec4::new(0.0, 0.0, shape_type_code, 0.0),
                 Vec4::new(repeat_span, type_code, gap_ratio, offset),
             ),
         },

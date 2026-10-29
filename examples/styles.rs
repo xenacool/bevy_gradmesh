@@ -10,7 +10,7 @@ mod common;
 use bevy::prelude::*;
 use bevy::render::RenderPlugin;
 use bevy_gradmesh::{
-    Style, Dash, GradMeshMaterial, GradMeshPlugin, Shape, ShapeDetail, opaque,
+    Style, Dash, GradMeshMaterial, GradMeshPlugin, Shape, ShapeDetail, ShapeType, opaque,
 };
 use common::screenshot::AutoScreenshotPlugin;
 
@@ -79,6 +79,10 @@ fn setup(
     let sphere = meshes.add(Shape::sphere(0.42, ShapeDetail::High).build());
     let disc = meshes.add(Shape::disc(0.42, ShapeDetail::High).build());
     let cuboid = meshes.add(Shape::cuboid(Vec3::splat(0.6), 0.0, ShapeDetail::High).build());
+    // Disc rims give chevrons a visible width to form their V-shape
+    let disc_rim = meshes.add(Shape::disc_rim(0.55, 0.18, ShapeDetail::High).build());
+    // Larger cuboid for rectangle dash examples
+    let big_cuboid = meshes.add(Shape::cuboid(Vec3::new(1.0, 1.0, 0.6), 0.0, ShapeDetail::High).build());
 
     let row_spacing = 3.2;
     let col_spacing = 2.6;
@@ -205,50 +209,62 @@ fn setup(
     // ─── Row 3: Dash Patterns ───
     let r3_xs = r2_xs;
 
-    // Normal dash on disc
-    add_shape(
-        &mut commands, &mut materials, &disc,
-        Style::opaque(Color::srgb(0.9, 0.5, 0.2)).with_dash(Dash::fixed(8, 0.3)),
+    // Normal dash on disc rim
+    add_shape_tilted(
+        &mut commands, &mut materials, &disc_rim,
+        Style::opaque(Color::srgb(0.9, 0.5, 0.2))
+            .with_shape_type(ShapeType::Disc)
+            .with_dash(Dash::fixed(8, 0.35)),
         Vec3::new(r3_xs[0], origin_y, z2),
         "Dash Normal",
     );
 
-    // Chevron dash on disc
-    add_shape(
-        &mut commands, &mut materials, &disc,
-        Style::opaque(Color::srgb(0.3, 0.7, 0.9)).with_dash(Dash::chevron(6, 0.4)),
+    // Chevron dash on disc rim — V-shapes visible across rim width
+    add_shape_tilted(
+        &mut commands, &mut materials, &disc_rim,
+        Style::opaque(Color::srgb(0.3, 0.7, 0.9))
+            .with_shape_type(ShapeType::Disc)
+            .with_dash(Dash::chevron(8, 0.35)),
         Vec3::new(r3_xs[1], origin_y, z2),
         "Dash Chevron",
     );
 
-    // Rounded dash on disc
-    add_shape(
-        &mut commands, &mut materials, &disc,
-        Style::opaque(Color::srgb(0.8, 0.3, 0.7)).with_dash(Dash::rounded(10, 0.2)),
+    // Rounded dash on disc rim
+    add_shape_tilted(
+        &mut commands, &mut materials, &disc_rim,
+        Style::opaque(Color::srgb(0.8, 0.3, 0.7))
+            .with_shape_type(ShapeType::Disc)
+            .with_dash(Dash::rounded(8, 0.35)),
         Vec3::new(r3_xs[2], origin_y, z2),
         "Dash Rounded",
     );
 
-    // Normal dash on rect
+    // Normal dash on larger rect
     add_shape(
-        &mut commands, &mut materials, &cuboid,
-        Style::opaque(Color::srgb(0.4, 0.9, 0.4)).with_dash(Dash::fixed(6, 0.35)),
+        &mut commands, &mut materials, &big_cuboid,
+        Style::opaque(Color::srgb(0.4, 0.9, 0.4))
+            .with_shape_type(ShapeType::Rectangle)
+            .with_dash(Dash::fixed(8, 0.35)),
         Vec3::new(r3_xs[3], origin_y, z2),
         "Rect Dash",
     );
 
-    // Chevron dash on rect
+    // Chevron dash on larger rect
     add_shape(
-        &mut commands, &mut materials, &cuboid,
-        Style::opaque(Color::srgb(0.9, 0.7, 0.3)).with_dash(Dash::chevron(8, 0.25)),
+        &mut commands, &mut materials, &big_cuboid,
+        Style::opaque(Color::srgb(0.9, 0.7, 0.3))
+            .with_shape_type(ShapeType::Rectangle)
+            .with_dash(Dash::chevron(8, 0.35)),
         Vec3::new(r3_xs[4], origin_y, z2),
         "Rect Chevron",
     );
 
-    // Rounded dash on rect
+    // Rounded dash on larger rect
     add_shape(
-        &mut commands, &mut materials, &cuboid,
-        Style::opaque(Color::srgb(0.5, 0.5, 0.95)).with_dash(Dash::rounded(12, 0.15)),
+        &mut commands, &mut materials, &big_cuboid,
+        Style::opaque(Color::srgb(0.5, 0.5, 0.95))
+            .with_shape_type(ShapeType::Rectangle)
+            .with_dash(Dash::rounded(8, 0.35)),
         Vec3::new(r3_xs[5], origin_y, z2),
         "Rect Rounded",
     );
@@ -334,6 +350,23 @@ fn add_shape(
         Mesh3d(mesh.clone()),
         MeshMaterial3d(mat),
         Transform::from_translation(position),
+    ));
+    spawn_label(commands, label, position + Vec3::new(0.0, 0.8, 0.0));
+}
+
+fn add_shape_tilted(
+    commands: &mut Commands,
+    materials: &mut Assets<GradMeshMaterial>,
+    mesh: &Handle<bevy::render::mesh::Mesh>,
+    style: Style,
+    position: Vec3,
+    label: &str,
+) {
+    let mat = style.build_material(materials);
+    commands.spawn((
+        Mesh3d(mesh.clone()),
+        MeshMaterial3d(mat),
+        Transform::from_translation(position).with_rotation(Quat::from_axis_angle(Vec3::X, -0.3)),
     ));
     spawn_label(commands, label, position + Vec3::new(0.0, 0.8, 0.0));
 }

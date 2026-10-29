@@ -6,12 +6,41 @@ BevyGradmesh provides a clean API for generating procedural 3D primitives with p
 
 ## Features
 
-- **Procedural primitives**: Sphere, ellipsoid, cuboid, cylinder, cone, capsule, hemisphere, torus (with arc support), regular prism, pyramid, and 2D shapes (disc, polygon, ellipse, rectangle)
-- **Detail levels**: Control mesh resolution from minimal to extreme
-- **Gradient materials**: Dual-directional shading for 3D-looking skin and hair
-- **Blend modes**: Transparent, additive, multiplicative, screen, dither, and dashed outlines
+### Shapes
+
+- **3D primitives**: Sphere, ellipsoid, cuboid (with rounded edges), cylinder, cone, capsule, hemisphere, torus (with arc support), regular prism, pyramid, tapered cylinder
+- **2D primitives**: Disc, polygon, ellipse, rectangle, star (N-pointed), ring/annulus, wedge/pie-slice
+- **Advanced geometry**: Arbitrary polygons (convex & concave), 3D polylines as tubes, Bézier curves (linear, quadratic, cubic)
+- **Detail levels**: Control mesh resolution from minimal (8 segments) to extreme (32 segments)
+
+### Rendering Modes
+
+- **Direct mode**: Call `Shape::build()` and spawn `Mesh3d` entities manually
+- **Immediate mode**: Per-frame draw/dispose with `ImmediateRecorder` — supports push/pop state stacking, billboarding, and relative transforms
+- **Retained mode**: `RetainedWorld` + `GradMeshHandle` for persistent shapes updated per-frame
+- **Batched GPU instancing**: `BatchRecorder` groups instances by mesh key, blend mode, and render state into single `draw_indexed` calls — thousands of shapes in far fewer draw calls
+
+### Materials & Shading
+
+- **Gradient materials**: Dual-directional and dual-radial shading for 3D-looking gradients
+- **OKLAB color space**: Perceptually uniform color interpolation avoiding muddy midpoints
+- **Blend modes**: Opaque, transparent, additive, multiplicative, screen, dither, and dashed outlines
 - **PBR integration**: Full compatibility with Bevy's physically-based rendering (roughness, metallicity, emissive)
-- **Bevy integration**: Ready-to-use `Mesh` and `StandardMaterial` outputs
+- **Custom shader passthrough**: Attach any Bevy shader via `BlendMode::Custom`
+
+### Performance
+
+- **Batched GPU instancing**: Single draw call per batch with per-instance transforms and properties on the GPU
+- **Dirty tracking**: Only modified batches re-upload GPU data each frame
+- **Mesh caching**: `MeshCache` resource avoids regenerating identical geometry
+- **Automatic LOD**: Distance-based level-of-detail with Bayer dither cross-fade eliminating pop-in
+- **Frustum culling**: Per-instance AABB culling against camera frustum planes
+- **Statistics API**: `InstancedStats` tracks instances, batches, cache hits, GPU upload bytes, and culling ratios
+
+### Animation
+
+- **Vertex shader deformation**: Wobble, pulse, and morph effects without CPU mesh regeneration
+- **Appearance snapshots**: Per-instance color animation (pulse, cycle, gradient shift) resolved in the shader — no per-frame CPU updates
 
 ## What is Dual-Directional Shading?
 
@@ -98,6 +127,12 @@ Polylines with joint styles, width variation, gradient colors, and animated reve
 Transparency, emissive glow, metallic surfaces, and combined effects:
 
 ![PBR Effects](screenshots/screenshot_pbr_effects.png)
+
+### Kart Racer
+
+Playable racing demo with a Bézier-curve track, PBR kart, collectible coins, and HUD:
+
+![Kart Racer](screenshots/screenshot_kart_racer.png)
 
 ### Capturing Screenshots
 

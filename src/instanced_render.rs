@@ -496,7 +496,7 @@ impl SpecializedMeshPipeline for InstancedPipeline {
         // Add the instanced vertex buffer layout
         // This buffer contains interleaved InstanceTransform + InstanceProperties per instance
         let transform_stride = size_of::<InstanceTransform>() as u64; // 64 bytes = 4×vec4
-        let property_stride = size_of::<InstanceProperties>() as u64; // 96 bytes = 6×vec4 (includes deformation)
+        let property_stride = size_of::<InstanceProperties>() as u64; // 112 bytes = 7×vec4 (includes deformation + appearance)
 
         descriptor.vertex.buffers.push(VertexBufferLayout {
             array_stride: transform_stride + property_stride,
@@ -507,13 +507,14 @@ impl SpecializedMeshPipeline for InstancedPipeline {
                 (4u32, VertexFormat::Float32x4.size(), VertexFormat::Float32x4),
                 (5u32, VertexFormat::Float32x4.size() * 2, VertexFormat::Float32x4),
                 (6u32, VertexFormat::Float32x4.size() * 3, VertexFormat::Float32x4),
-                // InstanceProperties: 6×vec4 at locations 7-12 (color, secondary, direction, flags, dash, deformation)
+                // InstanceProperties: 7×vec4 at locations 7-13 (color, secondary, direction, flags, dash, deformation, appearance)
                 (7u32, transform_stride, VertexFormat::Float32x4),
                 (8u32, transform_stride + VertexFormat::Float32x4.size(), VertexFormat::Float32x4),
                 (9u32, transform_stride + VertexFormat::Float32x4.size() * 2, VertexFormat::Float32x4),
                 (10u32, transform_stride + VertexFormat::Float32x4.size() * 3, VertexFormat::Float32x4),
                 (11u32, transform_stride + VertexFormat::Float32x4.size() * 4, VertexFormat::Float32x4),
                 (12u32, transform_stride + VertexFormat::Float32x4.size() * 5, VertexFormat::Float32x4),
+                (13u32, transform_stride + VertexFormat::Float32x4.size() * 6, VertexFormat::Float32x4),
             ]
             .map(|(loc, offset, fmt)| VertexAttribute {
                 shader_location: loc,

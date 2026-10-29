@@ -21,6 +21,7 @@ use bevy::render::render_resource::ShaderType;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
+use crate::appearance::AppearanceSnapshot;
 use crate::culling::AABB;
 use crate::material::{GradMeshUniformBuffer, Vec4};
 use crate::shape::{Shape, ShapeDetail};
@@ -52,8 +53,8 @@ impl InstanceTransform {
     }
 }
 
-/// Per-instance gradmesh properties (color, secondary, direction, flags, dash, deformation).
-/// 6×Vec4 = 96 bytes per instance.
+/// Per-instance gradmesh properties (color, secondary, direction, flags, dash, deformation, appearance).
+/// 7×Vec4 = 112 bytes per instance.
 #[derive(Debug, Clone, Copy, Default, ShaderType)]
 pub struct InstanceProperties {
     pub color: Vec4,
@@ -62,6 +63,7 @@ pub struct InstanceProperties {
     pub flags: Vec4,
     pub dash: Vec4,
     pub deformation: Vec4,
+    pub appearance: Vec4,
 }
 
 impl InstanceProperties {
@@ -73,6 +75,7 @@ impl InstanceProperties {
             flags: buf.flags,
             dash: buf.dash,
             deformation: Vec4::default(),
+            appearance: Vec4::default(),
         }
     }
 
@@ -97,17 +100,24 @@ impl InstanceProperties {
             BlendMode::Multiplicative => 3.0,
             BlendMode::Screen => 4.0,
             BlendMode::Dither => 5.0,
-            BlendMode::Custom(_) => 6.0,
+            BlendMode::Subtractive => 6.0,
+            BlendMode::Lighten => 7.0,
+            BlendMode::ColorDodge => 8.0,
+            BlendMode::LinearBurn => 9.0,
+            BlendMode::ColorBurn => 10.0,
+            BlendMode::Darken => 11.0,
+            BlendMode::Custom(_) => 12.0,
         };
         let oklab_flag = if oklab { 1.0 } else { 0.0 };
 
         let (dash_count, dash_type, dash_spacing, dash_offset) = match dash {
             Some(d) => {
-                let type_code = match d.style {
+                let type_base = match d.style {
                     DashType::Normal => 0.1,
                     DashType::Chevron => 0.4,
                     DashType::Rounded => 0.7,
                 };
+                let type_code = type_base + 0.075 * d.modifier.clamp(-1.0, 1.0);
                 (d.count as f32, type_code, d.spacing, d.offset)
             }
             None => (0.0, 0.0, 0.0, 0.0),
@@ -120,7 +130,14 @@ impl InstanceProperties {
             flags: Vec4::new(cm, bm, 0.0, oklab_flag),
             dash: Vec4::new(dash_count, dash_type, dash_spacing, dash_offset),
             deformation: Vec4::default(),
+            appearance: Vec4::default(),
         }
+    }
+
+    /// Set appearance animation parameters.
+    pub fn with_appearance(mut self, appearance: AppearanceSnapshot) -> Self {
+        self.appearance = appearance.to_vec4();
+        self
     }
 }
 
@@ -338,6 +355,8 @@ pub struct BatchRecorder {
     render_state: RenderState,
     /// Pending deformation for the next instance.
     pending_deformation: crate::deformation::DeformationParams,
+    /// Pending appearance for the next instance.
+    pending_appearance: AppearanceSnapshot,
     /// State stack for push/pop.
     state_stack: Vec<(Vec3, Quat, Vec3)>,
 }
@@ -348,6 +367,7 @@ impl BatchRecorder {
             batches: HashMap::new(),
             mesh_cache: HashMap::new(),
             pending_deformation: crate::deformation::DeformationParams::none(),
+            pending_appearance: AppearanceSnapshot::static_appearance(),
             position: Vec3::ZERO,
             rotation: Quat::IDENTITY,
             scale: Vec3::ONE,
@@ -414,6 +434,12 @@ impl BatchRecorder {
         self.pending_deformation = deformation;
     }
 
+    /// Set appearance animation for the next instance added.
+    /// Call this before a drawing method to apply color animation to that instance.
+    pub fn set_appearance(&mut self, appearance: AppearanceSnapshot) {
+        self.pending_appearance = appearance;
+    }
+
     // ─── Drawing methods ───
 
     fn get_or_build_mesh(&mut self, shape: &Shape) -> &Mesh {
@@ -446,6 +472,11 @@ impl BatchRecorder {
         properties.deformation = deformation.to_vec4();
         self.pending_deformation = crate::deformation::DeformationParams::none();
 
+        // Apply pending appearance to properties
+        let appearance = self.pending_appearance;
+        properties.appearance = appearance.to_vec4();
+        self.pending_appearance = AppearanceSnapshot::static_appearance();
+
         let batch = self.batches.entry(key).or_insert_with(|| Batch::new(mesh));
         batch.push(transform, properties);
     }
@@ -458,7 +489,12 @@ impl BatchRecorder {
             3 => BlendMode::Multiplicative,
             4 => BlendMode::Screen,
             5 => BlendMode::Dither,
-            6 => BlendMode::Custom(bevy::asset::Handle::default()),
+            6 => BlendMode::Subtractive,
+            7 => BlendMode::Lighten,
+            8 => BlendMode::ColorDodge,
+            9 => BlendMode::LinearBurn,
+            10 => BlendMode::ColorBurn,
+            11 => BlendMode::Darken,
             _ => BlendMode::Opaque,
         }
     }

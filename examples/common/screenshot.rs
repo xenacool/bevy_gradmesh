@@ -56,6 +56,9 @@ pub struct AutoScreenshotPlugin {
     filename: String,
     title: Option<String>,
     description: Option<String>,
+    /// Minimum frame count to wait before taking the screenshot (default 1).
+    /// Complex 3D scenes may need more frames for shaders to compile.
+    wait_frames: u32,
 }
 
 impl AutoScreenshotPlugin {
@@ -68,6 +71,7 @@ impl AutoScreenshotPlugin {
             filename: filename.into(),
             title: None,
             description: None,
+            wait_frames: 1,
         }
     }
 
@@ -82,6 +86,15 @@ impl AutoScreenshotPlugin {
         self.description = Some(description.into());
         self
     }
+
+    /// Set the minimum frame count to wait before taking the screenshot.
+    ///
+    /// Complex 3D scenes with many materials may need more frames for all
+    /// shaders to compile and render correctly. Default is 1.
+    pub fn wait_frames(mut self, frames: u32) -> Self {
+        self.wait_frames = frames.max(1);
+        self
+    }
 }
 
 impl Plugin for AutoScreenshotPlugin {
@@ -92,7 +105,8 @@ impl Plugin for AutoScreenshotPlugin {
         }
 
         app.insert_resource(AutoScreenshotFilename(self.filename.clone()))
-            .insert_resource(ScreenshotState::default());
+            .insert_resource(ScreenshotState::default())
+            .insert_resource(WaitFrames(self.wait_frames));
 
         // Add title overlay if configured
         if self.title.is_some() || self.description.is_some() {
@@ -122,52 +136,49 @@ struct ScreenshotTitle {
 struct TitleOverlay;
 
 /// Spawn a semi-transparent banner at the top of the window showing the title and description.
-fn spawn_title_overlay(mut commands: Commands, title: Res<ScreenshotTitle>) {
-    // Background panel
-    commands.spawn((
-        Node {
-            position_type: PositionType::Absolute,
-            left: Val::Px(0.0),
-            top: Val::Px(0.0),
-            width: Val::Percent(100.0),
-            height: Val::Px(44.0),
-            align_items: AlignItems::Center,
-            justify_content: JustifyContent::Center,
-            column_gap: Val::Px(16.0),
-            ..default()
-        },
-        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.55)),
-        TitleOverlay,
-    ))
-    .with_children(|parent| {
-        // Title text
-        if let Some(ref t) = title.title {
-            parent.spawn((
-                Text::new(t.clone()),
-                TextFont {
-                    font_size: FontSize::Px(18.0),
-                    ..default()
-                },
-                TextColor(Color::srgb(1.0, 1.0, 1.0)),
-            ));
-        }
-        // Description text
-        if let Some(ref d) = title.description {
-            parent.spawn((
-                Text::new(d.clone()),
-                TextFont {
-                    font_size: FontSize::Px(14.0),
-                    ..default()
-                },
-                TextColor(Color::srgba(1.0, 1.0, 1.0, 0.7)),
-            ));
-        }
-    });
+fn spawn_title_overlay(mut commands: Commands, title: Res<ScreenshotTitle>, window: Query<&Window, With<Window>>) {
+    let window = window.single().expect("no window found");
+    let width = window.resolution.width() as f32;
+    let height = window.resolution.height() as f32;
+    let banner_height = 44.0_f32;
+
+    // Title text using Text2d
+    if let Some(ref t) = title.title {
+        commands.spawn((
+            Text2d(t.clone()),
+            TextColor(Color::srgb(1.0, 1.0, 1.0)),
+            TextFont {
+                font_size: FontSize::Px(18.0),
+                ..default()
+            },
+            Transform::from_xyz(width / 2.0 - 100.0, height / 2.0 - banner_height / 2.0 - 10.0, 1000.0),
+            TitleOverlay,
+            Name::new("Title Overlay Text"),
+        ));
+    }
+    // Description text using Text2d
+    if let Some(ref d) = title.description {
+        commands.spawn((
+            Text2d(d.clone()),
+            TextColor(Color::srgba(1.0, 1.0, 1.0, 0.7)),
+            TextFont {
+                font_size: FontSize::Px(14.0),
+                ..default()
+            },
+            Transform::from_xyz(width / 2.0 - 100.0, height / 2.0 - banner_height / 2.0 + 10.0, 1000.0),
+            TitleOverlay,
+            Name::new("Title Overlay Description"),
+        ));
+    }
 }
 
 /// Target filename stored as a resource so the observer can access it.
 #[derive(Resource)]
 struct AutoScreenshotFilename(String);
+
+/// Minimum frame count to wait before taking the screenshot.
+#[derive(Resource)]
+struct WaitFrames(u32);
 
 /// Tracks the screenshot lifecycle: pending → triggered → saved → quit.
 #[derive(Resource, Default)]
@@ -198,6 +209,7 @@ fn wait_for_first_frame(
     mut commands: Commands,
     frame_count: Res<FrameCount>,
     window_query: Query<Entity, With<Window>>,
+    wait_frames: Res<WaitFrames>,
 ) {
     if state.triggered {
         return;
@@ -209,13 +221,13 @@ fn wait_for_first_frame(
     }
 
     // `FrameCount` increments during the `Last` schedule, after rendering completes.
-    // When it's > 0, at least one frame has fully rendered. With synchronous
-    // pipeline compilation (recommended), that frame has all shaders ready.
-    if frame_count.0 > 0 {
+    // Wait for the configured number of frames before taking the screenshot.
+    // Complex 3D scenes may need more frames for all shaders to compile.
+    if frame_count.0 >= wait_frames.0 {
         state.triggered = true;
         info!(
-            "Taking screenshot after first frame rendered (frame {}) -> {}",
-            frame_count.0, filename.0
+            "Taking screenshot after {} frames rendered (frame {}) -> {}",
+            wait_frames.0, frame_count.0, filename.0
         );
         let path = filename.0.clone();
         commands

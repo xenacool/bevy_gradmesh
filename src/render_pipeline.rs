@@ -199,36 +199,4 @@ impl InstancedStats {
         self.total_instances_before_cull = 0;
         self.lod_distribution = [0; 5];
     }
-
-    /// Log stats to console.
-    pub fn log(&self) {
-        let hit_rate = if self.cache_hits + self.cache_misses > 0 {
-            self.cache_hits as f64 / (self.cache_hits + self.cache_misses) as f64
-        } else {
-            0.0
-        };
-        let cull_ratio = if self.total_instances_before_cull > 0 {
-            self.culled_instances as f64 / self.total_instances_before_cull as f64
-        } else {
-            0.0
-        };
-        let lod_names = ["Minimal", "Low", "Medium", "High", "Extreme"];
-        let lod_parts: Vec<String> = self.lod_distribution.iter().enumerate()
-            .filter(|(_, count)| **count > 0)
-            .map(|(i, count)| format!("{}:{}", lod_names[i], count))
-            .collect();
-        let lod_display = if lod_parts.is_empty() { "none".to_string() } else { lod_parts.join(", ") };
-        println!(
-            "InstancedStats: instances={}, batches={}, dirty={}, upload_bytes={}, cache_hit_rate={:.2}%, culled={}/{} ({:.1}%), LOD:{}",
-            self.total_instances,
-            self.batch_count,
-            self.dirty_batch_count,
-            self.gpu_upload_bytes,
-            hit_rate * 100.0,
-            self.culled_instances,
-            self.total_instances_before_cull,
-            cull_ratio * 100.0,
-            lod_display,
-        );
-    }
 }

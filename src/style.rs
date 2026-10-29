@@ -8,8 +8,9 @@ use bevy::math::Vec3;
 use bevy::prelude::Shader;
 
 use crate::material::{
-    additive, dashed, dither, dual_directional, dual_directional_oklab, dual_radial, dual_radial_oklab,
-    multiplicative, opaque, screen, transparent, GradMeshMaterial,
+    additive, color_burn, color_dodge, dashed, darken, dither, dual_directional, dual_directional_oklab,
+    dual_radial, dual_radial_oklab, lighten, linear_burn, multiplicative, opaque, screen, subtractive,
+    transparent, GradMeshMaterial,
 };
 
 /// Blend mode for material rendering.
@@ -22,6 +23,12 @@ pub enum BlendMode {
     Multiplicative,
     Screen,
     Dither,
+    Subtractive,
+    Lighten,
+    ColorDodge,
+    LinearBurn,
+    ColorBurn,
+    Darken,
     /// Custom shader passthrough — uses the provided shader for fragment rendering.
     Custom(Handle<Shader>),
 }
@@ -53,6 +60,21 @@ pub enum DashType {
     Rounded,
 }
 
+/// Shape type for perimeter-aware dash patterns.
+///
+/// Tells the shader which perimeter progress function to use so dashes
+/// follow the actual shape outline instead of a diagonal UV sweep.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ShapeType {
+    #[default]
+    /// No shape hint — uses generic diagonal UV progress.
+    Generic,
+    /// Disc/circle — uses angular progress around center.
+    Disc,
+    /// Rectangle — uses perimeter tracing around edges.
+    Rectangle,
+}
+
 /// Dash pattern configuration.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Dash {
@@ -64,22 +86,31 @@ pub struct Dash {
     pub offset: f32,
     /// Dash shape style.
     pub style: DashType,
+    /// Modifier that controls the intensity of chevron V-shape or rounded
+    /// end-cap curvature.  Range: -1.0..1.0; 0.0 disables the effect.
+    pub modifier: f32,
 }
 
 impl Dash {
     /// Creates a dash pattern with a fixed number of dashes.
     pub fn fixed(count: u32, spacing: f32) -> Self {
-        Self { count, spacing, offset: 0.0, style: DashType::Normal }
+        Self { count, spacing, offset: 0.0, style: DashType::Normal, modifier: 0.0 }
     }
 
     /// Creates a dash pattern with chevron-style dashes.
+    ///
+    /// The `modifier` controls the V-shape intensity (default 0.8).
+    /// Range: -1.0..1.0.
     pub fn chevron(count: u32, spacing: f32) -> Self {
-        Self { count, spacing, offset: 0.0, style: DashType::Chevron }
+        Self { count, spacing, offset: 0.0, style: DashType::Chevron, modifier: 0.8 }
     }
 
-    /// Creates a dash pattern with rounded dashes.
+    /// Creates a dash pattern with rounded end-caps.
+    ///
+    /// The `modifier` controls the rounding intensity (default 0.6).
+    /// Range: -1.0..1.0.
     pub fn rounded(count: u32, spacing: f32) -> Self {
-        Self { count, spacing, offset: 0.0, style: DashType::Rounded }
+        Self { count, spacing, offset: 0.0, style: DashType::Rounded, modifier: 0.6 }
     }
 
     /// Returns true if the dash pattern is enabled.
@@ -104,6 +135,8 @@ pub struct Style {
     pub oklab: bool,
     /// Dash pattern for outlined shapes.
     pub dash: Option<Dash>,
+    /// Shape type hint for perimeter-aware dash patterns.
+    pub shape_type: ShapeType,
 }
 
 impl Style {
@@ -117,6 +150,7 @@ impl Style {
             direction: Vec3::Y,
             oklab: false,
             dash: None,
+            shape_type: ShapeType::Generic,
         }
     }
 
@@ -130,6 +164,7 @@ impl Style {
             direction: Vec3::Y,
             oklab: false,
             dash: None,
+            shape_type: ShapeType::Generic,
         }
     }
 
@@ -146,6 +181,7 @@ impl Style {
             direction: direction.normalize_or(Vec3::Y),
             oklab: false,
             dash: None,
+            shape_type: ShapeType::Generic,
         }
     }
 
@@ -164,6 +200,7 @@ impl Style {
             direction: direction.normalize_or(Vec3::Y),
             oklab: true,
             dash: None,
+            shape_type: ShapeType::Generic,
         }
     }
 
@@ -177,6 +214,7 @@ impl Style {
             direction: Vec3::Y,
             oklab: false,
             dash: None,
+            shape_type: ShapeType::Generic,
         }
     }
 
@@ -190,6 +228,7 @@ impl Style {
             direction: Vec3::Y,
             oklab: false,
             dash: None,
+            shape_type: ShapeType::Generic,
         }
     }
 
@@ -203,6 +242,7 @@ impl Style {
             direction: Vec3::Y,
             oklab: false,
             dash: None,
+            shape_type: ShapeType::Generic,
         }
     }
 
@@ -216,6 +256,91 @@ impl Style {
             direction: Vec3::Y,
             oklab: false,
             dash: None,
+            shape_type: ShapeType::Generic,
+        }
+    }
+
+    /// Creates a subtractive blend style (subtracts color from background).
+    pub fn subtractive(color: Color) -> Self {
+        Self {
+            blend_mode: BlendMode::Subtractive,
+            color_mode: ColorMode::Single,
+            color,
+            secondary_color: None,
+            direction: Vec3::Y,
+            oklab: false,
+            dash: None,
+            shape_type: ShapeType::Generic,
+        }
+    }
+
+    /// Creates a lighten blend style (takes maximum of source and destination).
+    pub fn lighten(color: Color) -> Self {
+        Self {
+            blend_mode: BlendMode::Lighten,
+            color_mode: ColorMode::Single,
+            color,
+            secondary_color: None,
+            direction: Vec3::Y,
+            oklab: false,
+            dash: None,
+            shape_type: ShapeType::Generic,
+        }
+    }
+
+    /// Creates a color dodge blend style (brightens destination by source).
+    pub fn color_dodge(color: Color) -> Self {
+        Self {
+            blend_mode: BlendMode::ColorDodge,
+            color_mode: ColorMode::Single,
+            color,
+            secondary_color: None,
+            direction: Vec3::Y,
+            oklab: false,
+            dash: None,
+            shape_type: ShapeType::Generic,
+        }
+    }
+
+    /// Creates a linear burn blend style (darkens destination by source).
+    pub fn linear_burn(color: Color) -> Self {
+        Self {
+            blend_mode: BlendMode::LinearBurn,
+            color_mode: ColorMode::Single,
+            color,
+            secondary_color: None,
+            direction: Vec3::Y,
+            oklab: false,
+            dash: None,
+            shape_type: ShapeType::Generic,
+        }
+    }
+
+    /// Creates a color burn blend style (deepens destination by source).
+    pub fn color_burn(color: Color) -> Self {
+        Self {
+            blend_mode: BlendMode::ColorBurn,
+            color_mode: ColorMode::Single,
+            color,
+            secondary_color: None,
+            direction: Vec3::Y,
+            oklab: false,
+            dash: None,
+            shape_type: ShapeType::Generic,
+        }
+    }
+
+    /// Creates a darken blend style (takes minimum of source and destination).
+    pub fn darken(color: Color) -> Self {
+        Self {
+            blend_mode: BlendMode::Darken,
+            color_mode: ColorMode::Single,
+            color,
+            secondary_color: None,
+            direction: Vec3::Y,
+            oklab: false,
+            dash: None,
+            shape_type: ShapeType::Generic,
         }
     }
 
@@ -233,6 +358,7 @@ impl Style {
             direction: Vec3::Y,
             oklab: false,
             dash: None,
+            shape_type: ShapeType::Generic,
         }
     }
 
@@ -245,6 +371,16 @@ impl Style {
     /// Enables OKLAB color interpolation.
     pub fn with_oklab(mut self) -> Self {
         self.oklab = true;
+        self
+    }
+
+    /// Sets the shape type for perimeter-aware dash patterns.
+    ///
+    /// When a dash pattern is applied, the shape type tells the shader which
+    /// perimeter progress function to use so dashes follow the actual shape
+    /// outline (e.g., angular progress for discs, edge tracing for rectangles).
+    pub fn with_shape_type(mut self, shape_type: ShapeType) -> Self {
+        self.shape_type = shape_type;
         self
     }
 
@@ -297,6 +433,12 @@ impl Style {
                     BlendMode::Multiplicative => multiplicative(r, g, b),
                     BlendMode::Screen => screen(r, g, b),
                     BlendMode::Dither => dither(r, g, b, a),
+                    BlendMode::Subtractive => subtractive(r, g, b),
+                    BlendMode::Lighten => lighten(r, g, b),
+                    BlendMode::ColorDodge => color_dodge(r, g, b),
+                    BlendMode::LinearBurn => linear_burn(r, g, b),
+                    BlendMode::ColorBurn => color_burn(r, g, b),
+                    BlendMode::Darken => darken(r, g, b),
                     BlendMode::Custom(_) => opaque(r, g, b),
                 }
             }
@@ -310,12 +452,19 @@ impl Style {
                     DashType::Chevron => 1,
                     DashType::Rounded => 2,
                 };
+                let shape_type_code = match self.shape_type {
+                    ShapeType::Generic => 0,
+                    ShapeType::Disc => 1,
+                    ShapeType::Rectangle => 2,
+                };
                 return dashed(
                     r, g, b,
                     dash.count,
                     dash.spacing,
                     dash.offset,
                     dash_type_code,
+                    dash.modifier,
+                    shape_type_code,
                 );
             }
         }

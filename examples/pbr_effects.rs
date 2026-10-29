@@ -338,7 +338,7 @@ fn setup(
     // Dashed outline on metallic
     add_shape(
         &mut commands, &mut meshes,
-        &materials.add(bevy_gradmesh::dashed(0.9, 0.5, 1.0, 8, 0.3, 0.0, 0)),
+        &materials.add(bevy_gradmesh::dashed(0.9, 0.5, 1.0, 8, 0.3, 0.0, 0, 0.0, 0)),
         Shape::disc(0.4, ShapeDetail::High),
         Vec3::new(xs4[3], y4, 0.0),
         "Dashed\noutline",

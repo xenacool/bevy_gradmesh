@@ -50,9 +50,10 @@ pub mod culling;
 pub mod polyline_gpu;
 pub mod lod;
 pub mod deformation;
+pub mod appearance;
 
 pub use shape::{Shape, ShapeDetail};
-pub use style::{Style, BlendMode, ColorMode, DashType, Dash};
+pub use style::{Style, BlendMode, ColorMode, DashType, Dash, ShapeType};
 pub use material::{
     GradMeshMaterial, GradMeshExtension, GradMeshUniform, GradMeshUniformBuffer, Vec4, gradmesh_to_standard,
     opaque, transparent, additive, dual_directional, dual_directional_oklab, dual_radial, dual_radial_oklab,
@@ -73,3 +74,4 @@ pub use render_pipeline::{
 pub use instanced_render::{InstancedBatchData, InstancedRenderPlugin};
 pub use lod::{LodConfig, LodResult, LOD_MINIMAL, LOD_LOW, LOD_MEDIUM, LOD_HIGH, LOD_EXTREME};
 pub use deformation::{DeformationType, DeformationParams, Deformation};
+pub use appearance::{AppearanceSnapshot, AppearanceType};

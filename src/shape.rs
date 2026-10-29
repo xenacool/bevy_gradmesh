@@ -86,6 +86,14 @@ enum ShapeKind {
     Polyline3D { points: Vec<Vec3>, thickness: f32, closed: bool, segments: u32 },
     /// Bézier curve rendered as a tube along the curve path.
     BezierCurve { control_points: Vec<Vec3>, thickness: f32, segments: u32 },
+    /// N-pointed star (2D flat quad, like polygon).
+    Star { points: u32, outer_radius: f32, inner_radius: f32 },
+    /// Ring/annulus (2D flat quad with a hole).
+    Ring { outer_radius: f32, inner_radius: f32 },
+    /// Wedge/slice of a cylinder (2D flat pie slice).
+    Wedge { radius: f32, angle: f32 },
+    /// Tapered cylinder (cone-frustum-like, but with flat top and bottom).
+    TaperedCylinder { top_radius: f32, bottom_radius: f32, height: f32 },
 }
 
 fn hash_vec3<H: std::hash::Hasher>(v: &Vec3, state: &mut H) {
@@ -183,6 +191,22 @@ impl PartialEq for ShapeKind {
                     })
                     && t1.to_bits() == t2.to_bits()
                     && s1 == s2
+            }
+            (Self::Star { points: p1, outer_radius: o1, inner_radius: i1 },
+             Self::Star { points: p2, outer_radius: o2, inner_radius: i2 }) => {
+                p1 == p2 && o1.to_bits() == o2.to_bits() && i1.to_bits() == i2.to_bits()
+            }
+            (Self::Ring { outer_radius: o1, inner_radius: i1 },
+             Self::Ring { outer_radius: o2, inner_radius: i2 }) => {
+                o1.to_bits() == o2.to_bits() && i1.to_bits() == i2.to_bits()
+            }
+            (Self::Wedge { radius: r1, angle: a1 },
+             Self::Wedge { radius: r2, angle: a2 }) => {
+                r1.to_bits() == r2.to_bits() && a1.to_bits() == a2.to_bits()
+            }
+            (Self::TaperedCylinder { top_radius: t1, bottom_radius: b1, height: h1 },
+             Self::TaperedCylinder { top_radius: t2, bottom_radius: b2, height: h2 }) => {
+                t1.to_bits() == t2.to_bits() && b1.to_bits() == b2.to_bits() && h1.to_bits() == h2.to_bits()
             }
             _ => false,
         }
@@ -305,6 +329,24 @@ impl std::hash::Hash for ShapeKind {
                 }
                 thickness.to_bits().hash(state);
                 segments.hash(state);
+            }
+            Self::Star { points, outer_radius, inner_radius } => {
+                points.hash(state);
+                outer_radius.to_bits().hash(state);
+                inner_radius.to_bits().hash(state);
+            }
+            Self::Ring { outer_radius, inner_radius } => {
+                outer_radius.to_bits().hash(state);
+                inner_radius.to_bits().hash(state);
+            }
+            Self::Wedge { radius, angle } => {
+                radius.to_bits().hash(state);
+                angle.to_bits().hash(state);
+            }
+            Self::TaperedCylinder { top_radius, bottom_radius, height } => {
+                top_radius.to_bits().hash(state);
+                bottom_radius.to_bits().hash(state);
+                height.to_bits().hash(state);
             }
         }
     }
@@ -562,6 +604,61 @@ impl Shape {
         }
     }
 
+    /// Creates an N-pointed star (2D flat quad).
+    /// `inner_radius` controls how deep the indentations are (0.0–`outer_radius`).
+    pub fn star(points: u32, outer_radius: f32, inner_radius: f32, detail: ShapeDetail) -> Self {
+        Self {
+            kind: ShapeKind::Star {
+                points: points.max(2),
+                outer_radius,
+                inner_radius,
+            },
+            detail,
+        }
+    }
+
+    /// Creates a ring/annulus (2D flat quad with a hole).
+    /// If `inner_radius` >= `outer_radius`, produces an empty mesh.
+    pub fn ring(outer_radius: f32, inner_radius: f32, detail: ShapeDetail) -> Self {
+        Self {
+            kind: ShapeKind::Ring {
+                outer_radius,
+                inner_radius: inner_radius.min(outer_radius),
+            },
+            detail,
+        }
+    }
+
+    /// Creates a wedge/pie-slice (2D flat quad).
+    /// `angle` is in radians (0 to 2*PI). A full circle at 2*PI.
+    pub fn wedge(radius: f32, angle: f32, detail: ShapeDetail) -> Self {
+        Self {
+            kind: ShapeKind::Wedge {
+                radius,
+                angle: angle.clamp(0.0, 2.0 * PI),
+            },
+            detail,
+        }
+    }
+
+    /// Creates a tapered cylinder (cone-frustum with flat top and bottom).
+    /// When `top_radius` == `bottom_radius`, equivalent to a regular cylinder.
+    pub fn tapered_cylinder(
+        top_radius: f32,
+        bottom_radius: f32,
+        height: f32,
+        detail: ShapeDetail,
+    ) -> Self {
+        Self {
+            kind: ShapeKind::TaperedCylinder {
+                top_radius,
+                bottom_radius,
+                height,
+            },
+            detail,
+        }
+    }
+
     /// Builds the shape into a Bevy `Mesh`.
     pub fn build(&self) -> Mesh {
         match &self.kind {
@@ -624,6 +721,18 @@ impl Shape {
             }
             ShapeKind::BezierCurve { control_points, thickness, segments } => {
                 build_bezier_curve(control_points.clone(), *thickness, *segments)
+            }
+            ShapeKind::Star { points, outer_radius, inner_radius } => {
+                build_star(*points, *outer_radius, *inner_radius, self.detail)
+            }
+            ShapeKind::Ring { outer_radius, inner_radius } => {
+                build_ring(*outer_radius, *inner_radius, self.detail)
+            }
+            ShapeKind::Wedge { radius, angle } => {
+                build_wedge(*radius, *angle, self.detail)
+            }
+            ShapeKind::TaperedCylinder { top_radius, bottom_radius, height } => {
+                build_tapered_cylinder(*top_radius, *bottom_radius, *height, self.detail)
             }
         }
     }
@@ -2150,6 +2259,215 @@ fn tessellate_bezier(control_points: &[Vec3], num_segments: u32) -> Vec<Vec3> {
     points
 }
 
+/// Build an N-pointed star as a 2D flat quad.
+fn build_star(points: u32, outer_radius: f32, inner_radius: f32, _detail: ShapeDetail) -> Mesh {
+    let n = points.max(2) as usize;
+    let mut vertices = vec![Vec3::ZERO]; // center vertex
+    let mut normals = vec![Vec3::new(0.0, 0.0, 1.0)];
+    let mut uvs = vec![Vec2::new(0.5, 0.5)]; // center UV
+
+    // Build outer ring of vertices: for each point, an outer vertex and an inner vertex
+    let mut outer_verts = Vec::new();
+    for i in 0..n {
+        let angle_outer = i as f32 * 2.0 * PI / n as f32 - PI / 2.0; // start from top
+        let angle_inner = (i as f32 + 0.5) * 2.0 * PI / n as f32 - PI / 2.0;
+
+        let ox = angle_outer.cos() * outer_radius;
+        let oy = angle_outer.sin() * outer_radius;
+        outer_verts.push(Vec2::new(ox, oy));
+
+        let ix = angle_inner.cos() * inner_radius;
+        let iy = angle_inner.sin() * inner_radius;
+        outer_verts.push(Vec2::new(ix, iy));
+    }
+
+    let center_idx = 0u32;
+    let mut indices = Vec::new();
+
+    // Add outer vertices and triangulate from center
+    for (i, v) in outer_verts.iter().enumerate() {
+        let idx = (i + 1) as u32;
+        vertices.push(Vec3::new(v.x, v.y, 0.0));
+        normals.push(Vec3::new(0.0, 0.0, 1.0));
+        uvs.push(Vec2::new(v.x / outer_radius * 0.5 + 0.5, v.y / outer_radius * 0.5 + 0.5));
+        // Each triangle: center, outer, inner (or center, inner, next outer)
+        if i + 1 < outer_verts.len() {
+            indices.extend_from_slice(&[center_idx, idx, idx + 1]);
+        }
+    }
+    // Close the last triangle
+    if !outer_verts.is_empty() {
+        indices.extend_from_slice(&[center_idx, outer_verts.len() as u32, 1]);
+    }
+
+    build_mesh(vertices, normals, uvs, indices)
+}
+
+/// Build a ring/annulus as a 2D flat quad with a hole.
+fn build_ring(outer_radius: f32, inner_radius: f32, detail: ShapeDetail) -> Mesh {
+    if inner_radius >= outer_radius || outer_radius <= 0.0 {
+        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, Vec::<Vec3>::new());
+        return mesh;
+    }
+    let segments = detail.segments() as usize;
+    let mut vertices = Vec::new();
+    let mut normals = Vec::new();
+    let mut uvs = Vec::new();
+    let mut indices = Vec::new();
+
+    // Generate outer and inner ring vertices
+    for i in 0..=segments {
+        let angle = i as f32 * 2.0 * PI / segments as f32;
+        let cos_a = angle.cos();
+        let sin_a = angle.sin();
+
+        // Outer vertex
+        vertices.push(Vec3::new(cos_a * outer_radius, sin_a * outer_radius, 0.0));
+        normals.push(Vec3::new(0.0, 0.0, 1.0));
+        uvs.push(Vec2::new(cos_a * 0.5 + 0.5, sin_a * 0.5 + 0.5));
+
+        // Inner vertex
+        vertices.push(Vec3::new(cos_a * inner_radius, sin_a * inner_radius, 0.0));
+        normals.push(Vec3::new(0.0, 0.0, 1.0));
+        uvs.push(Vec2::new(cos_a * (inner_radius / outer_radius) * 0.5 + 0.5, sin_a * (inner_radius / outer_radius) * 0.5 + 0.5));
+    }
+
+    // Generate quad indices between outer and inner rings
+    for i in 0..segments {
+        let o1 = (i * 2) as u32;
+        let o2 = ((i + 1) * 2) as u32;
+        let i1 = (i * 2 + 1) as u32;
+        let i2 = ((i + 1) * 2 + 1) as u32;
+        // Two triangles per quad
+        indices.extend_from_slice(&[o1, o2, i1]);
+        indices.extend_from_slice(&[i1, o2, i2]);
+    }
+
+    build_mesh(vertices, normals, uvs, indices)
+}
+
+/// Build a wedge/pie-slice as a 2D flat quad.
+fn build_wedge(radius: f32, angle: f32, detail: ShapeDetail) -> Mesh {
+    if angle <= 0.0 || radius <= 0.0 {
+        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, Vec::<Vec3>::new());
+        return mesh;
+    }
+    let segments = if angle >= 2.0 * PI - 0.001 {
+        // Full circle case: use disc-like triangulation
+        detail.segments() as usize
+    } else {
+        (detail.segments() as f32 * angle / (2.0 * PI)).ceil() as usize
+    };
+    let segments = segments.max(2);
+    let mut vertices = vec![Vec3::ZERO]; // center
+    let mut normals = vec![Vec3::new(0.0, 0.0, 1.0)];
+    let mut uvs = vec![Vec2::new(0.5, 0.5)];
+    let mut indices = Vec::new();
+
+    for i in 0..=segments {
+        let t = i as f32 / segments as f32;
+        let a = t * angle;
+        let x = a.cos() * radius;
+        let y = a.sin() * radius;
+        let idx = (i + 1) as u32;
+        vertices.push(Vec3::new(x, y, 0.0));
+        normals.push(Vec3::new(0.0, 0.0, 1.0));
+        uvs.push(Vec2::new(t * 0.5 + 0.5 * (a.cos() * 0.5 + 0.5), t * 0.5 + 0.5 * (a.sin() * 0.5 + 0.5)));
+        if i < segments {
+            indices.extend_from_slice(&[0, idx, idx + 1]);
+        }
+    }
+
+    build_mesh(vertices, normals, uvs, indices)
+}
+
+/// Build a tapered cylinder (cone-frustum with flat top and bottom).
+fn build_tapered_cylinder(
+    top_radius: f32,
+    bottom_radius: f32,
+    height: f32,
+    detail: ShapeDetail,
+) -> Mesh {
+    let segments = detail.segments() as usize;
+    let mut vertices = Vec::new();
+    let mut normals = Vec::new();
+    let mut uvs = Vec::new();
+    let mut indices = Vec::new();
+
+    let half_h = height / 2.0;
+
+    // Generate side vertices (bottom and top rings)
+    for i in 0..=segments {
+        let angle = i as f32 * 2.0 * PI / segments as f32;
+        let cos_a = angle.cos();
+        let sin_a = angle.sin();
+        let u = i as f32 / segments as f32;
+
+        // Bottom ring
+        vertices.push(Vec3::new(cos_a * bottom_radius, -half_h, sin_a * bottom_radius));
+        let bn = Vec3::new(cos_a, 0.0, sin_a).normalize();
+        normals.push(bn);
+        uvs.push(Vec2::new(u, 0.0));
+
+        // Top ring
+        vertices.push(Vec3::new(cos_a * top_radius, half_h, sin_a * top_radius));
+        let tn = Vec3::new(cos_a, 0.0, sin_a).normalize();
+        normals.push(tn);
+        uvs.push(Vec2::new(u, 1.0));
+    }
+
+    // Side faces: quads between bottom and top rings
+    for i in 0..segments {
+        let b1 = (i * 2) as u32;
+        let b2 = ((i + 1) * 2) as u32;
+        let t1 = (i * 2 + 1) as u32;
+        let t2 = ((i + 1) * 2 + 1) as u32;
+        // Compute proper normal for this face
+        let angle1 = i as f32 * 2.0 * PI / segments as f32;
+        let angle2 = (i + 1) as f32 * 2.0 * PI / segments as f32;
+        let mid_angle = (angle1 + angle2) / 2.0;
+        // Normal points outward, slightly tilted
+        let dx = mid_angle.cos() * top_radius - mid_angle.cos() * bottom_radius;
+        let dy = height;
+        let dz = mid_angle.sin() * top_radius - mid_angle.sin() * bottom_radius;
+        let side_normal = Vec3::new(dx, dy, dz).normalize();
+        // Override normals for this face's vertices
+        normals[b1 as usize] = side_normal;
+        normals[b2 as usize] = side_normal;
+        normals[t1 as usize] = side_normal;
+        normals[t2 as usize] = side_normal;
+
+        indices.extend_from_slice(&[b1, t1, b2]);
+        indices.extend_from_slice(&[b2, t1, t2]);
+    }
+
+    // Bottom cap (pointing down)
+    let bottom_center_idx = vertices.len() as u32;
+    vertices.push(Vec3::new(0.0, -half_h, 0.0));
+    normals.push(Vec3::new(0.0, -1.0, 0.0));
+    uvs.push(Vec2::new(0.5, 0.5));
+    for i in 0..segments {
+        let i1 = (i * 2) as u32;
+        let i2 = ((i + 1) * 2) as u32;
+        indices.extend_from_slice(&[bottom_center_idx, i1, i2]);
+    }
+
+    // Top cap (pointing up)
+    let top_center_idx = vertices.len() as u32;
+    vertices.push(Vec3::new(0.0, half_h, 0.0));
+    normals.push(Vec3::new(0.0, 1.0, 0.0));
+    uvs.push(Vec2::new(0.5, 0.5));
+    for i in 0..segments {
+        let i1 = (i * 2 + 1) as u32;
+        let i2 = ((i + 1) * 2 + 1) as u32;
+        indices.extend_from_slice(&[top_center_idx, i2, i1]);
+    }
+
+    build_mesh(vertices, normals, uvs, indices)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2794,5 +3112,97 @@ mod tests {
         // At t=0.5 (index 2), the point should be (2, 0, 0)
         assert!((points[2].x - 2.0).abs() < 1e-6, "Midpoint X should be 2.0");
         assert!((points[2].y).abs() < 1e-6, "Midpoint Y should be 0.0");
+    }
+
+    // ─── New shape tests ───
+
+    #[test]
+    fn star_generates_mesh() {
+        let mesh = Shape::star(5, 1.0, 0.4, ShapeDetail::Medium).build();
+        assert!(mesh.count_vertices() > 0, "Star must have vertices");
+        assert!(mesh.indices().is_some(), "Star must have indices");
+    }
+
+    #[test]
+    fn star_degenerate_2_points() {
+        // 2-point star should still produce a valid mesh
+        let mesh = Shape::star(2, 1.0, 0.3, ShapeDetail::Medium).build();
+        assert!(mesh.count_vertices() > 0, "2-point star must have vertices");
+    }
+
+    #[test]
+    fn star_hash_stability() {
+        let s1 = Shape::star(5, 1.0, 0.4, ShapeDetail::Medium);
+        let s2 = Shape::star(5, 1.0, 0.4, ShapeDetail::Medium);
+        assert_eq!(s1, s2, "Identical stars should be equal");
+    }
+
+    #[test]
+    fn ring_generates_mesh() {
+        let mesh = Shape::ring(1.0, 0.5, ShapeDetail::Medium).build();
+        assert!(mesh.count_vertices() > 0, "Ring must have vertices");
+        assert!(mesh.indices().is_some(), "Ring must have indices");
+    }
+
+    #[test]
+    fn ring_equal_radii_empty() {
+        // Ring with equal radii should produce empty mesh
+        let mesh = Shape::ring(1.0, 1.0, ShapeDetail::Medium).build();
+        assert_eq!(mesh.count_vertices(), 0, "Equal radius ring should be empty");
+    }
+
+    #[test]
+    fn ring_hash_stability() {
+        let r1 = Shape::ring(1.0, 0.5, ShapeDetail::Medium);
+        let r2 = Shape::ring(1.0, 0.5, ShapeDetail::Medium);
+        assert_eq!(r1, r2, "Identical rings should be equal");
+    }
+
+    #[test]
+    fn wedge_generates_mesh() {
+        let mesh = Shape::wedge(1.0, PI / 2.0, ShapeDetail::Medium).build();
+        assert!(mesh.count_vertices() > 0, "Wedge must have vertices");
+        assert!(mesh.indices().is_some(), "Wedge must have indices");
+    }
+
+    #[test]
+    fn wedge_full_circle() {
+        // 360° wedge should be like a disc
+        let mesh = Shape::wedge(1.0, 2.0 * PI, ShapeDetail::Medium).build();
+        assert!(mesh.count_vertices() > 0, "Full wedge must have vertices");
+    }
+
+    #[test]
+    fn wedge_zero_angle_empty() {
+        let mesh = Shape::wedge(1.0, 0.0, ShapeDetail::Medium).build();
+        assert_eq!(mesh.count_vertices(), 0, "Zero angle wedge should be empty");
+    }
+
+    #[test]
+    fn wedge_hash_stability() {
+        let w1 = Shape::wedge(1.0, PI / 3.0, ShapeDetail::Medium);
+        let w2 = Shape::wedge(1.0, PI / 3.0, ShapeDetail::Medium);
+        assert_eq!(w1, w2, "Identical wedges should be equal");
+    }
+
+    #[test]
+    fn tapered_cylinder_generates_mesh() {
+        let mesh = Shape::tapered_cylinder(0.5, 1.0, 2.0, ShapeDetail::Medium).build();
+        assert!(mesh.count_vertices() > 0, "Tapered cylinder must have vertices");
+        assert!(mesh.indices().is_some(), "Tapered cylinder must have indices");
+    }
+
+    #[test]
+    fn tapered_cylinder_equal_radii_like_cylinder() {
+        // Equal radii should produce a regular cylinder
+        let mesh = Shape::tapered_cylinder(1.0, 1.0, 2.0, ShapeDetail::Medium).build();
+        assert!(mesh.count_vertices() > 0, "Equal radius tapered cylinder must have vertices");
+    }
+
+    #[test]
+    fn tapered_cylinder_hash_stability() {
+        let t1 = Shape::tapered_cylinder(0.5, 1.0, 2.0, ShapeDetail::Medium);
+        let t2 = Shape::tapered_cylinder(0.5, 1.0, 2.0, ShapeDetail::Medium);
+        assert_eq!(t1, t2, "Identical tapered cylinders should be equal");
     }
 }
