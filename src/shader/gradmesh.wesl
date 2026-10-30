@@ -356,8 +356,11 @@ struct GradMeshUniform {
     world_center: vec4<f32>,
 }
 
-@group(constants::MATERIAL_BIND_GROUP) @binding(100)
+@group(3) @binding(100)
 var<uniform> gradmesh: GradMeshUniform;
+// Note: MATERIAL_BIND_GROUP_INDEX = 3 in Bevy 0.20
+// Using literal group number instead of constants::MATERIAL_BIND_GROUP
+// because the shader def is injected at pipeline specialization time.
 
 /// Compute gradient progress for the material extension path.
 /// Computes gradient in object space relative to each shape's center,
@@ -464,6 +467,7 @@ struct InstanceProperties {
 struct Vertex {
     @location(0) position: vec4<f32>,
     @location(1) normal: vec3<f32>,
+    @if(VERTEX_UVS_A)
     @location(2) uv: vec2<f32>,
     // Per-instance attributes
     @location(3) instance_col0: vec4<f32>,
@@ -571,8 +575,9 @@ fn vertex(input: Vertex) -> VertexOutput {
     out.world_position = worldPosition;
     out.position = position_world_to_clip(worldPosition.xyz);
     out.world_normal = worldNormal;
+@if(VERTEX_UVS_A) {
     out.uv = input.uv;
-
+}
     return out;
 }
 

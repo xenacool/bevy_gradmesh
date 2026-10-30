@@ -208,6 +208,16 @@ fn setup(
         Name::new("Camera3d"),
     ));
 
+    // 2D Camera for HUD text overlay
+    commands.spawn((
+        Camera2d::default(),
+        Camera {
+            order: 1,
+            ..default()
+        },
+        Name::new("Camera2d"),
+    ));
+
 
     // Lighting
     commands.spawn((
@@ -382,12 +392,12 @@ fn setup(
     // Coordinates text
     commands.spawn((
         Text2d("Pos: 0.0, 0.0, 0.0".into()),
-        TextColor(Color::srgba(0.6, 0.6, 0.7, 0.7)),
+        TextColor(Color::srgba(0.6, 0.6, 0.7, 0.9)),
         TextFont {
             font_size: FontSize::Px(18.0),
             ..default()
         },
-        Transform::from_xyz(40.0, 1010.0, 0.0),
+        Transform::from_xyz(40.0, -480.0, 0.0),
         Name::new("Coordinates Text"),
     ));
 
@@ -399,7 +409,7 @@ fn setup(
             font_size: FontSize::Px(18.0),
             ..default()
         },
-        Transform::from_xyz(40.0, 980.0, 0.0),
+        Transform::from_xyz(40.0, -510.0, 0.0),
         Name::new("Controls Text"),
     ));
 }
@@ -612,13 +622,19 @@ fn build_flat_road_mesh(half_width: f32, samples: u32) -> bevy::render::mesh::Me
     }
 
     // Closed loop: last segment wraps to first
+    // Each road segment forms a quad with 4 vertices:
+    //   a = right edge of segment i
+    //   b = left edge of segment i
+    //   c = right edge of segment next
+    //   d = left edge of segment next
+    // Triangulate as (a,b,c) and (b,d,c) for CCW winding (viewed from +Y).
     for i in 0..n {
         let next = (i + 1) % n;
         let a = (i * 2) as u32;
         let b = (i * 2 + 1) as u32;
         let c = (next * 2) as u32;
         let d = (next * 2 + 1) as u32;
-        indices.extend_from_slice(&[a, c, b, b, c, d]);
+        indices.extend_from_slice(&[a, b, c, b, d, c]);
     }
 
     let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
