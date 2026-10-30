@@ -266,7 +266,7 @@ fn build_combined_buffer(batch_data: &InstancedBatchData) -> Vec<u8> {
 /// Queue instanced batches into the opaque render phase with frustum culling and LOD.
 fn queue_instanced_batches(
     opaque_draw_functions: Res<DrawFunctions<Opaque3d>>,
-    instanced_pipeline: Res<InstancedPipeline>,
+    instanced_pipeline: Option<Res<InstancedPipeline>>,
     mut pipelines: ResMut<InstancedPipelineCache>,
     pipeline_cache: Res<PipelineCache>,
     meshes: Res<RenderAssets<RenderMesh>>,
@@ -278,6 +278,9 @@ fn queue_instanced_batches(
     mut stats: ResMut<InstancedStats>,
     lod_config: Option<Res<LodConfig>>,
 ) {
+    let Some(instanced_pipeline) = instanced_pipeline else {
+        return;
+    };
     let draw_instanced = opaque_draw_functions.read().id::<DrawInstancedBatch>();
 
     // Reset stats for this frame
@@ -464,11 +467,15 @@ impl Plugin for InstancedRenderPlugin {
 }
 
 /// Initialize the instanced pipeline resource.
+/// Gracefully skips if MeshPipeline is not available (e.g., when bevy_pbr is not loaded).
 fn init_instanced_pipeline(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mesh_pipeline: Res<MeshPipeline>,
+    mesh_pipeline: Option<Res<MeshPipeline>>,
 ) {
+    let Some(mesh_pipeline) = mesh_pipeline else {
+        return;
+    };
     use bevy::asset::AssetPath;
     let path = AssetPath::from_path_buf(
         bevy::asset::embedded_path!("shader/gradmesh.wesl"),
