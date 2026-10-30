@@ -1,12 +1,17 @@
 [package]
 name = "bevy_gradmesh"
-version = "0.1.5"
+version = "0.1.7"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Procedural mesh generation and gradient materials for Bevy"
 repository = "https://github.com/xenacool/bevy_gradmesh"
 readme = "README.md"
 exclude = ["screenshots/", "reference/", "target/", "Cargo.lock", "Makefile", "book/"]
+
+[profile.dev]
+# Reduce codegen units to speed up incremental compilation and reduce memory usage.
+# Default is the number of CPU cores (16), which increases linker memory significantly.
+codegen-units = 8
 
 [lints.clippy]
 all = { level = "warn", priority = -1 }
@@ -18,11 +23,19 @@ similar_names = "allow"
 too_many_lines = "allow"
 too_many_arguments = "allow"
 
+[features]
+default = ["pbr"]
+pbr = []
+
 [dependencies]
-bevy = { version = "0.20", default-features = false, features = ["bevy_pbr", "bevy_render", "bevy_log", "bevy_text", "bevy_ui", "debug", "default_font"] }
+bevy = { version = "0.20", default-features = false, features = ["bevy_core_pipeline", "bevy_pbr", "bevy_render", "bevy_log", "bevy_text", "bevy_ui", "bevy_winit", "x11", "wayland", "debug", "default_font"] }
 bevy_asset = "0.20"
 bevy_material = "0.20"
 bytemuck = "1.21"
+
+# Examples need tonemapping LUT textures and PNG support which the library does not require.
+[dev-dependencies]
+bevy = { version = "0.20", features = ["tonemapping_luts", "png"] }
 
 [[example]]
 name = "character_creator"

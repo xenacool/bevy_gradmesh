@@ -82,6 +82,12 @@ pub struct InstancedGpuBuffers {
     buffer: Buffer,
     /// Number of instances.
     instance_count: u32,
+    /// Storage buffer for per-instance properties (fragment shader access).
+    properties_storage: Buffer,
+    /// Uniform buffer for instanced_uniform (time + view_center).
+    uniform_buffer: Buffer,
+    /// Bind group for group 2 (storage + uniform).
+    bind_group: BindGroup,
 }
 
 // ─── Pipeline ───
@@ -106,11 +112,36 @@ pub type InstancedPipelineCache = SpecializedMeshPipelines<InstancedPipeline>;
 
 // ─── Draw Command ───
 
+/// Set the instanced bind group (group 2: storage + uniform).
+pub struct SetInstancedBindGroup;
+
+impl<P: PhaseItem> RenderCommand<P> for SetInstancedBindGroup {
+    type Param = ();
+    type ViewQuery = ();
+    type ItemQuery = Read<InstancedGpuBuffers>;
+
+    #[inline]
+    fn render<'w>(
+        _item: &P,
+        _view: (),
+        item_query: Option<&'w InstancedGpuBuffers>,
+        (): SystemParamItem<'w, '_, Self::Param>,
+        pass: &mut TrackedRenderPass<'w>,
+    ) -> RenderCommandResult {
+        let Some(gpu_buffers) = item_query else {
+            return RenderCommandResult::Skip;
+        };
+        pass.set_bind_group(2, &gpu_buffers.bind_group, &[]);
+        RenderCommandResult::Success
+    }
+}
+
 /// The draw command tuple for instanced batches.
 pub type DrawInstancedBatch = (
     SetItemPipeline,
     SetMeshViewBindGroup<0>,
     SetMeshBindGroup<1>,
+    SetInstancedBindGroup,
     DrawInstancedBatchImpl,
 );
 
@@ -203,6 +234,33 @@ fn prepare_instanced_buffers(
     new_batches: Query<(Entity, &InstancedBatchData), Without<InstancedGpuBuffers>>,
     dirty_batches: Query<(&InstancedBatchData, &InstancedGpuBuffers)>,
 ) {
+    // Create the bind group layout once (shared across all batches)
+    let bind_group_layout = render_device.create_bind_group_layout(
+        "instanced properties layout",
+        &[
+            BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 1,
+                visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: Some(std::num::NonZeroU64::new(48).map(|n| n.into()).unwrap()),
+                },
+                count: None,
+            },
+        ],
+    );
+
     // Create buffers for new batches
     for (entity, batch_data) in &new_batches {
         if batch_data.instance_count == 0 {
@@ -216,9 +274,39 @@ fn prepare_instanced_buffers(
             usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
         });
 
+        // Build the properties-only storage buffer for fragment shader access
+        let properties_storage_data = extract_properties_data(batch_data);
+        let properties_storage = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("instanced properties storage buffer"),
+            contents: bytemuck::cast_slice(&properties_storage_data),
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        });
+
+        // Create uniform buffer for instanced_uniform (time + view_center)
+        // InstancedUniform struct is 48 bytes due to WGSL uniform alignment rules
+        let uniform_data: [f32; 12] = [0.0; 12]; // 48 bytes
+        let uniform_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("instanced uniform buffer"),
+            contents: bytemuck::cast_slice(&uniform_data),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+
+        // Create bind group for group 2
+        let bind_group = render_device.create_bind_group(
+            "instanced bind group",
+            &bind_group_layout,
+            &BindGroupEntries::sequential((
+                properties_storage.as_entire_binding(),
+                uniform_buffer.as_entire_binding(),
+            )),
+        );
+
         commands.entity(entity).insert(InstancedGpuBuffers {
             buffer,
             instance_count: batch_data.instance_count,
+            properties_storage,
+            uniform_buffer,
+            bind_group,
         });
     }
 
@@ -230,7 +318,33 @@ fn prepare_instanced_buffers(
 
         let combined = build_combined_buffer(batch_data);
         render_queue.write_buffer(&gpu_buffers.buffer, 0, bytemuck::cast_slice(&combined));
+
+        // Also update the properties storage buffer
+        let properties_storage_data = extract_properties_data(batch_data);
+        render_queue.write_buffer(
+            &gpu_buffers.properties_storage,
+            0,
+            bytemuck::cast_slice(&properties_storage_data),
+        );
     }
+}
+
+/// Extract just the InstanceProperties data from batch data for the storage buffer.
+fn extract_properties_data(batch_data: &InstancedBatchData) -> Vec<u8> {
+    let property_stride = size_of::<InstanceProperties>();
+    let total_size = property_stride * batch_data.instance_count as usize;
+    let mut properties = Vec::with_capacity(total_size);
+
+    for i in 0..batch_data.instance_count as usize {
+        let p_start = i * property_stride;
+        if p_start + property_stride <= batch_data.properties.len() {
+            properties.extend_from_slice(
+                &batch_data.properties[p_start..p_start + property_stride],
+            );
+        }
+    }
+
+    properties
 }
 
 /// Build the interleaved transform+property buffer for a batch.
@@ -498,7 +612,24 @@ impl SpecializedMeshPipeline for InstancedPipeline {
 
         // Use the instanced shader for both vertex and fragment
         descriptor.vertex.shader = self.shader.clone();
+        descriptor.vertex.entry_point = Some(std::borrow::Cow::Borrowed("vertex"));
         descriptor.label = Some("instanced gradmesh pipeline".into());
+
+        // Inject MATERIAL_BIND_GROUP shader def so that Bevy PBR imports
+        // (pbr_bindings.wesl) can resolve constants::MATERIAL_BIND_GROUP.
+        // The instanced path doesn't actually use group 3, but the import chain
+        // requires the def to be present for shader compilation.
+        use bevy::shader::ShaderDefVal;
+        descriptor.vertex.shader_defs.push(ShaderDefVal::UInt(
+            "MATERIAL_BIND_GROUP".into(),
+            3,
+        ));
+        if let Some(ref mut fragment) = descriptor.fragment {
+            fragment.shader_defs.push(ShaderDefVal::UInt(
+                "MATERIAL_BIND_GROUP".into(),
+                3,
+            ));
+        }
 
         // Add the instanced vertex buffer layout
         // This buffer contains interleaved InstanceTransform + InstanceProperties per instance
@@ -534,6 +665,47 @@ impl SpecializedMeshPipeline for InstancedPipeline {
         if let Some(fragment) = descriptor.fragment.as_mut() {
             // Use custom shader if provided, otherwise use the built-in instanced shader
             fragment.shader = self.shader.clone();
+            fragment.entry_point = Some(std::borrow::Cow::Borrowed("instanced_fragment"));
+        }
+
+        // Replace the mesh/skinning/morph bind group layout (index 2) with our
+        // instanced properties layout.  The instanced shader doesn't use morph
+        // or skinning buffers, so we can safely overwrite this slot.
+        let instanced_layout = BindGroupLayoutDescriptor {
+            label: "instanced properties bind group layout".into(),
+            entries: vec![
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        // InstancedUniform is 48 bytes due to WGSL 16-byte alignment rules:
+                        // time(f32) + pad(12) + view_center(vec4=16) = 32 bytes,
+                        // but uniform buffers must be multiples of 16-byte alignment,
+                        // and vec4 at offset 16 pushes the size to 48.
+                        min_binding_size: Some(std::num::NonZeroU64::new(48).map(|n| n.into()).unwrap()),
+                    },
+                    count: None,
+                },
+            ],
+        };
+        // mesh_pipeline.specialize() produces [group0=view, group1=bind_array, group2=mesh].
+        // Replace group 2 with our instanced layout.
+        if descriptor.layout.len() > 2 {
+            descriptor.layout[2] = instanced_layout;
+        } else {
+            descriptor.layout.push(instanced_layout);
         }
 
         Ok(descriptor)

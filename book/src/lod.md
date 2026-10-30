@@ -50,3 +50,5 @@ fn log_stats(stats: Res<InstancedStats>) {
 ## Performance
 
 LOD reduces GPU workload for distant objects automatically. The dither cross-fade adds minimal overhead during transitions, and hysteresis prevents rapid LOD switching.
+
+![LOD Demo](../../screenshots/screenshot_lod_demo.png)

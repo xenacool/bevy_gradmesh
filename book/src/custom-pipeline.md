@@ -82,3 +82,5 @@ fn render(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
 - No deferred rendering support
 - No meshlet support
 - Gradient shading computed in world space (not object space)
+
+![Standalone Pipeline](../../screenshots/screenshot_standalone_pipeline.png)

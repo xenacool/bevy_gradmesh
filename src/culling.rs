@@ -151,46 +151,40 @@ impl FrustumPlanes {
         let m = *vp;
 
         // Extract planes from the view-projection matrix
-        // For a standard RH OpenGL perspective matrix, the planes are:
+        // For Bevy's RH 0..1 depth projection, the planes are:
         // Right:  M[3] + M[0]
         // Left:   M[3] - M[0]
         // Top:    M[3] + M[1]
         // Bottom: M[3] - M[1]
         // Far:    M[3] - M[2]
-        // Near:   M[3] + M[2]
+        // Near:   M[2]
         //
         // However, the sign convention depends on the projection. We normalize
-        // so that the plane normal points inward (toward the frustum center).
+        // Orient each plane toward a point inside the clip volume.
 
-        let right = Self::extract_plane_inward(&m, m.w_axis + m.x_axis);
-        let left = Self::extract_plane_inward(&m, m.w_axis - m.x_axis);
-        let top = Self::extract_plane_inward(&m, m.w_axis + m.y_axis);
-        let bottom = Self::extract_plane_inward(&m, m.w_axis - m.y_axis);
-        let far = Self::extract_plane_inward(&m, m.w_axis - m.z_axis);
-        let near = Self::extract_plane_inward(&m, m.w_axis + m.z_axis);
+        let center_clip = m.inverse().project_point3(Vec3::new(0.0, 0.0, 0.5));
+        let right = Self::extract_plane_inward(m.w_axis - m.x_axis, center_clip);
+        let left = Self::extract_plane_inward(m.w_axis + m.x_axis, center_clip);
+        let top = Self::extract_plane_inward(m.w_axis - m.y_axis, center_clip);
+        let bottom = Self::extract_plane_inward(m.w_axis + m.y_axis, center_clip);
+        let far = Self::extract_plane_inward(m.w_axis - m.z_axis, center_clip);
+        let near = Self::extract_plane_inward(m.z_axis, center_clip);
 
         Self {
             planes: [right, left, top, bottom, far, near],
         }
     }
 
-    fn extract_plane_inward(_m: &Mat4, v: bevy::math::Vec4) -> FrustumPlane {
+    fn extract_plane_inward(v: bevy::math::Vec4, inside_point: Vec3) -> FrustumPlane {
         let len = v.xyz().length();
         if len > 0.0 {
-            let abc = v.xyz() / len;
-            let d = v.w / len;
-            // Ensure the plane normal points inward by checking against the
-            // frustum center (approximate: transform origin by inverse VP)
-            // For simplicity, we check the camera position (origin in view space)
-            // The camera origin in world space is the 4th column of the view matrix
-            // For a VP matrix, the camera is at the point where the view transform places it
-            // We use a heuristic: the origin should be inside, so flip if needed
-            if abc.dot(Vec3::ZERO) + d < 0.0 {
-                // Origin is outside; flip the plane
-                FrustumPlane { abc: -abc, d: -d }
-            } else {
-                FrustumPlane { abc, d }
+            let mut abc = v.xyz() / len;
+            let mut d = v.w / len;
+            if abc.dot(inside_point) + d < 0.0 {
+                abc = -abc;
+                d = -d;
             }
+            FrustumPlane { abc, d }
         } else {
             FrustumPlane {
                 abc: Vec3::ZERO,
@@ -331,7 +325,7 @@ mod tests {
     #[test]
     fn frustum_planes_from_perspective() {
         // Build a simple view-projection matrix: camera at (0,0,5) looking at origin
-        // Using a standard perspective projection matrix (right-handed, OpenGL-style)
+        // Using a standard right-handed 0..1 depth perspective matrix.
         let fov: f32 = 1.0;
         let aspect = 16.0 / 9.0;
         let near = 0.1;
@@ -342,7 +336,7 @@ mod tests {
         let proj = Mat4::from_cols(
             bevy::math::Vec4::new(f / aspect, 0.0, 0.0, 0.0),
             bevy::math::Vec4::new(0.0, f, 0.0, 0.0),
-            bevy::math::Vec4::new(0.0, 0.0, far / nfar, 1.0),
+            bevy::math::Vec4::new(0.0, 0.0, far / nfar, -1.0),
             bevy::math::Vec4::new(0.0, 0.0, near * far / nfar, 0.0),
         );
         // Camera at (0,0,5) looking toward -Z (toward origin)
@@ -364,7 +358,7 @@ mod tests {
         let proj = Mat4::from_cols(
             bevy::math::Vec4::new(f, 0.0, 0.0, 0.0),
             bevy::math::Vec4::new(0.0, f, 0.0, 0.0),
-            bevy::math::Vec4::new(0.0, 0.0, far / nfar, 1.0),
+            bevy::math::Vec4::new(0.0, 0.0, far / nfar, -1.0),
             bevy::math::Vec4::new(0.0, 0.0, near * far / nfar, 0.0),
         );
         let view = Mat4::from_translation(Vec3::new(0.0, 0.0, -5.0));
@@ -412,7 +406,7 @@ mod tests {
         let proj = Mat4::from_cols(
             bevy::math::Vec4::new(f, 0.0, 0.0, 0.0),
             bevy::math::Vec4::new(0.0, f, 0.0, 0.0),
-            bevy::math::Vec4::new(0.0, 0.0, far / nfar, 1.0),
+            bevy::math::Vec4::new(0.0, 0.0, far / nfar, -1.0),
             bevy::math::Vec4::new(0.0, 0.0, near * far / nfar, 0.0),
         );
         let view = Mat4::from_translation(Vec3::new(0.0, 0.0, -2.0));

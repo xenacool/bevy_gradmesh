@@ -140,6 +140,54 @@ Playable racing demo with a Bézier-curve track, PBR kart, collectible coins, an
 
 ![Kart Racer](screenshots/screenshot_kart_racer.png)
 
+### GPU Deformation
+
+Vertex shader wobble, pulse, and morph effects with zero CPU overhead:
+
+![GPU Deformation](screenshots/screenshot_deformation.png)
+
+### Appearance Animation
+
+Per-instance color animation (ColorPulse, ColorCycle, GradientShift) resolved in the shader:
+
+![Appearance Animation](screenshots/screenshot_appearance.png)
+
+### Retained Mode
+
+Persistent shapes via `GradMeshHandle` with batched instancing:
+
+![Retained Mode](screenshots/screenshot_retained.png)
+
+### Standalone Pipeline
+
+PBR-free rendering with zero descriptor pool pressure — one pipeline, one descriptor set:
+
+![Standalone Pipeline](screenshots/screenshot_standalone_pipeline.png)
+
+### Advanced Shapes
+
+Star, ring, wedge, colored polygon, tapered cylinder, torus arc, and hemisphere:
+
+![Advanced Shapes](screenshots/screenshot_advanced_shapes.png)
+
+### LOD Demo
+
+Distance-based level-of-detail with dither cross-fade eliminating pop-in:
+
+![LOD Demo](screenshots/screenshot_lod_demo.png)
+
+### Frustum Culling
+
+Per-instance AABB culling against camera frustum planes with real-time stats:
+
+![Frustum Culling](screenshots/screenshot_culling_demo.png)
+
+### Instanced Rendering
+
+500 spheres rendered in a single GPU batch:
+
+![Instanced Rendering](screenshots/screenshot_instanced.png)
+
 ### Capturing Screenshots
 
 To automatically capture screenshots of all examples, run:

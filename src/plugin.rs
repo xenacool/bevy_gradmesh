@@ -27,7 +27,6 @@ use bevy::render::mesh::Mesh;
 use crate::deformation::Deformation;
 use crate::material::GradMeshExtension;
 use crate::material_interning::{GradMeshMaterialPool, warn_excessive_materials};
-use crate::render_pipeline::InstancedStats;
 use crate::standalone_pipeline::StandaloneRenderPlugin;
 use crate::shape::Shape;
 
@@ -125,7 +124,18 @@ impl MeshCache {
 ///     .add_plugins(GradMeshPlugin)
 ///     .run();
 /// ```
-pub struct GradMeshPlugin;
+///
+/// # Mobile
+///
+/// On mobile GPUs (e.g., Mali-G715), the `ExtendedMaterial` path can fragment
+/// the Vulkan descriptor pool and crash after the first frame.  Use
+/// `GradMeshPlugin::for_mobile()` to register only the standalone pipeline,
+/// which avoids the PBR descriptor overhead entirely.
+pub struct GradMeshPlugin {
+    /// When `true`, register only the standalone render path and skip the
+    /// `ExtendedMaterial` / `InstancedRenderPlugin` path that depends on PBR.
+    mobile: bool,
+}
 
 #[cfg(test)]
 mod tests {
@@ -210,17 +220,49 @@ fn tick_deformation(mut deformation: ResMut<Deformation>, time: Res<bevy::time::
     deformation.tick(time.delta().as_secs_f32());
 }
 
+impl GradMeshPlugin {
+    /// Create a plugin configured for mobile GPUs.
+    ///
+    /// This registers only the standalone render pipeline, skipping the
+    /// `ExtendedMaterial` path that causes `VK_ERROR_FRAGMENTED_POOL` on
+    /// Mali-G715 and similar GPUs.
+    ///
+    /// ```ignore
+    /// App::new()
+    ///     .add_plugins(DefaultPlugins)
+    ///     .add_plugins(GradMeshPlugin::for_mobile())
+    ///     .run();
+    /// ```
+    pub fn for_mobile() -> Self {
+        Self { mobile: true }
+    }
+}
+
+impl Default for GradMeshPlugin {
+    fn default() -> Self {
+        Self { mobile: false }
+    }
+}
+
 impl Plugin for GradMeshPlugin {
     fn build(&self, app: &mut bevy::app::App) {
         // Embed the shaders so they're available when plugins load them
         bevy::asset::embedded_asset!(app, "shader/gradmesh.wesl");
         bevy::asset::embedded_asset!(app, "shader/standalone.wgsl");
 
-        app.add_plugins(MaterialPlugin::<ExtendedMaterial<StandardMaterial, GradMeshExtension>>::default())
-            .add_plugins(crate::instanced_render::InstancedRenderPlugin)
-            .add_plugins(StandaloneRenderPlugin)
-            .init_resource::<MeshCache>()
-            .init_resource::<InstancedStats>()
+        if self.mobile {
+            // Mobile path: standalone pipeline only — no ExtendedMaterial,
+            // no InstancedRenderPlugin, no PBR descriptor pressure.
+            app.add_plugins(StandaloneRenderPlugin);
+        } else {
+            // Desktop path: full PBR + standalone
+            // Instancing is handled by Bevy's native RenderMeshInstances —
+            // no custom instanced render plugin needed.
+            app.add_plugins(MaterialPlugin::<ExtendedMaterial<StandardMaterial, GradMeshExtension>>::default())
+                .add_plugins(StandaloneRenderPlugin);
+        }
+
+        app.init_resource::<MeshCache>()
             .init_resource::<Deformation>()
             .init_resource::<GradMeshMaterialPool>()
             .add_systems(bevy::app::Update, tick_deformation)

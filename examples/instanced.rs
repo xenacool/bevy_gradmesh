@@ -29,7 +29,7 @@ fn main() {
             synchronous_pipeline_compilation: true,
             ..default()
         }))
-        .add_plugins(GradMeshPlugin)
+        .add_plugins(GradMeshPlugin::default())
         .add_plugins(
             AutoScreenshotPlugin::new("screenshot_instanced.png")
                 .with_title("Instanced Rendering")
@@ -70,12 +70,16 @@ fn setup(
         affects_lightmapped_meshes: false,
     });
 
-    // Ground plane
-    let ground = meshes.add(Plane3d::new(Vec3::Y, Vec2::splat(30.0)));
+    // Bowl-shaped ground — a large sphere centered below the scene so the
+    // smaller spheres appear to rest on a curved surface rather than floating
+    // above a flat plane.
+    let ground = meshes.add(
+        bevy_gradmesh::Shape::sphere(14.0, ShapeDetail::Medium).build()
+    );
     commands.spawn((
         Mesh3d(ground),
         MeshMaterial3d(materials.add(bevy_gradmesh::opaque(0.1, 0.1, 0.12))),
-        Transform::from_translation(Vec3::new(0.0, -0.01, 0.0)),
+        Transform::from_translation(Vec3::new(0.0, -18.0, 0.0)),
     ));
 
     // Label
@@ -123,6 +127,7 @@ fn draw_instanced(
     time: Res<Time>,
     mut commands: Commands,
     meshes: ResMut<Assets<bevy::render::mesh::Mesh>>,
+    mut materials: ResMut<Assets<bevy_gradmesh::GradMeshMaterial>>,
     mut recorder: ResMut<InstancedRecorder>,
     query: Query<Entity, With<InstancedMarker>>,
 ) {
@@ -164,8 +169,8 @@ fn draw_instanced(
 
     let _batches = recorder.0.end();
 
-    // Render batches via GPU instanced pipeline — single draw_indexed per batch
-    let spawned_entities = recorder.0.render_batches(&mut commands, meshes, None);
+    // Render batches as native Bevy entities — Bevy handles instancing automatically
+    let spawned_entities = recorder.0.render_batches(&mut commands, meshes, materials, None);
 
     // Tag spawned entities for next frame's cleanup
     for entity_id in spawned_entities {

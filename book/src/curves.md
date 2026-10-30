@@ -61,6 +61,34 @@ let mesh = Shape::polyline3d(points, 0.05, false, 8, ShapeDetail::Medium).build(
 let mesh = Shape::polyline3d(points, 0.05, true, 8, ShapeDetail::Medium).build();
 ```
 
+### Joint Quality
+
+Polylines use **blended-frame joints** (angle bisector method) for smooth tube
+connections at each vertex. This produces clean, gap-free joints even at sharp
+corners, unlike simple miter or round joins that can leave artifacts.
+
+The `segments` parameter controls the cross-section resolution of the tube:
+higher values produce smoother circles but use more vertices.
+
+```rust
+// Thin tube, 8 cross-section segments
+let mesh = Shape::polyline3d(points, 0.05, false, 8, ShapeDetail::Medium).build();
+
+// Thick tube, 12 cross-section segments for smoother joints
+let mesh = Shape::polyline3d(points, 0.15, false, 12, ShapeDetail::Medium).build();
+```
+
+See the `polyline` example for a visual comparison of sharp-angle joints vs.
+smooth curves.
+
+## Polyline Configuration
+
+The `PolylineConfig` and `PolylineCache` types provide additional control over
+polyline rendering:
+
+- `PolylineConfig` — controls tube thickness, segment count, and joint style
+- `PolylineCache` — caches generated polyline geometry for reuse
+
 ## Use Cases
 
 - **Track paths**: Define racing tracks with Bézier curves

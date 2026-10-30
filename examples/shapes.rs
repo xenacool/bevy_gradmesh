@@ -22,7 +22,7 @@ fn main() {
             synchronous_pipeline_compilation: true,
             ..default()
         }))
-        .add_plugins(GradMeshPlugin)
+        .add_plugins(GradMeshPlugin::default())
         .add_plugins(
             AutoScreenshotPlugin::new("screenshot_shapes.png")
                 .with_title("Shape Showcase")

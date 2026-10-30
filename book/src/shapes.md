@@ -125,3 +125,5 @@ Renders as tube geometry along the point path.
 Shape::bezier_curve(control_points, thickness, segments, detail)
 ```
 Supports linear (2 points), quadratic (3 points), and cubic (4+ points) Bézier curves rendered as tubes.
+
+![Advanced Shapes](../../screenshots/screenshot_advanced_shapes.png)

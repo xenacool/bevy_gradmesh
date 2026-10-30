@@ -67,3 +67,5 @@ fn draw(mut recorder: ResMut<BatchRecorder>) {
 ## Performance
 
 Deformation is free for batched instances since it runs entirely in the vertex shader. No additional draw calls or CPU work is needed.
+
+![GPU Deformation](../../screenshots/screenshot_deformation.png)

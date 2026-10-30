@@ -46,7 +46,7 @@ impl PolylineConfig {
     /// polylines — only point positions need updating via buffer writes.
     pub fn build_gpu_mesh(&self) -> Mesh {
         if self.points.is_empty() {
-            let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD);
+            let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
             mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, Vec::<Vec3>::new());
             return mesh;
         }
@@ -65,20 +65,71 @@ impl PolylineConfig {
         let points = &self.points;
         let total_segments = if self.closed { points.len() } else { points.len() - 1 };
 
+        // Precompute blended frames at each vertex for smooth joints.
+        // At intermediate vertices, the blended direction is the normalized average
+        // of incoming and outgoing segment directions (the angle bisector).
+        // This ensures adjacent cylinder segments share aligned end-ring vertices.
+        let n = points.len();
+        let mut vertex_up = Vec::with_capacity(n);
+        let mut vertex_right = Vec::with_capacity(n);
+
+        for i in 0..n {
+            // Incoming direction: from previous point to this point
+            let incoming = if !self.closed && i == 0 {
+                // Start of open polyline: use the first segment direction
+                (points[1] - points[0]).normalize()
+            } else if !self.closed && i == n - 1 {
+                // End of open polyline: use the last segment direction
+                (points[n - 1] - points[n - 2]).normalize()
+            } else {
+                // Closed polyline or intermediate vertex
+                let prev_idx = if self.closed { (i + n - 1) % n } else { i - 1 };
+                (points[i] - points[prev_idx]).normalize()
+            };
+            
+            // Outgoing direction: from this point to next point
+            let outgoing = if !self.closed && i == 0 {
+                // Start of open polyline: use the first segment direction
+                (points[1] - points[0]).normalize()
+            } else if !self.closed && i == n - 1 {
+                // End of open polyline: use the last segment direction
+                (points[n - 1] - points[n - 2]).normalize()
+            } else {
+                // Closed polyline or intermediate vertex
+                let next_idx = if self.closed { (i + 1) % n } else { i + 1 };
+                (points[next_idx] - points[i]).normalize()
+            };
+            
+            // Blended direction is the angle bisector
+            let blended = incoming + outgoing;
+            let blended = if blended.length_squared() < 1e-6 {
+                // Collinear or opposite directions; fallback to incoming
+                incoming
+            } else {
+                blended.normalize()
+            };
+            
+            let (up, right) = perpendicular_axes(&blended);
+            vertex_up.push(up);
+            vertex_right.push(right);
+        }
+
         // Build cylinder segments between consecutive points
         for i in 0..total_segments {
             let start = points[i];
-            let end = points[if self.closed && i == total_segments - 1 { 0 } else { i + 1 }];
+            let end_idx = if self.closed && i == total_segments - 1 { 0 } else { i + 1 };
+            let end = points[end_idx];
             let dir = end - start;
             let seg_len = dir.length();
 
             if seg_len < 1e-6 {
                 continue;
             }
-            let dir = dir.normalize();
 
-            // Find two perpendicular axes for the tube cross-section
-            let (up, right) = perpendicular_axes(&dir);
+            // Use the blended frame at each vertex for the cross-section
+            // This ensures adjacent segments share aligned vertices at joints
+            let (start_up, start_right) = (vertex_up[i], vertex_right[i]);
+            let (end_up, end_right) = (vertex_up[end_idx], vertex_right[end_idx]);
 
             let base_idx = positions.len() as u32;
 
@@ -88,17 +139,18 @@ impl PolylineConfig {
                 let cos_a = angle.cos();
                 let sin_a = angle.sin();
 
-                let radial = up * cos_a + right * sin_a;
+                let radial_start = start_up * cos_a + start_right * sin_a;
+                let radial_end = end_up * cos_a + end_right * sin_a;
                 let uv = bevy::math::Vec2::new(j as f32 / seg as f32, i as f32 / total_segments as f32);
 
-                // Start cap vertex
-                positions.push(start + radial * self.thickness);
-                normals.push(radial);
+                // Start ring vertex
+                positions.push(start + radial_start * self.thickness);
+                normals.push(radial_start);
                 uvs.push(uv);
 
-                // End cap vertex
-                positions.push(end + radial * self.thickness);
-                normals.push(radial);
+                // End ring vertex
+                positions.push(end + radial_end * self.thickness);
+                normals.push(radial_end);
                 uvs.push(bevy::math::Vec2::new(j as f32 / seg as f32, (i + 1) as f32 / total_segments as f32));
             }
 
@@ -133,7 +185,7 @@ impl PolylineConfig {
             );
         }
 
-        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD);
+        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
         mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
@@ -237,7 +289,7 @@ fn build_sphere_mesh(center: Vec3, thickness: f32, segments: u32) -> Mesh {
         }
     }
 
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD);
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
@@ -359,5 +411,67 @@ mod tests {
         cache.get_or_build(&config);
         // The cache should have only one entry
         assert_eq!(cache.inner.len(), 1);
+    }
+
+    #[test]
+    fn debug_open_polyline_mesh_bounds() {
+        // Reproduce the zigzag from the example
+        let pts: Vec<Vec3> = (0..=6).map(|i| {
+            let t = i as f32 / 6.0;
+            let x = -3.0 + t * 6.0;
+            let y = if i % 2 == 0 { 0.0 } else { 0.8 };
+            Vec3::new(x, y, 0.0)
+        }).collect();
+        
+        let config = PolylineConfig {
+            points: pts.clone(),
+            thickness: 0.1,
+            closed: false,
+            segments: 8,
+        };
+        let mesh = config.build_gpu_mesh();
+        
+        let verts = mesh.count_vertices();
+        let indices = mesh.indices().map(|i| match i {
+            bevy::render::mesh::Indices::U32(i) => i.len(),
+            bevy::render::mesh::Indices::U16(i) => i.len(),
+        }).unwrap_or(0);
+        println!("Open zigzag: {} vertices, {} indices", verts, indices);
+        
+        let positions: Vec<[f32; 3]> = match mesh.attribute(Mesh::ATTRIBUTE_POSITION).expect("Missing positions") {
+            bevy::render::mesh::VertexAttributeValues::Float32x3(v) => v.clone(),
+            _ => panic!("Expected Float32x3 positions"),
+        };
+        
+        // Expected: 6 segments * 8 angles * 2 verts + 2 caps * (4 rings+1) * 8 angles
+        // = 96 cylinder verts + 2 * 5 * 8 = 96 + 80 = 176 verts
+        // That matches! So cylinder segments ARE being generated.
+        // Let's check the first few positions
+        println!("First 10 positions:");
+        for (i, p) in positions.iter().take(10).enumerate() {
+            println!("  [{}] ({:.3}, {:.3}, {:.3})", i, p[0], p[1], p[2]);
+        }
+        
+        let mut min_x = f32::MAX;
+        let mut min_y = f32::MAX;
+        let mut min_z = f32::MAX;
+        let mut max_x = f32::MIN;
+        let mut max_y = f32::MIN;
+        let mut max_z = f32::MIN;
+        for p in &positions {
+            min_x = min_x.min(p[0]); max_x = max_x.max(p[0]);
+            min_y = min_y.min(p[1]); max_y = max_y.max(p[1]);
+            min_z = min_z.min(p[2]); max_z = max_z.max(p[2]);
+        }
+        println!("Bounds: X=[{:.3}, {:.3}], Y=[{:.3}, {:.3}], Z=[{:.3}, {:.3}]", min_x, max_x, min_y, max_y, min_z, max_z);
+        println!("Extent: X={:.3}, Y={:.3}, Z={:.3}", max_x-min_x, max_y-min_y, max_z-min_z);
+        
+        // Check: how many unique Y values?
+        let mut y_values: Vec<f32> = positions.iter().map(|p| p[1]).collect();
+        y_values.sort_by(|a, b| a.partial_cmp(b).unwrap().then(std::cmp::Ordering::Equal));
+        println!("Y range samples: min={:.4}, max={:.4}", y_values.first().unwrap_or(&0.0), y_values.last().unwrap_or(&0.0));
+        
+        assert!(verts > 0, "Open polyline must have vertices");
+        assert!(indices > 0, "Open polyline must have indices");
     }
 }

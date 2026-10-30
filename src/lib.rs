@@ -45,7 +45,6 @@ pub mod batch;
 pub mod plugin;
 pub mod retained;
 pub mod render_pipeline;
-pub mod instanced_render;
 pub mod standalone_pipeline;
 pub mod culling;
 pub mod polyline_gpu;
@@ -65,14 +64,13 @@ pub use immediate::{
     imm_opaque, imm_transparent, imm_additive, imm_dual_directional,
 };
 pub use batch::{
-    BatchRecorder, Batch, BatchKey, InstanceTransform, InstanceProperties,
+    BatchRecorder, Batch, BatchKey, InstanceTransform, InstanceProperties, VoxelBatchRecorder,
 };
 pub use plugin::{GradMeshPlugin, MeshCache};
 pub use retained::{GradMeshHandle, RetainedWorld};
 pub use render_pipeline::{
     InstancedBufferData, GradMeshBatchItem, InstancedBatch, InstancedStats,
 };
-pub use instanced_render::{InstancedBatchData, InstancedRenderPlugin};
 pub use lod::{LodConfig, LodResult, LOD_MINIMAL, LOD_LOW, LOD_MEDIUM, LOD_HIGH, LOD_EXTREME};
 pub use deformation::{DeformationType, DeformationParams, Deformation};
 pub use appearance::{AppearanceSnapshot, AppearanceType};

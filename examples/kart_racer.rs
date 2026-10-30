@@ -36,12 +36,12 @@ fn main() {
             synchronous_pipeline_compilation: true,
             ..default()
         }))
-        .add_plugins(GradMeshPlugin)
+        .add_plugins(GradMeshPlugin::default())
         .add_plugins(
             AutoScreenshotPlugin::new("screenshot_kart_racer.png")
                 .with_title("Kart Racer")
                 .with_description("Bézier track, PBR kart, collectibles, HUD")
-                .wait_frames(5)
+                .wait_frames(15)
         )
         .insert_resource(ClearColor(Color::srgb(0.1, 0.15, 0.3)))
         .insert_resource(LapTimer::default())
@@ -1157,6 +1157,7 @@ fn draw_decorations(
     time: Res<Time>,
     mut commands: Commands,
     meshes: ResMut<Assets<bevy::render::mesh::Mesh>>,
+    mut materials: ResMut<Assets<GradMeshMaterial>>,
     mut recorder: ResMut<DecorationsRecorder>,
     query: Query<Entity, With<DecorationMarker>>,
 ) {
@@ -1164,7 +1165,7 @@ fn draw_decorations(
         commands.entity(entity).despawn();
     }
     populate_decorations(&mut recorder.0, time.elapsed_secs());
-    let spawned = recorder.0.render_batches(&mut commands, meshes, None);
+    let spawned = recorder.0.render_batches(&mut commands, meshes, materials, None);
     for eid in spawned {
         commands.entity(eid).insert(DecorationMarker);
     }

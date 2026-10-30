@@ -33,13 +33,10 @@
 
 use std::mem::size_of;
 
-use bevy::core_pipeline::core_3d::{Opaque3d, Opaque3dBatchSetKey, Opaque3dBinKey};
+use bevy::core_pipeline::core_3d::{CORE_3D_DEPTH_FORMAT, Opaque3d, Opaque3dBatchSetKey, Opaque3dBinKey};
 use bevy::ecs::system::{lifetimeless::*, SystemParamItem};
-use bevy::mesh::{MeshVertexBufferLayoutRef, VertexBufferLayout};
-use bevy::pbr::{
-    MeshPipeline, MeshPipelineKey, RenderMeshInstances, SetMeshBindGroup, SetMeshViewBindGroup,
-    ViewKeyCache,
-};
+use bevy::math::Affine3A;
+use bevy::mesh::{Mesh, MeshVertexBufferLayout, MeshVertexBufferLayoutRef, VertexBufferLayout};
 use bevy::prelude::*;
 use bevy::render::extract_component::{ExtractComponent, ExtractComponentPlugin};
 use bevy::render::mesh::allocator::MeshSlabs;
@@ -50,11 +47,17 @@ use bevy::render::render_phase::{
     RenderCommand, RenderCommandResult, SetItemPipeline, TrackedRenderPass,
     ViewBinnedRenderPhases,
 };
-use bevy::render::render_resource::*;
+use bevy::render::render_resource::{
+    binding_types::uniform_buffer, BindGroupEntries, BindGroupLayoutEntries,
+    *,
+};
+use std::borrow::Cow;
 use bevy::render::renderer::RenderDevice;
 use bevy::render::sync_world::MainEntity;
-use bevy::render::view::ExtractedView;
+use bevy::render::view::{ExtractedView, Msaa};
 use bevy::render::{Render, RenderApp, RenderStartup, RenderSystems};
+use bevy::ecs::query::ROQueryItem;
+use bevy::transform::components::GlobalTransform;
 
 use crate::batch::{InstanceProperties, InstanceTransform};
 use crate::culling::{self, AABB};
@@ -98,101 +101,266 @@ pub struct StandaloneGpuBuffers {
 
 // ─── Pipeline ───
 
-/// The standalone pipeline for GradMesh rendering (no PBR).
+/// The standalone pipeline for GradMesh rendering (no PBR dependency).
 #[derive(Resource)]
 pub struct StandalonePipeline {
-    /// The base mesh pipeline for specialization.
-    mesh_pipeline: MeshPipeline,
     /// Shader handle for the standalone WGSL shader.
     shader: Handle<Shader>,
+    /// Bind group layout descriptor for the view uniform (group 0).
+    view_bind_group_layout: BindGroupLayoutDescriptor,
 }
 
 impl StandalonePipeline {
-    pub fn new(mesh_pipeline: MeshPipeline, shader: Handle<Shader>) -> Self {
-        Self { mesh_pipeline, shader }
+    pub fn new(shader: Handle<Shader>) -> Self {
+        let view_bind_group_layout = BindGroupLayoutDescriptor::new(
+            "standalone view layout",
+            &BindGroupLayoutEntries::sequential(
+                ShaderStages::VERTEX,
+                (uniform_buffer::<StandaloneViewUniform>(true),),
+            ),
+        );
+        Self {
+            shader,
+            view_bind_group_layout,
+        }
     }
+}
+
+/// Uniform buffer sent to the standalone shader's @group(0).
+#[derive(Debug, Clone, Copy, ShaderType, bytemuck::Pod, bytemuck::Zeroable)]
+#[repr(C)]
+struct StandaloneViewUniform {
+    view_proj: [f32; 16],
+    time: f32,
+    _pad: [f32; 3],
 }
 
 /// Specialized pipelines cache for standalone rendering.
 pub type StandalonePipelineCache = SpecializedMeshPipelines<StandalonePipeline>;
 
-/// Empty pipeline key — all standalone batches share the same pipeline.
+/// Minimal pipeline key for standalone rendering: only topology, index format, and MSAA.
 #[derive(Default, Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct StandalonePipelineKey;
+pub struct StandalonePipelineKey(u32);
+
+impl StandalonePipelineKey {
+    const PRIMITIVE_TOPOLOGY_TRIANGLE_LIST: u32 = 0;
+    const PRIMITIVE_TOPOLOGY_POINT_LIST: u32 = 1 << 0;
+    const PRIMITIVE_TOPOLOGY_LINE_LIST: u32 = 1 << 0;
+    const PRIMITIVE_TOPOLOGY_LINE_STRIP: u32 = 1 << 1;
+
+    const INDEX_FORMAT_UINT16: u32 = 1 << 2;
+    const INDEX_FORMAT_UINT32: u32 = 1 << 3;
+
+    const MSAA_2X: u32 = 1 << 4;
+    const MSAA_4X: u32 = 1 << 5;
+    const MSAA_8X: u32 = 1 << 6;
+
+    fn from_mesh_and_msaa(topology: PrimitiveTopology, index_format: Option<IndexFormat>, msaa: Msaa) -> Self {
+        let mut key: u32 = 0;
+        match topology {
+            PrimitiveTopology::TriangleList => {}
+            PrimitiveTopology::PointList => key |= Self::PRIMITIVE_TOPOLOGY_POINT_LIST,
+            PrimitiveTopology::LineList => key |= Self::PRIMITIVE_TOPOLOGY_LINE_LIST,
+            PrimitiveTopology::LineStrip => key |= Self::PRIMITIVE_TOPOLOGY_LINE_STRIP,
+            _ => {}
+        }
+        match index_format {
+            Some(IndexFormat::Uint16) => key |= Self::INDEX_FORMAT_UINT16,
+            Some(IndexFormat::Uint32) => key |= Self::INDEX_FORMAT_UINT32,
+            _ => {}
+        }
+        match msaa {
+            Msaa::Sample2 => key |= Self::MSAA_2X,
+            Msaa::Sample4 => key |= Self::MSAA_4X,
+            Msaa::Sample8 => key |= Self::MSAA_8X,
+            Msaa::Off => {}
+        }
+        StandalonePipelineKey(key)
+    }
+}
 
 impl From<StandalonePipelineKey> for u64 {
-    fn from(_: StandalonePipelineKey) -> u64 {
-        0
+    fn from(key: StandalonePipelineKey) -> u64 {
+        key.0 as u64
     }
 }
 
 impl From<u64> for StandalonePipelineKey {
-    fn from(_: u64) -> Self {
-        StandalonePipelineKey
+    fn from(val: u64) -> Self {
+        StandalonePipelineKey(val as u32)
     }
 }
 
 impl SpecializedMeshPipeline for StandalonePipeline {
-    type Key = MeshPipelineKey;
+    type Key = StandalonePipelineKey;
 
     fn specialize(
         &self,
         key: Self::Key,
         layout: &MeshVertexBufferLayoutRef,
     ) -> Result<RenderPipelineDescriptor, SpecializedMeshPipelineError> {
-        let mut descriptor = self.mesh_pipeline.specialize(key, layout)?;
-
-        // Use the standalone shader for both vertex and fragment
-        descriptor.vertex.shader = self.shader.clone();
-        descriptor.label = Some("standalone gradmesh pipeline".into());
+        // Build vertex attributes from the mesh layout (position only at location 0)
+        let layout_ref = &layout.0;
 
         // Add the instanced vertex buffer layout
         let transform_stride = size_of::<InstanceTransform>() as u64;
         let property_stride = size_of::<InstanceProperties>() as u64;
 
-        descriptor.vertex.buffers.push(VertexBufferLayout {
-            array_stride: transform_stride + property_stride,
-            step_mode: VertexStepMode::Instance,
-            attributes: [
-                // InstanceTransform: 4×vec4 at locations 3-6
-                (3u32, 0u64, VertexFormat::Float32x4),
-                (4u32, VertexFormat::Float32x4.size(), VertexFormat::Float32x4),
-                (5u32, VertexFormat::Float32x4.size() * 2, VertexFormat::Float32x4),
-                (6u32, VertexFormat::Float32x4.size() * 3, VertexFormat::Float32x4),
-                // InstanceProperties: 7×vec4 at locations 7-13
-                (7u32, transform_stride, VertexFormat::Float32x4),
-                (8u32, transform_stride + VertexFormat::Float32x4.size(), VertexFormat::Float32x4),
-                (9u32, transform_stride + VertexFormat::Float32x4.size() * 2, VertexFormat::Float32x4),
-                (10u32, transform_stride + VertexFormat::Float32x4.size() * 3, VertexFormat::Float32x4),
-                (11u32, transform_stride + VertexFormat::Float32x4.size() * 4, VertexFormat::Float32x4),
-                (12u32, transform_stride + VertexFormat::Float32x4.size() * 5, VertexFormat::Float32x4),
-                (13u32, transform_stride + VertexFormat::Float32x4.size() * 6, VertexFormat::Float32x4),
-            ]
-            .map(|(loc, offset, fmt)| VertexAttribute {
-                shader_location: loc,
-                format: fmt,
-                offset,
-            })
-            .to_vec(),
-        });
+        let msaa_samples = match key.0 & (StandalonePipelineKey::MSAA_2X | StandalonePipelineKey::MSAA_4X | StandalonePipelineKey::MSAA_8X) {
+            StandalonePipelineKey::MSAA_2X => 2,
+            StandalonePipelineKey::MSAA_4X => 4,
+            StandalonePipelineKey::MSAA_8X => 8,
+            _ => 1,
+        };
 
-        if let Some(fragment) = descriptor.fragment.as_mut() {
-            fragment.shader = self.shader.clone();
-        }
+        let primitive_topology = if key.0 & StandalonePipelineKey::PRIMITIVE_TOPOLOGY_POINT_LIST != 0 {
+            PrimitiveTopology::PointList
+        } else if key.0 & StandalonePipelineKey::PRIMITIVE_TOPOLOGY_LINE_LIST != 0 {
+            PrimitiveTopology::LineList
+        } else if key.0 & StandalonePipelineKey::PRIMITIVE_TOPOLOGY_LINE_STRIP != 0 {
+            PrimitiveTopology::LineStrip
+        } else {
+            PrimitiveTopology::TriangleList
+        };
 
-        Ok(descriptor)
+        let index_format = if key.0 & StandalonePipelineKey::INDEX_FORMAT_UINT32 != 0 {
+            Some(IndexFormat::Uint32)
+        } else if key.0 & StandalonePipelineKey::INDEX_FORMAT_UINT16 != 0 {
+            Some(IndexFormat::Uint16)
+        } else {
+            None
+        };
+
+        Ok(RenderPipelineDescriptor {
+            label: Some("standalone gradmesh pipeline".into()),
+            layout: vec![self.view_bind_group_layout.clone()],
+            immediate_size: 0,
+            vertex: VertexState {
+                shader: self.shader.clone(),
+                shader_defs: Vec::new(),
+                entry_point: Some(Cow::Borrowed("vs_standalone")),
+                constants: Vec::new(),
+                buffers: vec![
+                    mesh_vertex_buffer_layout_from_layout(layout_ref),
+                    VertexBufferLayout {
+                        array_stride: transform_stride + property_stride,
+                        step_mode: VertexStepMode::Instance,
+                        attributes: [
+                            // InstanceTransform: 4×vec4 at locations 3-6
+                            (3u32, 0u64, VertexFormat::Float32x4),
+                            (4u32, VertexFormat::Float32x4.size(), VertexFormat::Float32x4),
+                            (5u32, VertexFormat::Float32x4.size() * 2, VertexFormat::Float32x4),
+                            (6u32, VertexFormat::Float32x4.size() * 3, VertexFormat::Float32x4),
+                            // InstanceProperties: 7×vec4 at locations 7-13
+                            (7u32, transform_stride, VertexFormat::Float32x4),
+                            (8u32, transform_stride + VertexFormat::Float32x4.size(), VertexFormat::Float32x4),
+                            (9u32, transform_stride + VertexFormat::Float32x4.size() * 2, VertexFormat::Float32x4),
+                            (10u32, transform_stride + VertexFormat::Float32x4.size() * 3, VertexFormat::Float32x4),
+                            (11u32, transform_stride + VertexFormat::Float32x4.size() * 4, VertexFormat::Float32x4),
+                            (12u32, transform_stride + VertexFormat::Float32x4.size() * 5, VertexFormat::Float32x4),
+                            (13u32, transform_stride + VertexFormat::Float32x4.size() * 6, VertexFormat::Float32x4),
+                        ]
+                        .map(|(loc, offset, fmt)| VertexAttribute {
+                            shader_location: loc,
+                            format: fmt,
+                            offset,
+                        })
+                        .to_vec(),
+                    },
+                ],
+            },
+            fragment: Some(FragmentState {
+                shader: self.shader.clone(),
+                shader_defs: Vec::new(),
+                entry_point: Some(Cow::Borrowed("fs_standalone")),
+                constants: Vec::new(),
+                targets: vec![Some(ColorTargetState {
+                    format: TextureFormat::Bgra8UnormSrgb,
+                    blend: None,
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            primitive: PrimitiveState {
+                topology: primitive_topology,
+                strip_index_format: index_format,
+                front_face: FrontFace::Ccw,
+                cull_mode: Some(Face::Back),
+                unclipped_depth: false,
+                polygon_mode: PolygonMode::Fill,
+                conservative: false,
+            },
+            depth_stencil: Some(DepthStencilState {
+                format: CORE_3D_DEPTH_FORMAT,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(CompareFunction::Less),
+                stencil: StencilState::default(),
+                bias: DepthBiasState::default(),
+            }),
+            multisample: MultisampleState {
+                count: msaa_samples,
+                mask: u64::MAX,
+                alpha_to_coverage_enabled: false,
+            },
+            zero_initialize_workgroup_memory: false,
+        })
     }
 }
 
-// ─── Draw Command ───
+/// Build the mesh vertex buffer layout from the Arc-wrapped layout.
+fn mesh_vertex_buffer_layout_from_layout(layout: &std::sync::Arc<MeshVertexBufferLayout>) -> VertexBufferLayout {
+    let vb_layout = layout.layout();
+    let mut attributes: Vec<VertexAttribute> = Vec::new();
+    if layout.contains(Mesh::ATTRIBUTE_POSITION) {
+        let desc = Mesh::ATTRIBUTE_POSITION.at_shader_location(0);
+        if let Ok(found) = layout.get_layout(&[desc]) {
+            attributes = found.attributes;
+        }
+    }
+    VertexBufferLayout {
+        array_stride: vb_layout.array_stride,
+        step_mode: VertexStepMode::Vertex,
+        attributes,
+    }
+}
+
+// ─── View Uniform ───
+
+/// Per-view bind group for the standalone pipeline.
+#[derive(Component)]
+pub struct StandaloneViewBindGroup {
+    /// The bind group handle.
+    value: BindGroup,
+    /// Uniform buffer offset within the view uniform buffer.
+    uniform_offset: u32,
+}
 
 /// The draw command tuple for standalone batches.
 pub type DrawStandaloneBatch = (
     SetItemPipeline,
-    SetMeshViewBindGroup<0>,
-    SetMeshBindGroup<1>,
+    SetStandaloneViewBindGroup<0>,
     DrawStandaloneBatchImpl,
 );
+
+/// Bind the standalone view uniform at group 0.
+pub struct SetStandaloneViewBindGroup<const I: usize>;
+
+impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetStandaloneViewBindGroup<I> {
+    type Param = ();
+    type ViewQuery = Read<StandaloneViewBindGroup>;
+    type ItemQuery = ();
+
+    #[inline]
+    fn render<'w>(
+        _item: &P,
+        view_bind_group: ROQueryItem<'w, '_, Self::ViewQuery>,
+        _entity: Option<()>,
+        _param: SystemParamItem<'w, '_, Self::Param>,
+        pass: &mut TrackedRenderPass<'w>,
+    ) -> RenderCommandResult {
+        pass.set_bind_group(I, &view_bind_group.value, &[]);
+        RenderCommandResult::Success
+    }
+}
 
 /// Implements the actual draw call for standalone batches.
 pub struct DrawStandaloneBatchImpl;
@@ -200,7 +368,6 @@ pub struct DrawStandaloneBatchImpl;
 impl<P: PhaseItem> RenderCommand<P> for DrawStandaloneBatchImpl {
     type Param = (
         SRes<RenderAssets<RenderMesh>>,
-        SRes<RenderMeshInstances>,
         SRes<MeshAllocator>,
     );
     type ViewQuery = ();
@@ -211,26 +378,21 @@ impl<P: PhaseItem> RenderCommand<P> for DrawStandaloneBatchImpl {
         item: &P,
         _view: (),
         item_query: Option<(&'w StandaloneGpuBuffers, &'w StandaloneBatchData)>,
-        (meshes, render_mesh_instances, mesh_allocator): SystemParamItem<'w, '_, Self::Param>,
+        (meshes, mesh_allocator): SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
         let mesh_allocator = mesh_allocator.into_inner();
 
-        let Some((gpu_buffers, _batch_data)) = item_query else {
+        let Some((gpu_buffers, batch_data)) = item_query else {
             return RenderCommandResult::Skip;
         };
 
-        let Some(mesh_instance) = render_mesh_instances.into_inner().render_mesh_queue_data(item.main_entity())
-        else {
-            return RenderCommandResult::Skip;
-        };
-
-        let Some(gpu_mesh) = meshes.into_inner().get(mesh_instance.mesh_asset_id()) else {
+        let Some(gpu_mesh) = meshes.into_inner().get(batch_data.mesh_id) else {
             return RenderCommandResult::Skip;
         };
 
         let Some(vertex_buffer_slice) =
-            mesh_allocator.mesh_vertex_slice(&mesh_instance.mesh_asset_id())
+            mesh_allocator.mesh_vertex_slice(&batch_data.mesh_id)
         else {
             return RenderCommandResult::Skip;
         };
@@ -244,7 +406,7 @@ impl<P: PhaseItem> RenderCommand<P> for DrawStandaloneBatchImpl {
         match &gpu_mesh.buffer_info {
             RenderMeshBufferInfo::Indexed { index_format, count } => {
                 let Some(index_buffer_slice) =
-                    mesh_allocator.mesh_index_slice(&mesh_instance.mesh_asset_id())
+                    mesh_allocator.mesh_index_slice(&batch_data.mesh_id)
                 else {
                     return RenderCommandResult::Skip;
                 };
@@ -338,6 +500,61 @@ fn build_combined_buffer(batch_data: &StandaloneBatchData) -> Vec<u8> {
     combined
 }
 
+// ─── View Uniform Preparation ───
+
+/// Prepare per-view uniform buffers and bind groups for standalone rendering.
+fn prepare_standalone_view_uniforms(
+    mut commands: Commands,
+    render_device: Res<RenderDevice>,
+    render_queue: Res<bevy::render::renderer::RenderQueue>,
+    pipeline: Option<Res<StandalonePipeline>>,
+    views: Query<(Entity, &ExtractedView)>,
+    time: Res<Time>,
+    existing: Query<Entity, With<StandaloneViewBindGroup>>,
+) {
+    let Some(pipeline) = pipeline else { return };
+
+    // Remove stale bind groups
+    for entity in &existing {
+        commands.entity(entity).remove::<StandaloneViewBindGroup>();
+    }
+
+    let view_bind_group_layout = render_device.create_bind_group_layout(
+        "standalone view layout",
+        &pipeline.view_bind_group_layout.entries,
+    );
+
+    for (view_entity, view) in &views {
+        let view_proj_mat: Mat4 = view.clip_from_view * view.world_from_view.affine();
+        let uniform = StandaloneViewUniform {
+            view_proj: view_proj_mat.to_cols_array_2d().as_flattened().try_into().unwrap_or([0.0; 16]),
+            time: time.elapsed_secs() as f32,
+            _pad: [0.0; 3],
+        };
+
+        let buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("standalone view uniform buffer"),
+            contents: bytemuck::cast_slice(&[uniform]),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+
+        let bind_group = render_device.create_bind_group(
+            "standalone view bind group",
+            &view_bind_group_layout,
+            &BindGroupEntries::single(BufferBinding {
+                buffer: &buffer,
+                offset: 0,
+                size: None,
+            }),
+        );
+
+        commands.entity(view_entity).insert(StandaloneViewBindGroup {
+            value: bind_group,
+            uniform_offset: 0,
+        });
+    }
+}
+
 // ─── Queue System ───
 
 /// Queue standalone batches into the opaque render phase.
@@ -347,11 +564,9 @@ fn queue_standalone_batches(
     mut pipelines: ResMut<StandalonePipelineCache>,
     pipeline_cache: Res<PipelineCache>,
     meshes: Res<RenderAssets<RenderMesh>>,
-    render_mesh_instances: Res<RenderMeshInstances>,
     standalone_batches: Query<(Entity, &MainEntity, &StandaloneBatchData)>,
     mut opaque_render_phases: ResMut<ViewBinnedRenderPhases<Opaque3d>>,
-    views: Query<&ExtractedView>,
-    view_key_cache: Res<ViewKeyCache>,
+    views: Query<(&ExtractedView, Option<&Msaa>)>,
     mut stats: ResMut<InstancedStats>,
     _lod_config: Option<Res<LodConfig>>,
 ) {
@@ -368,16 +583,14 @@ fn queue_standalone_batches(
     stats.culled_instances = 0;
     stats.total_instances_before_cull = 0;
 
-    for view in &views {
+    for (view, msaa_opt) in &views {
         let Some(opaque_phase) = opaque_render_phases.get_mut(&view.retained_view_entity) else {
             continue;
         };
 
-        let Some(&view_key) = view_key_cache.get(&view.retained_view_entity) else {
-            continue;
-        };
+        let msaa = msaa_opt.copied().unwrap_or(Msaa::Off);
 
-        let clip_from_world = view.clip_from_world.unwrap_or(view.clip_from_view * bevy::math::Affine3A::from(view.world_from_view.affine()));
+        let clip_from_world = view.clip_from_world.unwrap_or(view.clip_from_view * Affine3A::from(view.world_from_view.affine()));
         let frustum = culling::FrustumPlanes::from_view_projection(&clip_from_world);
         let _camera_world_pos = view.world_from_view.translation();
 
@@ -386,21 +599,16 @@ fn queue_standalone_batches(
                 continue;
             }
 
-            let Some(mesh_instance) = render_mesh_instances.render_mesh_queue_data(main_entity)
-            else {
+            let Some(mesh) = meshes.get(batch_data.mesh_id) else {
                 continue;
             };
 
-            let Some(mesh) = meshes.get(mesh_instance.mesh_asset_id()) else {
-                continue;
-            };
-
-            // Specialize the pipeline
-            let key = view_key
-                | MeshPipelineKey::from_primitive_topology_and_strip_index(
-                    mesh.primitive_topology(),
-                    mesh.index_format(),
-                );
+            // Specialize the pipeline with topology + MSAA
+            let key = StandalonePipelineKey::from_mesh_and_msaa(
+                mesh.primitive_topology(),
+                mesh.index_format(),
+                msaa,
+            );
 
             let Ok(pipeline) = pipelines.specialize(
                 &pipeline_cache,
@@ -499,6 +707,7 @@ impl Plugin for StandaloneRenderPlugin {
             .add_systems(
                 Render,
                 (
+                    prepare_standalone_view_uniforms.in_set(RenderSystems::PrepareResources),
                     prepare_standalone_buffers.in_set(RenderSystems::PrepareResources),
                     queue_standalone_batches.in_set(RenderSystems::Queue),
                 ),
@@ -510,17 +719,13 @@ impl Plugin for StandaloneRenderPlugin {
 fn init_standalone_pipeline(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mesh_pipeline: Option<Res<MeshPipeline>>,
 ) {
-    let Some(mesh_pipeline) = mesh_pipeline else {
-        return;
-    };
     use bevy::asset::AssetPath;
     let path = AssetPath::from_path_buf(
         bevy::asset::embedded_path!("shader/standalone.wgsl"),
     ).with_source("embedded");
     let shader = asset_server.load(path);
-    commands.insert_resource(StandalonePipeline::new(mesh_pipeline.clone(), shader));
+    commands.insert_resource(StandalonePipeline::new(shader));
 }
 
 // ─── Spawn API ───
@@ -597,11 +802,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn standalone_pipeline_key_is_unit() {
-        let key = StandalonePipelineKey;
+    fn standalone_pipeline_key_roundtrip() {
+        let key = StandalonePipelineKey::default();
         let hash: u64 = key.into();
         assert_eq!(hash, 0);
         let back: StandalonePipelineKey = hash.into();
-        assert_eq!(back, StandalonePipelineKey);
+        assert_eq!(back, StandalonePipelineKey::default());
+    }
+
+    #[test]
+    fn standalone_pipeline_key_from_mesh_and_msaa() {
+        let key = StandalonePipelineKey::from_mesh_and_msaa(
+            PrimitiveTopology::TriangleList,
+            Some(IndexFormat::Uint32),
+            Msaa::Sample4,
+        );
+        // Should have INDEX_FORMAT_UINT32 and MSAA_4X bits set
+        assert_eq!(key.0, StandalonePipelineKey::INDEX_FORMAT_UINT32 | StandalonePipelineKey::MSAA_4X);
     }
 }

@@ -406,15 +406,16 @@ impl RetainedWorld {
 
     /// Rebuild batches from the current parallel arrays and spawn entities.
     ///
-    /// This is the key method that converts retained state into batched
-    /// instanced rendering.  It clears the recorder, replays all alive slots
-    /// into batches, and spawns `InstancedBatchData` entities.
+    /// This is the key method that converts retained state into native Bevy
+    /// entities. Each instance becomes a Mesh3d + Material3d entity, and Bevy's
+    /// render pipeline handles batching automatically.
     ///
     /// Returns the spawned entity IDs.
     pub fn flush(
         &mut self,
         commands: &mut Commands,
         meshes: bevy::ecs::system::ResMut<Assets<Mesh>>,
+        materials: bevy::ecs::system::ResMut<Assets<crate::GradMeshMaterial>>,
     ) -> Vec<Entity> {
         self.recorder.begin();
 
@@ -434,7 +435,7 @@ impl RetainedWorld {
         }
 
         self.recorder.end();
-        let spawned = self.recorder.render_batches(commands, meshes, None);
+        let spawned = self.recorder.render_batches(commands, meshes, materials, None);
         self.dirty = false;
         spawned
     }

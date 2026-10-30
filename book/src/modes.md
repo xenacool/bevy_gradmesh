@@ -39,24 +39,49 @@ fn draw_frame(mut recorder: ResMut<ImmediateRecorder>) {
 
 ## Retained Mode
 
-Persistent shapes managed by handle. Create once, update per-frame.
+Persistent shapes managed by `GradMeshHandle`. Create once, update per-frame.
+Under the hood, `RetainedWorld` uses batched instancing so shapes with the
+same mesh share draw calls.
 
 ```rust
-use bevy_gradmesh::{RetainedWorld, GradMeshHandle};
+use bevy::prelude::*;
+use bevy_gradmesh::{RetainedWorld, GradMeshHandle, Shape, ShapeDetail};
 
-fn setup(mut retained: ResMut<RetainedWorld>) {
-    let handle = retained.create(
-        Shape::sphere(1.0, ShapeDetail::Medium),
-        imm_opaque([1.0, 0.0, 0.0, 1.0]),
+#[derive(Resource)]
+struct MyWorld(RetainedWorld);
+
+#[derive(Resource)]
+struct MyHandles(Vec<GradMeshHandle>);
+
+fn setup(mut commands: Commands, mut world: ResMut<MyWorld>) {
+    let handle = world.0.sphere(
+        &mut commands,
+        &mut meshes,
+        Vec3::ZERO,
+        0.5,
+        ShapeDetail::Medium,
+        [1.0, 0.0, 0.0, 1.0],
     );
+    commands.insert_resource(MyHandles(vec![handle]));
 }
 
-fn update(mut retained: ResMut<RetainedWorld>, handle: Res<GradMeshHandle>) {
-    retained.set_position(*handle, Vec3::new(0.0, time.sin(), 0.0));
+fn update(
+    time: Res<Time>,
+    mut world: ResMut<MyWorld>,
+    handles: Res<MyHandles>,
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+) {
+    for &h in handles.0.iter() {
+        world.0.set_position(h, Vec3::new(time.elapsed_secs(), 0.0, 0.0));
+    }
+    world.0.flush(&mut commands, &mut meshes);
 }
 ```
 
 **Best for**: Scenes with persistent shapes that change position or properties each frame.
+
+![Retained Mode](../../screenshots/screenshot_retained.png)
 
 ## Batched Mode
 
@@ -88,6 +113,8 @@ fn draw_frame(mut recorder: ResMut<BatchRecorder>) {
 ```
 
 **Best for**: Large numbers of similar shapes (terrain, crowds, particles).
+
+![Instanced Rendering](../../screenshots/screenshot_instanced.png)
 
 ### Dirty Tracking
 

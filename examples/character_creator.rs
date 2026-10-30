@@ -35,7 +35,7 @@ fn main() {
             synchronous_pipeline_compilation: true,
             ..default()
         }))
-        .add_plugins(GradMeshPlugin)
+        .add_plugins(GradMeshPlugin::default())
         .add_plugins(
             AutoScreenshotPlugin::new("screenshot_character_creator.png")
                 .with_title("Character Creator")

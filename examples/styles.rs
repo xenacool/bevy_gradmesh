@@ -27,7 +27,7 @@ fn main() {
             synchronous_pipeline_compilation: true,
             ..default()
         }))
-        .add_plugins(GradMeshPlugin)
+        .add_plugins(GradMeshPlugin::default())
         .add_plugins(
             AutoScreenshotPlugin::new("screenshot_styles.png")
                 .with_title("Style Showcase")
@@ -204,6 +204,58 @@ fn setup(
         Style::dither(Color::srgba(0.3, 0.9, 0.5, 0.5)),
         Vec3::new(r2_xs[5], origin_y, z1),
         "Dither",
+    );
+
+    // ─── Row 2b: Additional Blend Modes ───
+    let z1b = z1 + row_spacing * 0.0;
+    let r2b_xs = [-col_spacing * 2.5, -col_spacing * 1.5, -col_spacing * 0.5, col_spacing * 0.5, col_spacing * 1.5, col_spacing * 2.5];
+
+    // Subtractive (subtracts color from background)
+    add_shape(
+        &mut commands, &mut materials, &sphere,
+        Style::subtractive(Color::srgb(0.8, 0.2, 0.2)),
+        Vec3::new(r2b_xs[0], origin_y, z1 - row_spacing),
+        "Subtractive",
+    );
+
+    // Lighten (takes max of source/dest)
+    add_shape(
+        &mut commands, &mut materials, &sphere,
+        Style::lighten(Color::srgb(0.2, 0.8, 0.2)),
+        Vec3::new(r2b_xs[1], origin_y, z1 - row_spacing),
+        "Lighten",
+    );
+
+    // Color Dodge (brightens destination)
+    add_shape(
+        &mut commands, &mut materials, &sphere,
+        Style::color_dodge(Color::srgb(0.9, 0.6, 0.1)),
+        Vec3::new(r2b_xs[2], origin_y, z1 - row_spacing),
+        "Color Dodge",
+    );
+
+    // Linear Burn (darkens destination)
+    add_shape(
+        &mut commands, &mut materials, &sphere,
+        Style::linear_burn(Color::srgb(0.2, 0.2, 0.8)),
+        Vec3::new(r2b_xs[3], origin_y, z1 - row_spacing),
+        "Linear Burn",
+    );
+
+    // Color Burn (deepens destination)
+    add_shape(
+        &mut commands, &mut materials, &sphere,
+        Style::color_burn(Color::srgb(0.8, 0.2, 0.6)),
+        Vec3::new(r2b_xs[4], origin_y, z1 - row_spacing),
+        "Color Burn",
+    );
+
+    // Darken (takes min of source/dest)
+    add_shape(
+        &mut commands, &mut materials, &sphere,
+        Style::darken(Color::srgb(0.15, 0.15, 0.3)),
+        Vec3::new(r2b_xs[5], origin_y, z1 - row_spacing),
+        "Darken",
     );
 
     // ─── Row 3: Dash Patterns ───

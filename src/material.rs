@@ -107,6 +107,8 @@ impl GradMeshUniformBuffer {
     }
 }
 
+// ─── PBR ExtendedMaterial ───
+
 /// Material extension that adds dual-directional gradient shading to StandardMaterial.
 ///
 /// Uses a single `GradMeshUniformBuffer` bound at slot 100, containing all 4 Vec4

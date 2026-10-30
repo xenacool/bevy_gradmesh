@@ -27,7 +27,7 @@ fn main() {
             synchronous_pipeline_compilation: true,
             ..default()
         }))
-        .add_plugins(GradMeshPlugin)
+        .add_plugins(GradMeshPlugin::default())
         .add_plugins(
             AutoScreenshotPlugin::new("screenshot_polyline.png")
                 .with_title("Polyline")
@@ -141,6 +141,43 @@ fn setup(
         Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)),
     ));
     spawn_label(&mut commands, "3D Spiral", Vec3::new(0.0, 3.5, 0.0));
+
+    // ─── Sharp-angle polyline: demonstrates blended-frame joint quality ───
+    // A sharp zigzag with extreme angles shows how the blended-frame joints
+    // produce smooth tube connections even at corners.
+    let sharp_pts = vec![
+        Vec3::new(-3.0, 0.0, -6.0),
+        Vec3::new(-1.5, 1.5, -6.0),
+        Vec3::new(0.0, 0.0, -6.0),
+        Vec3::new(1.5, 1.5, -6.0),
+        Vec3::new(3.0, 0.0, -6.0),
+    ];
+    let sharp_mesh = meshes.add(Shape::polyline3d(sharp_pts.clone(), 0.12, false, 8, ShapeDetail::Medium).build());
+    let sharp_mat = mat(0.95, 0.3, 0.6);
+    commands.spawn((
+        Mesh3d(sharp_mesh),
+        MeshMaterial3d(sharp_mat),
+        Transform::from_translation(Vec3::new(0.0, 0.5, 0.0)),
+    ));
+    spawn_label(&mut commands, "Sharp joints (blended frames)", Vec3::new(0.0, 2.5, -6.0));
+
+    // ─── Smooth curve polyline: compare with sharp joints ───
+    let smooth_pts: Vec<Vec3> = (0..20)
+        .map(|i| {
+            let t = i as f32 / 19.0;
+            let x = -3.0 + t * 6.0;
+            let y = ((t * 4.0 * std::f32::consts::PI).sin()) * 0.8;
+            Vec3::new(x, y, 6.0)
+        })
+        .collect();
+    let smooth_mesh = meshes.add(Shape::polyline3d(smooth_pts.clone(), 0.1, false, 8, ShapeDetail::Medium).build());
+    let smooth_mat = mat(0.3, 0.9, 0.5);
+    commands.spawn((
+        Mesh3d(smooth_mesh),
+        MeshMaterial3d(smooth_mat),
+        Transform::from_translation(Vec3::new(0.0, 0.5, 0.0)),
+    ));
+    spawn_label(&mut commands, "Smooth curve (20 points)", Vec3::new(0.0, 2.5, 6.0));
 }
 
 /// Generate zigzag points for polyline demos.

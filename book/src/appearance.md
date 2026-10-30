@@ -78,3 +78,5 @@ fn draw(mut recorder: ResMut<BatchRecorder>) {
 ## Performance
 
 Appearance animation is free for batched instances. The animation parameters are uploaded once with the instance data, and the vertex shader computes the animated color each frame.
+
+![Appearance Animation](../../screenshots/screenshot_appearance.png)

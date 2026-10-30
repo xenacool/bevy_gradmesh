@@ -22,7 +22,6 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
 use crate::appearance::AppearanceSnapshot;
-use crate::culling::AABB;
 use crate::material::{GradMeshUniformBuffer, Vec4};
 use crate::shape::{Shape, ShapeDetail};
 use crate::style::{BlendMode, ColorMode, Dash, DashType};
@@ -724,75 +723,90 @@ impl BatchRecorder {
 
     // ─── Rendering ───
 
-    /// Spawns entities with `InstancedBatchData` components from the collected
-    /// batches.  Each batch becomes one entity that the GPU instanced render
-    /// pipeline draws with a single `draw_indexed` call.
+    /// Spawns native Bevy entities from the collected batches.
+    ///
+    /// Each instance in each batch becomes a separate entity with `Mesh3d`,
+    /// `Material3d<GradMeshMaterial>`, `Transform`, and `Visibility` components.
+    /// Bevy's render pipeline handles batching and instancing automatically
+    /// via `RenderMeshInstances`, similar to Godot's MultiMesh approach.
     ///
     /// Returns the spawned entities so the caller can manage their lifecycle.
     pub fn render_batches(
         &mut self,
         commands: &mut bevy::ecs::system::Commands,
         mut meshes: bevy::ecs::system::ResMut<bevy::asset::Assets<Mesh>>,
+        mut materials: bevy::ecs::system::ResMut<bevy::asset::Assets<crate::GradMeshMaterial>>,
         parent: Option<bevy::prelude::Entity>,
     ) -> Vec<bevy::prelude::Entity> {
         use bevy::prelude::*;
-        use crate::render_pipeline::InstancedBufferData;
+        use bevy::pbr::MeshMaterial3d;
+        use crate::material::{GradMeshMaterial, GradMeshExtension, GradMeshUniformBuffer, Vec4};
 
         let mut spawned = Vec::new();
 
-        for (key, batch) in self.batches.iter() {
+        for (_key, batch) in self.batches.iter() {
             if batch.is_empty() {
                 continue;
             }
 
             let mesh_handle = meshes.add(batch.mesh.clone());
 
-            // Build the GPU buffer data for this batch with deformation
-            let buffer_data = InstancedBufferData::from_slices_with_deformation(
-                &batch.transforms[..batch.count],
-                &batch.properties[..batch.count],
-                &batch.deformations[..batch.count],
-            );
+            // Spawn one entity per instance — Bevy's render pipeline will
+            // automatically batch compatible instances for efficient rendering.
+            for i in 0..batch.count {
+                let transform = batch.transforms[i];
+                let props = batch.properties[i];
 
-            // Extract custom shader handle from blend mode, if any
-            let custom_shader = match &key.blend_mode {
-                BlendMode::Custom(handle) => Some(handle.clone()),
-                _ => None,
-            };
+                // Convert InstanceTransform (4×vec4 column-major) to Transform
+                let mat4 = Mat4::from_cols(
+                    bevy::math::Vec4::new(transform.col0.x, transform.col0.y, transform.col0.z, transform.col0.w),
+                    bevy::math::Vec4::new(transform.col1.x, transform.col1.y, transform.col1.z, transform.col1.w),
+                    bevy::math::Vec4::new(transform.col2.x, transform.col2.y, transform.col2.z, transform.col2.w),
+                    bevy::math::Vec4::new(transform.col3.x, transform.col3.y, transform.col3.z, transform.col3.w),
+                );
+                let bevy_transform = Transform::from_matrix(mat4);
 
-            // Spawn a single entity per batch with InstancedBatchData
-            let mesh_id = mesh_handle.id();
-            let mesh_aabb = AABB::from_mesh(&batch.mesh);
-            // Determine LOD level from the shape detail encoded in the mesh
-            let vertex_count = batch.mesh.count_vertices();
-            let lod_level = if vertex_count < 50 { 0 } // Minimal
-            else if vertex_count < 100 { 1 } // Low
-            else if vertex_count < 200 { 2 } // Medium
-            else if vertex_count < 400 { 3 } // High
-            else { 4 }; // Extreme
-            let entity_id = commands.spawn((
-                Mesh3d(mesh_handle.clone()),
-                crate::instanced_render::InstancedBatchData {
-                    mesh_id,
-                    instance_count: buffer_data.instance_count,
-                    transforms: buffer_data.transforms,
-                    properties: buffer_data.properties,
-                    dirty: batch.is_dirty(),
-                    render_state: key.render_state,
-                    mesh_aabb,
-                    lod_level,
-                    lod_transition_weight: 0.0,
-                    custom_shader,
-                },
-                Transform::default(),
-                GlobalTransform::default(),
-            )).id();
+                // Build GradMeshMaterial from instance properties
+                let material = GradMeshMaterial {
+                    base: bevy::pbr::StandardMaterial {
+                        base_color: bevy::color::Color::srgba(
+                            props.color.x, props.color.y, props.color.z, props.color.w,
+                        ).into(),
+                        perceptual_roughness: 0.7,
+                        cull_mode: None,
+                        ..bevy::pbr::StandardMaterial::default()
+                    },
+                    extension: GradMeshExtension {
+                        uniforms: GradMeshUniformBuffer {
+                            color: props.color,
+                            secondary_color: props.secondary_color,
+                            direction: props.direction,
+                            flags: props.flags,
+                            dash: props.dash,
+                            world_center: Vec4::new(
+                                bevy_transform.translation.x,
+                                bevy_transform.translation.y,
+                                bevy_transform.translation.z,
+                                0.0,
+                            ),
+                        },
+                    },
+                };
 
-            if let Some(p) = parent {
-                commands.entity(p).add_child(entity_id);
+                let mat_handle = materials.add(material);
+
+                let entity_id = commands.spawn((
+                    Mesh3d(mesh_handle.clone()),
+                    MeshMaterial3d(mat_handle),
+                    bevy_transform,
+                )).id();
+
+                if let Some(p) = parent {
+                    commands.entity(p).add_child(entity_id);
+                }
+
+                spawned.push(entity_id);
             }
-
-            spawned.push(entity_id);
         }
 
         // Acknowledge all batch changes after rendering
@@ -834,6 +848,356 @@ impl Default for BatchRecorder {
     }
 }
 
+// ─── Voxel Batch Recorder ───
+
+/// A batch recorder that groups instances by 3D voxel grid cells.
+///
+/// Instances are assigned to voxel cells based on their position, enabling
+/// spatial coherence for culling and rendering. Each voxel cell maintains
+/// its own `BatchRecorder`, so instances in the same cell share draw calls.
+///
+/// # Example
+///
+/// ```ignore
+/// let mut voxel_rec = VoxelBatchRecorder::new(1.0); // 1 unit per voxel
+///
+/// voxel_rec.begin();
+/// voxel_rec.set_position(Vec3::new(0.5, 0.5, 0.5));
+/// voxel_rec.sphere(0.1, ShapeDetail::Low, [1.0, 0.0, 0.0, 1.0]);
+///
+/// voxel_rec.set_position(Vec3::new(1.5, 0.5, 0.5));
+/// voxel_rec.sphere(0.1, ShapeDetail::Low, [0.0, 1.0, 0.0, 1.0]);
+///
+/// // Render all voxels
+/// let entities = voxel_rec.render_all(&mut commands, &mut meshes, None);
+/// ```
+pub struct VoxelBatchRecorder {
+    /// Size of each voxel cell in world units.
+    voxel_size: f32,
+    /// Map from voxel coordinates to batch recorders.
+    voxels: HashMap<[i32; 3], BatchRecorder>,
+    /// Current position for instance placement.
+    position: Vec3,
+    /// Current rotation.
+    rotation: Quat,
+    /// Current scale.
+    scale: Vec3,
+    /// State stack for push/pop operations.
+    state_stack: Vec<(Vec3, Quat, Vec3)>,
+}
+
+impl VoxelBatchRecorder {
+    /// Create a new voxel batch recorder with the given voxel cell size.
+    ///
+    /// `voxel_size` determines the grid resolution: smaller values create
+    /// more, finer-grained cells; larger values create fewer, coarser cells.
+    pub fn new(voxel_size: f32) -> Self {
+        Self {
+            voxel_size: voxel_size.max(0.001),
+            voxels: HashMap::new(),
+            position: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
+            scale: Vec3::ONE,
+            state_stack: Vec::new(),
+        }
+    }
+
+    /// Begin recording a new frame. Clears all voxel data.
+    pub fn begin(&mut self) {
+        self.voxels.clear();
+        self.position = Vec3::ZERO;
+        self.rotation = Quat::IDENTITY;
+        self.scale = Vec3::ONE;
+        self.state_stack.clear();
+    }
+
+    /// Set the current position for subsequent instances.
+    pub fn set_position(&mut self, position: Vec3) {
+        self.position = position;
+    }
+
+    /// Set the current rotation for subsequent instances.
+    pub fn set_rotation(&mut self, rotation: Quat) {
+        self.rotation = rotation;
+    }
+
+    /// Set the current scale for subsequent instances.
+    pub fn set_scale(&mut self, scale: Vec3) {
+        self.scale = scale;
+    }
+
+    /// Push the current transform state onto the stack.
+    pub fn push_state(&mut self) {
+        self.state_stack.push((self.position, self.rotation, self.scale));
+    }
+
+    /// Pop the transform state from the stack.
+    pub fn pop_state(&mut self) {
+        if let Some((pos, rot, scale)) = self.state_stack.pop() {
+            self.position = pos;
+            self.rotation = rot;
+            self.scale = scale;
+        }
+    }
+
+    /// Compute the voxel coordinates for a given world position.
+    pub fn voxel_coords(&self, position: Vec3) -> [i32; 3] {
+        let inv = 1.0 / self.voxel_size;
+        [
+            (position.x * inv).floor() as i32,
+            (position.y * inv).floor() as i32,
+            (position.z * inv).floor() as i32,
+        ]
+    }
+
+    // ─── Shape drawing methods ───
+
+    /// Draw a sphere in the current voxel.
+    pub fn sphere(&mut self, radius: f32, detail: ShapeDetail, color: [f32; 4]) {
+        let coords = self.voxel_coords(self.position);
+        let pos = self.position;
+        let rot = self.rotation;
+        let scl = self.scale;
+        let rec = self.voxels.entry(coords).or_insert_with(BatchRecorder::new);
+        rec.begin();
+        rec.set_position(pos);
+        rec.set_rotation(rot);
+        rec.set_scale(scl);
+        rec.sphere(radius, detail, color);
+    }
+
+    /// Draw a cylinder in the current voxel.
+    pub fn cylinder(&mut self, radius: f32, height: f32, detail: ShapeDetail, color: [f32; 4]) {
+        let coords = self.voxel_coords(self.position);
+        let pos = self.position;
+        let rot = self.rotation;
+        let scl = self.scale;
+        let rec = self.voxels.entry(coords).or_insert_with(BatchRecorder::new);
+        rec.begin();
+        rec.set_position(pos);
+        rec.set_rotation(rot);
+        rec.set_scale(scl);
+        rec.cylinder(radius, height, detail, color);
+    }
+
+    /// Draw a cone in the current voxel.
+    pub fn cone(&mut self, radius: f32, height: f32, detail: ShapeDetail, color: [f32; 4]) {
+        let coords = self.voxel_coords(self.position);
+        let pos = self.position;
+        let rot = self.rotation;
+        let scl = self.scale;
+        let rec = self.voxels.entry(coords).or_insert_with(BatchRecorder::new);
+        rec.begin();
+        rec.set_position(pos);
+        rec.set_rotation(rot);
+        rec.set_scale(scl);
+        rec.cone(radius, height, detail, color);
+    }
+
+    /// Draw a capsule in the current voxel.
+    pub fn capsule(&mut self, radius: f32, height: f32, detail: ShapeDetail, color: [f32; 4]) {
+        let coords = self.voxel_coords(self.position);
+        let pos = self.position;
+        let rot = self.rotation;
+        let scl = self.scale;
+        let rec = self.voxels.entry(coords).or_insert_with(BatchRecorder::new);
+        rec.begin();
+        rec.set_position(pos);
+        rec.set_rotation(rot);
+        rec.set_scale(scl);
+        rec.capsule(radius, height, detail, color);
+    }
+
+    /// Draw a torus in the current voxel.
+    pub fn torus(
+        &mut self,
+        radius: f32,
+        thickness: f32,
+        start_angle: f32,
+        span: f32,
+        detail: ShapeDetail,
+        color: [f32; 4],
+    ) {
+        let coords = self.voxel_coords(self.position);
+        let pos = self.position;
+        let rot = self.rotation;
+        let scl = self.scale;
+        let rec = self.voxels.entry(coords).or_insert_with(BatchRecorder::new);
+        rec.begin();
+        rec.set_position(pos);
+        rec.set_rotation(rot);
+        rec.set_scale(scl);
+        rec.torus(radius, thickness, start_angle, span, detail, color);
+    }
+
+    /// Draw a custom shape in the current voxel.
+    pub fn add_shape(&mut self, shape: &Shape, color: [f32; 4]) {
+        let coords = self.voxel_coords(self.position);
+        let pos = self.position;
+        let rot = self.rotation;
+        let scl = self.scale;
+        let props = InstanceProperties::from_style(
+            color, color, [0.0, 1.0, 0.0, 0.0],
+            ColorMode::Single, BlendMode::Opaque, false, None,
+        );
+        let rec = self.voxels.entry(coords).or_insert_with(BatchRecorder::new);
+        rec.begin();
+        rec.set_position(pos);
+        rec.set_rotation(rot);
+        rec.set_scale(scl);
+        rec.add_instance(shape, props);
+    }
+
+    // ─── Transparent variants ───
+
+    /// Draw a sphere with transparency in the current voxel.
+    pub fn sphere_transparent(&mut self, radius: f32, detail: ShapeDetail, color: [f32; 4]) {
+        let coords = self.voxel_coords(self.position);
+        let pos = self.position;
+        let rot = self.rotation;
+        let scl = self.scale;
+        let rec = self.voxels.entry(coords).or_insert_with(BatchRecorder::new);
+        rec.begin();
+        rec.set_position(pos);
+        rec.set_rotation(rot);
+        rec.set_scale(scl);
+        rec.sphere_transparent(radius, detail, color);
+    }
+
+    /// Draw a sphere with additive blending in the current voxel.
+    pub fn sphere_additive(&mut self, radius: f32, detail: ShapeDetail, color: [f32; 3]) {
+        let coords = self.voxel_coords(self.position);
+        let pos = self.position;
+        let rot = self.rotation;
+        let scl = self.scale;
+        let rec = self.voxels.entry(coords).or_insert_with(BatchRecorder::new);
+        rec.begin();
+        rec.set_position(pos);
+        rec.set_rotation(rot);
+        rec.set_scale(scl);
+        rec.sphere_additive(radius, detail, color);
+    }
+
+    // ─── Rendering ───
+
+    /// Render all voxel batches, returning all spawned entities.
+    ///
+    /// Iterates over all non-empty voxels and renders their batches.
+    /// Each instance becomes a native Bevy entity with Mesh3d + Material3d.
+    pub fn render_all(
+        &mut self,
+        commands: &mut bevy::ecs::system::Commands,
+        meshes: &mut bevy::asset::Assets<Mesh>,
+        materials: &mut bevy::asset::Assets<crate::GradMeshMaterial>,
+        parent: Option<bevy::prelude::Entity>,
+    ) -> Vec<bevy::prelude::Entity> {
+        use bevy::prelude::*;
+        use bevy::pbr::MeshMaterial3d;
+        use crate::material::{GradMeshMaterial, GradMeshExtension, GradMeshUniformBuffer, Vec4};
+
+        let mut all_entities = Vec::new();
+        for (_coords, rec) in self.voxels.iter_mut() {
+            for (_key, batch) in rec.batches.iter() {
+                if batch.is_empty() {
+                    continue;
+                }
+
+                let mesh_handle = meshes.add(batch.mesh.clone());
+
+                for i in 0..batch.count {
+                    let transform = batch.transforms[i];
+                    let props = batch.properties[i];
+
+                    let mat4 = Mat4::from_cols(
+                        bevy::math::Vec4::new(transform.col0.x, transform.col0.y, transform.col0.z, transform.col0.w),
+                        bevy::math::Vec4::new(transform.col1.x, transform.col1.y, transform.col1.z, transform.col1.w),
+                        bevy::math::Vec4::new(transform.col2.x, transform.col2.y, transform.col2.z, transform.col2.w),
+                        bevy::math::Vec4::new(transform.col3.x, transform.col3.y, transform.col3.z, transform.col3.w),
+                    );
+                    let bevy_transform = Transform::from_matrix(mat4);
+
+                    let material = GradMeshMaterial {
+                        base: bevy::pbr::StandardMaterial {
+                            base_color: bevy::color::Color::srgba(
+                                props.color.x, props.color.y, props.color.z, props.color.w,
+                            ).into(),
+                            perceptual_roughness: 0.7,
+                            cull_mode: None,
+                            ..bevy::pbr::StandardMaterial::default()
+                        },
+                        extension: GradMeshExtension {
+                            uniforms: GradMeshUniformBuffer {
+                                color: props.color,
+                                secondary_color: props.secondary_color,
+                                direction: props.direction,
+                                flags: props.flags,
+                                dash: props.dash,
+                                world_center: Vec4::new(
+                                    bevy_transform.translation.x,
+                                    bevy_transform.translation.y,
+                                    bevy_transform.translation.z,
+                                    0.0,
+                                ),
+                            },
+                        },
+                    };
+
+                    let mat_handle = materials.add(material);
+
+                    let entity_id = commands.spawn((
+                        Mesh3d(mesh_handle.clone()),
+                        MeshMaterial3d(mat_handle),
+                        bevy_transform,
+                    )).id();
+
+                    if let Some(p) = parent {
+                        commands.entity(p).add_child(entity_id);
+                    }
+
+                    all_entities.push(entity_id);
+                }
+            }
+            for batch in rec.batches.values_mut() {
+                batch.acknowledge_changes();
+            }
+        }
+        all_entities
+    }
+
+    /// Acknowledge all dirty flags across all voxels without rendering.
+    pub fn acknowledge_all(&mut self) {
+        for rec in self.voxels.values_mut() {
+            rec.acknowledge_all();
+        }
+    }
+
+    /// Count the total number of non-empty voxels.
+    pub fn voxel_count(&self) -> usize {
+        self.voxels.len()
+    }
+
+    /// Get the voxel coordinates for a world position.
+    pub fn coords_for_position(&self, position: Vec3) -> [i32; 3] {
+        self.voxel_coords(position)
+    }
+
+    /// Check if a voxel at the given coordinates has any instances.
+    pub fn has_voxel(&self, coords: [i32; 3]) -> bool {
+        self.voxels.contains_key(&coords)
+    }
+
+    /// Clear all voxel data.
+    pub fn clear(&mut self) {
+        self.voxels.clear();
+    }
+}
+
+impl Default for VoxelBatchRecorder {
+    fn default() -> Self {
+        Self::new(1.0)
+    }
+}
+ 
 #[cfg(test)]
 mod tests {
     use super::*;

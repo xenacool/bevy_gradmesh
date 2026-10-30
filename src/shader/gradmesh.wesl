@@ -17,6 +17,9 @@
 import bevy_pbr::render::{
     pbr_fragment::pbr_input_from_standard_material,
     pbr_functions::alpha_discard,
+    pbr_types,
+    view_transformations::position_world_to_clip,
+    mesh_view_bindings::{View, view},
 };
 
 @if(PREPASS_PIPELINE)
@@ -28,7 +31,6 @@ import bevy_pbr::{
 import bevy_pbr::render::{
     forward_io::{VertexOutput, FragmentOutput},
     pbr_functions::{apply_pbr_lighting, main_pass_post_lighting_processing},
-    view_transformations::position_world_to_clip,
 };
 
 // ─── OKLAB color space conversion ───
@@ -462,9 +464,23 @@ struct InstanceProperties {
     appearance: vec4<f32>,
 }
 
+/// Storage buffer for per-instance properties, accessible from the fragment shader.
+@group(2) @binding(0)
+var<storage, read> instanced_properties: array<InstanceProperties>;
+
+/// Uniform block for instanced rendering: time and view center.
+struct InstancedUniform {
+    time: f32,
+    _pad: vec3<f32>,
+    view_center: vec4<f32>,
+}
+@group(2) @binding(1)
+var<uniform> instanced_uniform: InstancedUniform;
+
 // ─── Vertex input ───
 
 struct Vertex {
+    @builtin(instance_index) instance_index: u32,
     @location(0) position: vec4<f32>,
     @location(1) normal: vec3<f32>,
     @if(VERTEX_UVS_A)
@@ -483,16 +499,33 @@ struct Vertex {
     @location(13) instance_appearance: vec4<f32>,
 }
 
+/// Custom vertex output for instanced rendering that includes per-instance color.
+struct InstancedVertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) world_position: vec4<f32>,
+    @location(1) world_normal: vec3<f32>,
+    @if(VERTEX_UVS_A)
+    @location(2) uv: vec2<f32>,
+    // Per-instance color data passed to fragment shader
+    @location(3) instance_color: vec4<f32>,
+    @location(4) instance_secondary_color: vec4<f32>,
+    @location(5) instance_direction: vec4<f32>,
+    @location(6) instance_flags: vec4<f32>,
+    @location(7) instance_dash: vec4<f32>,
+    @location(8) instance_deformation: vec4<f32>,
+    @location(9) instance_appearance: vec4<f32>,
+}
+
 /// Compute gradient progress for the instanced path.
-fn compute_gradient_progress_instanced(world_pos: vec3<f32>, direction: vec4<f32>, color_mode: i32) -> f32 {
+fn compute_gradient_progress_instanced(world_pos: vec3<f32>, direction: vec4<f32>, color_mode: f32) -> f32 {
     let dir = direction.xyz;
 
-    if (color_mode == 0) {
+    if (color_mode < 0.5) {
         return 0.0;
-    } else if (color_mode == 1) {
+    } else if (color_mode < 1.5) {
         let progress = dot(world_pos, normalize(dir));
         return clamp(progress * 0.1 + 0.5, 0.0, 1.0);
-    } else if (color_mode == 2) {
+    } else if (color_mode < 2.5) {
         let dist = length(world_pos);
         return clamp(dist * 0.5, 0.0, 1.0);
     }
@@ -543,7 +576,7 @@ fn apply_appearance_animation(
 }
 
 @vertex
-fn vertex(input: Vertex) -> VertexOutput {
+fn vertex(input: Vertex) -> InstancedVertexOutput {
     // Reconstruct instance transform matrix from per-instance attributes
     let instanceMatrix = mat4x4<f32>(
         input.instance_col0,
@@ -565,35 +598,99 @@ fn vertex(input: Vertex) -> VertexOutput {
         input.position.xyz,
         input.normal,
         input.instance_deformation,
-        0.0 // Time will be passed via uniform in the future
+        instanced_uniform.time
     );
 
     // Transform deformed vertex position by instance matrix
     let worldPosition = instanceMatrix * vec4<f32>(localPos, 1.0);
 
-    var out: VertexOutput;
+    var out: InstancedVertexOutput;
     out.world_position = worldPosition;
     out.position = position_world_to_clip(worldPosition.xyz);
     out.world_normal = worldNormal;
 @if(VERTEX_UVS_A) {
     out.uv = input.uv;
 }
+    // Pass per-instance properties to fragment shader
+    out.instance_color = input.instance_color;
+    out.instance_secondary_color = input.instance_secondary_color;
+    out.instance_direction = input.instance_direction;
+    out.instance_flags = input.instance_flags;
+    out.instance_dash = input.instance_dash;
+    out.instance_deformation = input.instance_deformation;
+    out.instance_appearance = input.instance_appearance;
     return out;
 }
 
 @fragment
 fn instanced_fragment(
-    in: VertexOutput,
+    in: InstancedVertexOutput,
     @builtin(front_facing) is_front: bool,
 ) -> FragmentOutput {
-    var pbr_input = pbr_input_from_standard_material(in, is_front);
+    // Build PbrInput manually — no StandardMaterial uniform for instanced batches.
+    var pbr_input: pbr_types::PbrInput = pbr_types::pbr_input_new();
 
-    // The per-instance color/gradient is encoded in the material's base_color for now.
-    // The full instanced path will read from storage buffers instead.
+    pbr_input.is_orthographic = view.clip_from_view[3].w == 1.0;
+    // Inline calculate_view: perspective view vector from world position
+    let camera_world_pos = view.world_from_view[3].xyz;
+    if (pbr_input.is_orthographic) {
+        pbr_input.V = -normalize(view.world_from_view[2].xyz);
+    } else {
+        pbr_input.V = normalize(camera_world_pos - in.world_position.xyz);
+    }
+    pbr_input.frag_coord = in.position;
+    pbr_input.world_position = in.world_position;
 
-    // Apply appearance animation in the fragment shader
-    // (per-instance appearance data is available via vertex attributes interpolated to fragments)
-    // For now, appearance animation is applied at the vertex level via the instance_color attribute.
+    // Inline prepare_world_normal: flip if back-facing and double_sided is false
+    pbr_input.world_normal = in.world_normal;
+    if (!is_front) {
+        pbr_input.world_normal = -in.world_normal;
+    }
+    pbr_input.N = normalize(pbr_input.world_normal);
+
+    // Compute gradient progress from per-instance direction and color mode.
+    let color_mode = in.instance_flags.x;
+    let progress = compute_gradient_progress_instanced(
+        in.world_position.xyz,
+        in.instance_direction,
+        color_mode
+    );
+
+    // Resolve the base color from per-instance properties.
+    var base_color = in.instance_color.rgb;
+    if (color_mode > 0.5) {
+        // Dual-directional or dual-radial gradient
+        if (in.instance_flags.w > 0.5) {
+            // OKLAB color interpolation
+            base_color = oklab_mix(in.instance_color.rgb, in.instance_secondary_color.rgb, progress);
+        } else {
+            base_color = mix(in.instance_color.rgb, in.instance_secondary_color.rgb, progress);
+        }
+    }
+
+    // Apply appearance animation (color pulse, cycle, gradient shift).
+    let animated_color = apply_appearance_animation(
+        vec4<f32>(base_color, in.instance_color.a),
+        in.instance_secondary_color,
+        in.instance_appearance,
+        instanced_uniform.time
+    );
+    base_color = animated_color.rgb;
+
+    // Apply dash pattern if enabled (requires UV attributes on the mesh)
+@if(VERTEX_UVS_A) {
+    let dash = in.instance_dash;
+    if (dash.x > 0.0) {
+        let uv = in.uv;
+        let shape_type = in.instance_flags.z;
+        let perimeter_progress = compute_perimeter_progress(uv, shape_type);
+        let across = compute_across(uv, shape_type);
+        let dash_mask = dash_segment_mask(perimeter_progress, across, dash);
+        base_color = mix(base_color, base_color * 0.0, 1.0 - dash_mask);
+    }
+}
+
+    pbr_input.material.base_color = vec4<f32>(base_color, animated_color.a);
 
     pbr_input.material.base_color = alpha_discard(
         pbr_input.material.flags,
@@ -606,6 +703,11 @@ fn instanced_fragment(
     out = deferred_output(in, pbr_input);
 } @else {
     out.color = apply_pbr_lighting(pbr_input);
+
+    // Apply blend mode
+    let blended = apply_blend_mode(out.color.rgb, in.position.xy, in.instance_flags, in.instance_color.a);
+    out.color = blended;
+
     out.color = main_pass_post_lighting_processing(pbr_input, out.color);
 }
 
