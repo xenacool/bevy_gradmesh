@@ -9,4 +9,5 @@
 - [Deformation](./deformation.md)
 - [Appearance Animation](./appearance.md)
 - [Level of Detail](./lod.md)
+- [Custom Pipeline](./custom-pipeline.md)
 - [Advanced Topics](./advanced.md)

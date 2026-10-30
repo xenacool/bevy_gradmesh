@@ -37,6 +37,12 @@ BevyGradmesh provides a clean API for generating procedural 3D primitives with p
 - **Frustum culling**: Per-instance AABB culling against camera frustum planes
 - **Statistics API**: `InstancedStats` tracks instances, batches, cache hits, GPU upload bytes, and culling ratios
 
+### Custom Pipeline (Mobile-Friendly)
+
+- **Standalone pipeline**: `StandaloneRenderPlugin` bypasses Bevy's PBR system entirely, using a simple vertex+fragment shader with no PBR imports
+- **Zero descriptor pool pressure**: All material variation via per-instance vertex attributes — one pipeline, one bind group layout, one descriptor set
+- **Faster compilation**: One shader pipeline instead of N specializations
+
 ### Animation
 
 - **Vertex shader deformation**: Wobble, pulse, and morph effects without CPU mesh regeneration

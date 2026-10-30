@@ -344,7 +344,8 @@ impl Batch {
 /// let batches = recorder.end();
 /// ```
 pub struct BatchRecorder {
-    batches: HashMap<BatchKey, Batch>,
+    /// The collected batches, keyed by mesh+blend+render state.
+    pub batches: HashMap<BatchKey, Batch>,
     /// Cached meshes to avoid rebuilding the same geometry.
     mesh_cache: HashMap<u64, Mesh>,
     /// Current transform state for relative positioning.

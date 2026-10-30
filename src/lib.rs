@@ -46,6 +46,7 @@ pub mod plugin;
 pub mod retained;
 pub mod render_pipeline;
 pub mod instanced_render;
+pub mod standalone_pipeline;
 pub mod culling;
 pub mod polyline_gpu;
 pub mod lod;
@@ -77,4 +78,8 @@ pub use deformation::{DeformationType, DeformationParams, Deformation};
 pub use appearance::{AppearanceSnapshot, AppearanceType};
 pub use material_interning::{
     GradMeshMaterialKey, GradMeshMaterialPool, MATERIAL_WARNING_THRESHOLD, warn_excessive_materials,
+};
+pub use standalone_pipeline::{
+    StandaloneRenderPlugin, StandalonePipeline, StandalonePipelineKey,
+    StandaloneBatchData, render_standalone_batches,
 };

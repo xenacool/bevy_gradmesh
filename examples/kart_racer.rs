@@ -521,7 +521,7 @@ fn setup(
         MeshMaterial3d(materials.add(dual_directional_oklab(
             [0.08, 0.15, 0.06], [0.12, 0.22, 0.10], [0.2, 0.6, 0.15],
         ))),
-        Transform::from_translation(Vec3::new(-120.0, -0.05, -50.0)),
+        Transform::from_translation(Vec3::new(-120.0, -1.0, -50.0)),
         Name::new("Ground"),
     ));
 

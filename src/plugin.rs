@@ -28,6 +28,7 @@ use crate::deformation::Deformation;
 use crate::material::GradMeshExtension;
 use crate::material_interning::{GradMeshMaterialPool, warn_excessive_materials};
 use crate::render_pipeline::InstancedStats;
+use crate::standalone_pipeline::StandaloneRenderPlugin;
 use crate::shape::Shape;
 
 /// Shared mesh cache keyed by `Shape`.
@@ -211,11 +212,13 @@ fn tick_deformation(mut deformation: ResMut<Deformation>, time: Res<bevy::time::
 
 impl Plugin for GradMeshPlugin {
     fn build(&self, app: &mut bevy::app::App) {
-        // Embed the shader first so it's available when MaterialPlugin loads it
+        // Embed the shaders so they're available when plugins load them
         bevy::asset::embedded_asset!(app, "shader/gradmesh.wesl");
+        bevy::asset::embedded_asset!(app, "shader/standalone.wgsl");
 
         app.add_plugins(MaterialPlugin::<ExtendedMaterial<StandardMaterial, GradMeshExtension>>::default())
             .add_plugins(crate::instanced_render::InstancedRenderPlugin)
+            .add_plugins(StandaloneRenderPlugin)
             .init_resource::<MeshCache>()
             .init_resource::<InstancedStats>()
             .init_resource::<Deformation>()
