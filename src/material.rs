@@ -23,7 +23,7 @@ use bevy::shader::ShaderRef;
 /// so `[f32; 4]` cannot be used directly with `#[uniform()]`. This named-field
 /// struct derives `ShaderType`, which ensures each instance is exactly 16 bytes
 /// with proper alignment.
-#[derive(Debug, Clone, Copy, Default, Reflect, ShaderType)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Reflect, ShaderType)]
 pub struct Vec4 {
     pub x: f32,
     pub y: f32,

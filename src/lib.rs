@@ -31,15 +31,15 @@
 //! - **Direct**: Call `Shape::build()` and spawn `Mesh3d` entities manually.
 //! - **Immediate**: Use `ImmediateRecorder` for per-frame draw/dispose patterns.
 //! - **Retained**: Use `RetainedWorld` + `GradMeshHandle` for persistent shapes
-//!   that you update per-frame.
-//! - **Batched**: Use `BatchRecorder` to group shapes into batches for reduced
-//!   draw calls. Supports dirty tracking so only changed batches upload GPU
-//!   data each frame. Call `render_batches()` to spawn entities from batches.
-//!   (Full instanced render pipeline is the next phase.)
+//!   that you update per-frame.  Under the hood this uses batched instanced
+//!   rendering so shapes with the same mesh share draw calls.
+//! - **Batched**: Use `BatchRecorder` for manual per-frame batch accumulation.
+//!   Call `render_batches()` to spawn entities from batches.
 
 pub mod shape;
 pub mod style;
 pub mod material;
+pub mod material_interning;
 pub mod immediate;
 pub mod batch;
 pub mod plugin;
@@ -75,3 +75,6 @@ pub use instanced_render::{InstancedBatchData, InstancedRenderPlugin};
 pub use lod::{LodConfig, LodResult, LOD_MINIMAL, LOD_LOW, LOD_MEDIUM, LOD_HIGH, LOD_EXTREME};
 pub use deformation::{DeformationType, DeformationParams, Deformation};
 pub use appearance::{AppearanceSnapshot, AppearanceType};
+pub use material_interning::{
+    GradMeshMaterialKey, GradMeshMaterialPool, MATERIAL_WARNING_THRESHOLD, warn_excessive_materials,
+};

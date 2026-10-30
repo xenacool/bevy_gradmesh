@@ -450,7 +450,9 @@ impl BatchRecorder {
         self.mesh_cache.get(&mesh_id).unwrap()
     }
 
-    fn add_instance(
+    /// Add an instance with the given shape and properties to the current batch.
+    /// Used internally by `RetainedWorld` to replay retained slots.
+    pub fn add_instance(
         &mut self,
         shape: &Shape,
         mut properties: InstanceProperties,
@@ -783,7 +785,6 @@ impl BatchRecorder {
                 },
                 Transform::default(),
                 GlobalTransform::default(),
-                crate::retained::GradMeshEntityMarker,
             )).id();
 
             if let Some(p) = parent {
