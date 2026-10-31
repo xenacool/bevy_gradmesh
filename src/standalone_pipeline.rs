@@ -144,6 +144,7 @@ impl SpecializedMeshPipeline for StandalonePipeline {
 
         // Use the standalone shader for both vertex and fragment
         descriptor.vertex.shader = self.shader.clone();
+        descriptor.vertex.entry_point = Some("vs_standalone".into());
         descriptor.label = Some("standalone gradmesh pipeline".into());
 
         // Add the instanced vertex buffer layout
@@ -178,6 +179,7 @@ impl SpecializedMeshPipeline for StandalonePipeline {
 
         if let Some(fragment) = descriptor.fragment.as_mut() {
             fragment.shader = self.shader.clone();
+            fragment.entry_point = Some("fs_standalone".into());
         }
 
         Ok(descriptor)

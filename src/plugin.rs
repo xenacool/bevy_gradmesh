@@ -214,6 +214,7 @@ impl Plugin for GradMeshPlugin {
     fn build(&self, app: &mut bevy::app::App) {
         // Embed the shaders so they're available when plugins load them
         bevy::asset::embedded_asset!(app, "shader/gradmesh.wesl");
+        bevy::asset::embedded_asset!(app, "shader/instanced.wesl");
         bevy::asset::embedded_asset!(app, "shader/standalone.wgsl");
 
         app.add_plugins(MaterialPlugin::<ExtendedMaterial<StandardMaterial, GradMeshExtension>>::default())

@@ -478,7 +478,7 @@ fn init_instanced_pipeline(
     };
     use bevy::asset::AssetPath;
     let path = AssetPath::from_path_buf(
-        bevy::asset::embedded_path!("shader/gradmesh.wesl"),
+        bevy::asset::embedded_path!("shader/instanced.wesl"),
     ).with_source("embedded");
     let shader = asset_server.load(path);
     commands.insert_resource(InstancedPipeline::new(mesh_pipeline.clone(), shader));
@@ -498,6 +498,7 @@ impl SpecializedMeshPipeline for InstancedPipeline {
 
         // Use the instanced shader for both vertex and fragment
         descriptor.vertex.shader = self.shader.clone();
+        descriptor.vertex.entry_point = Some("instanced_vertex".into());
         descriptor.label = Some("instanced gradmesh pipeline".into());
 
         // Add the instanced vertex buffer layout
@@ -532,8 +533,8 @@ impl SpecializedMeshPipeline for InstancedPipeline {
         });
 
         if let Some(fragment) = descriptor.fragment.as_mut() {
-            // Use custom shader if provided, otherwise use the built-in instanced shader
             fragment.shader = self.shader.clone();
+            fragment.entry_point = Some("instanced_fragment".into());
         }
 
         Ok(descriptor)

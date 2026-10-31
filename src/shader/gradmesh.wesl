@@ -17,6 +17,7 @@
 import bevy_pbr::render::{
     pbr_fragment::pbr_input_from_standard_material,
     pbr_functions::alpha_discard,
+    view_transformations::position_world_to_clip,
 };
 
 @if(PREPASS_PIPELINE)
@@ -28,7 +29,6 @@ import bevy_pbr::{
 import bevy_pbr::render::{
     forward_io::{VertexOutput, FragmentOutput},
     pbr_functions::{apply_pbr_lighting, main_pass_post_lighting_processing},
-    view_transformations::position_world_to_clip,
 };
 
 // ─── OKLAB color space conversion ───
@@ -441,171 +441,6 @@ fn fragment(
     let blended = apply_blend_mode(out.color.rgb, in.position.xy, gradmesh.flags, gradmesh.color.w);
     out.color = blended;
 
-    out.color = main_pass_post_lighting_processing(pbr_input, out.color);
-}
-
-    return out;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Instanced rendering — vertex + fragment shaders
-// ═══════════════════════════════════════════════════════════════════════════════
-
-/// Per-instance gradmesh properties: 7×vec4 (color, secondary, direction, flags, dash, deformation, appearance).
-struct InstanceProperties {
-    color: vec4<f32>,
-    secondary_color: vec4<f32>,
-    direction: vec4<f32>,
-    flags: vec4<f32>,
-    dash: vec4<f32>,
-    deformation: vec4<f32>,
-    appearance: vec4<f32>,
-}
-
-// ─── Vertex input ───
-
-struct Vertex {
-    @location(0) position: vec4<f32>,
-    @location(1) normal: vec3<f32>,
-    @if(VERTEX_UVS_A)
-    @location(2) uv: vec2<f32>,
-    // Per-instance attributes
-    @location(3) instance_col0: vec4<f32>,
-    @location(4) instance_col1: vec4<f32>,
-    @location(5) instance_col2: vec4<f32>,
-    @location(6) instance_col3: vec4<f32>,
-    @location(7) instance_color: vec4<f32>,
-    @location(8) instance_secondary_color: vec4<f32>,
-    @location(9) instance_direction: vec4<f32>,
-    @location(10) instance_flags: vec4<f32>,
-    @location(11) instance_dash: vec4<f32>,
-    @location(12) instance_deformation: vec4<f32>,
-    @location(13) instance_appearance: vec4<f32>,
-}
-
-/// Compute gradient progress for the instanced path.
-fn compute_gradient_progress_instanced(world_pos: vec3<f32>, direction: vec4<f32>, color_mode: i32) -> f32 {
-    let dir = direction.xyz;
-
-    if (color_mode == 0) {
-        return 0.0;
-    } else if (color_mode == 1) {
-        let progress = dot(world_pos, normalize(dir));
-        return clamp(progress * 0.1 + 0.5, 0.0, 1.0);
-    } else if (color_mode == 2) {
-        let dist = length(world_pos);
-        return clamp(dist * 0.5, 0.0, 1.0);
-    }
-
-    return 0.5;
-}
-
-/// Apply appearance animation to resolve animated color.
-/// Returns the animated color based on time, speed, phase, and type.
-fn apply_appearance_animation(
-    base_color: vec4<f32>,
-    secondary_color: vec4<f32>,
-    appearance: vec4<f32>,
-    time: f32,
-) -> vec4<f32> {
-    let speed = appearance.x;
-    let phase = appearance.y;
-    let anim_type = appearance.z;
-
-    // No animation
-    if (speed <= 0.0 || anim_type <= 0.5) {
-        return base_color;
-    }
-
-    let t = sin(time * speed * 6.28318530718 + phase * 6.28318530718);
-    let blend = t * 0.5 + 0.5; // Map sin(-1..1) to (0..1)
-
-    if (anim_type < 1.5) {
-        // ColorPulse: blend between primary and secondary
-        return vec4<f32>(mix(base_color.rgb, secondary_color.rgb, blend), base_color.a);
-    } else if (anim_type < 2.5) {
-        // ColorCycle: shift hue by rotating RGB
-        let shift = blend * 120.0 * 3.14159265359 / 180.0;
-        let c = base_color.rgb;
-        let p = 0.33333333333;
-        let s = sin(shift);
-        let cs = cos(shift);
-        let rotated = vec3<f32>(
-            (cs + p * (1.0 - cs)) * c.x + (p * (1.0 - cs) - s) * c.y + (p * (1.0 - cs) + s) * c.z,
-            (p * (1.0 - cs) + s) * c.x + (cs + p * (1.0 - cs)) * c.y + (p * (1.0 - cs) - s) * c.z,
-            (p * (1.0 - cs) - s) * c.x + (p * (1.0 - cs) + s) * c.y + (cs + p * (1.0 - cs)) * c.z,
-        );
-        return vec4<f32>(rotated, base_color.a);
-    } else {
-        // GradientShift: just pulse for now (direction shift handled in vertex)
-        return vec4<f32>(mix(base_color.rgb, secondary_color.rgb, blend), base_color.a);
-    }
-}
-
-@vertex
-fn vertex(input: Vertex) -> VertexOutput {
-    // Reconstruct instance transform matrix from per-instance attributes
-    let instanceMatrix = mat4x4<f32>(
-        input.instance_col0,
-        input.instance_col1,
-        input.instance_col2,
-        input.instance_col3,
-    );
-
-    // Transform normal (use upper-left 3x3 of instance matrix)
-    let normalMatrix = mat3x3<f32>(
-        input.instance_col0.xyz,
-        input.instance_col1.xyz,
-        input.instance_col2.xyz,
-    );
-    let worldNormal = normalize(normalMatrix * input.normal);
-
-    // Apply deformation in local space before world transform
-    let localPos = apply_deformation(
-        input.position.xyz,
-        input.normal,
-        input.instance_deformation,
-        0.0 // Time will be passed via uniform in the future
-    );
-
-    // Transform deformed vertex position by instance matrix
-    let worldPosition = instanceMatrix * vec4<f32>(localPos, 1.0);
-
-    var out: VertexOutput;
-    out.world_position = worldPosition;
-    out.position = position_world_to_clip(worldPosition.xyz);
-    out.world_normal = worldNormal;
-@if(VERTEX_UVS_A) {
-    out.uv = input.uv;
-}
-    return out;
-}
-
-@fragment
-fn instanced_fragment(
-    in: VertexOutput,
-    @builtin(front_facing) is_front: bool,
-) -> FragmentOutput {
-    var pbr_input = pbr_input_from_standard_material(in, is_front);
-
-    // The per-instance color/gradient is encoded in the material's base_color for now.
-    // The full instanced path will read from storage buffers instead.
-
-    // Apply appearance animation in the fragment shader
-    // (per-instance appearance data is available via vertex attributes interpolated to fragments)
-    // For now, appearance animation is applied at the vertex level via the instance_color attribute.
-
-    pbr_input.material.base_color = alpha_discard(
-        pbr_input.material.flags,
-        pbr_input.material.alpha_cutoff,
-        pbr_input.material.base_color
-    );
-
-    var out: FragmentOutput;
-@if(PREPASS_PIPELINE) {
-    out = deferred_output(in, pbr_input);
-} @else {
-    out.color = apply_pbr_lighting(pbr_input);
     out.color = main_pass_post_lighting_processing(pbr_input, out.color);
 }
 

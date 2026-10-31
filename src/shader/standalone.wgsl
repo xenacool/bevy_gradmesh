@@ -1,12 +1,15 @@
-// BevyGradmesh standalone shader — no PBR dependency.
+// BevyGradmesh standalone shader — uses Bevy PBR view transforms only.
 //
-// This shader implements gradient shading without any Bevy PBR imports,
-// avoiding descriptor pool pressure on mobile GPUs. All material variation
-// comes from per-instance vertex attributes, not shader specialization.
+// This shader implements gradient shading with minimal Bevy PBR dependency:
+// only imports `position_world_to_clip` for world-to-clip transformation.
+// All material variation comes from per-instance vertex attributes, not
+// shader specialization. No PBR material bindings are needed.
 //
 // Entry points:
 //   - vs_standalone: vertex shader with per-instance transforms and properties
 //   - fs_standalone: fragment shader with gradient shading and blend modes
+
+import bevy_pbr::render::view_transformations::position_world_to_clip;
 
 // ─── OKLAB color space conversion ───
 
@@ -271,16 +274,6 @@ struct VertexOutput {
     @location(8) appearance: vec4<f32>,
 }
 
-// View-projection matrix uniform
-struct ViewUniform {
-    view_proj: mat4x4<f32>,
-    time: f32,
-    _padding: vec3<f32>,
-}
-
-@group(0) @binding(0)
-var<uniform> view: ViewUniform;
-
 @vertex
 fn vs_standalone(input: VertexInput) -> VertexOutput {
     // Reconstruct instance transform matrix
@@ -304,14 +297,14 @@ fn vs_standalone(input: VertexInput) -> VertexOutput {
         input.position.xyz,
         input.normal,
         input.instance_deformation,
-        view.time
+        0.0 // Time will be passed via uniform in the future
     );
 
     // Transform to world space
     let worldPosition = instanceMatrix * vec4<f32>(localPos, 1.0);
 
     var out: VertexOutput;
-    out.clip_position = view.view_proj * worldPosition;
+    out.clip_position = position_world_to_clip(worldPosition.xyz);
     out.world_position = worldPosition;
     out.world_normal = worldNormal;
     out.uv = input.uv;
