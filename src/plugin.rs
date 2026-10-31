@@ -27,6 +27,7 @@ use bevy::render::mesh::Mesh;
 use crate::deformation::Deformation;
 use crate::material::GradMeshExtension;
 use crate::material_interning::{GradMeshMaterialPool, warn_excessive_materials};
+use crate::render_pipeline::InstancedStats;
 use crate::standalone_pipeline::StandaloneRenderPlugin;
 use crate::shape::Shape;
 
@@ -263,6 +264,7 @@ impl Plugin for GradMeshPlugin {
         }
 
         app.init_resource::<MeshCache>()
+            .init_resource::<InstancedStats>()
             .init_resource::<Deformation>()
             .init_resource::<GradMeshMaterialPool>()
             .add_systems(bevy::app::Update, tick_deformation)

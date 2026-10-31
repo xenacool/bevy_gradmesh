@@ -28,7 +28,7 @@ default = ["pbr"]
 pbr = []
 
 [dependencies]
-bevy = { version = "0.20", default-features = false, features = ["bevy_core_pipeline", "bevy_pbr", "bevy_render", "bevy_log", "bevy_text", "bevy_ui", "bevy_winit", "x11", "wayland", "debug", "default_font"] }
+bevy = { version = "0.20", default-features = false, features = ["bevy_core_pipeline", "bevy_pbr", "bevy_render", "bevy_camera", "bevy_light", "bevy_log", "bevy_text", "bevy_ui", "bevy_winit", "x11", "wayland", "debug", "default_font"] }
 bevy_asset = "0.20"
 bevy_material = "0.20"
 bytemuck = "1.21"
