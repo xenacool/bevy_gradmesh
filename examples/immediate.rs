@@ -10,31 +10,35 @@ mod common;
 use bevy::prelude::*;
 use bevy::render::RenderPlugin;
 use bevy_gradmesh::{
-    opaque, ShapeDetail,
-    ImmediateRecorder, BillboardMode, GradMeshPlugin,
-    imm_opaque, imm_transparent, imm_additive, imm_dual_directional,
-    GradMeshMaterial,
+    BillboardMode, GradMeshMaterial, GradMeshPlugin, ImmediateRecorder, ShapeDetail, imm_additive,
+    imm_dual_directional, imm_opaque, imm_transparent, opaque,
 };
 use common::screenshot::AutoScreenshotPlugin;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "BevyGradmesh Immediate Mode".into(),
-                resolution: (1280, 720).into(),
-                ..default()
-            }),
-            ..default()
-        }).set(RenderPlugin {
-            synchronous_pipeline_compilation: true,
-            ..default()
-        }))
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "BevyGradmesh Immediate Mode".into(),
+                        resolution: (1280, 720).into(),
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .set(RenderPlugin {
+                    synchronous_pipeline_compilation: true,
+                    ..default()
+                }),
+        )
         .add_plugins(GradMeshPlugin)
         .add_plugins(
             AutoScreenshotPlugin::new("screenshot_immediate.png")
                 .with_title("Immediate Mode")
-                .with_description("Per-frame drawing with particles, billboarding, and line drawing")
+                .with_description(
+                    "Per-frame drawing with particles, billboarding, and line drawing",
+                ),
         )
         .insert_resource(ClearColor(Color::srgb(0.08, 0.08, 0.1)))
         .add_systems(Startup, setup)
@@ -85,27 +89,51 @@ fn setup(
     // Static reference objects (not immediate mode)
     // A wireframe-like cube made of lines
     let cube_center = Vec3::new(-4.0, 1.0, -3.0);
-    spawn_label(&mut commands, "Animated Particles", cube_center + Vec3::new(0.0, 1.4, 0.0));
+    spawn_label(
+        &mut commands,
+        "Animated Particles",
+        cube_center + Vec3::new(0.0, 1.4, 0.0),
+    );
 
     // Push/pop state demo area
     let stack_center = Vec3::new(0.0, 1.0, -3.0);
-    spawn_label(&mut commands, "Push/Pop State Stack", stack_center + Vec3::new(0.0, 1.4, 0.0));
+    spawn_label(
+        &mut commands,
+        "Push/Pop State Stack",
+        stack_center + Vec3::new(0.0, 1.4, 0.0),
+    );
 
     // Billboarding demo area
     let bill_center = Vec3::new(4.0, 1.0, -3.0);
-    spawn_label(&mut commands, "Billboarding", bill_center + Vec3::new(0.0, 1.4, 0.0));
+    spawn_label(
+        &mut commands,
+        "Billboarding",
+        bill_center + Vec3::new(0.0, 1.4, 0.0),
+    );
 
     // Line drawing demo
     let line_center = Vec3::new(-4.0, 1.0, 1.0);
-    spawn_label(&mut commands, "Line Drawing", line_center + Vec3::new(0.0, 1.4, 0.0));
+    spawn_label(
+        &mut commands,
+        "Line Drawing",
+        line_center + Vec3::new(0.0, 1.4, 0.0),
+    );
 
     // Render layer demo
     let layer_center = Vec3::new(0.0, 1.0, 1.0);
-    spawn_label(&mut commands, "Render Layers", layer_center + Vec3::new(0.0, 1.4, 0.0));
+    spawn_label(
+        &mut commands,
+        "Render Layers",
+        layer_center + Vec3::new(0.0, 1.4, 0.0),
+    );
 
     // Mixed shapes demo
     let mixed_center = Vec3::new(4.0, 1.0, 1.0);
-    spawn_label(&mut commands, "Mixed Shapes", mixed_center + Vec3::new(0.0, 1.4, 0.0));
+    spawn_label(
+        &mut commands,
+        "Mixed Shapes",
+        mixed_center + Vec3::new(0.0, 1.4, 0.0),
+    );
 
     // Initialize recorder
     commands.insert_resource(Recorder(ImmediateRecorder::new()));
@@ -139,7 +167,14 @@ fn draw_immediate(
 
         rec.set_position(Vec3::new(x, y, z));
         rec.set_scale(Vec3::splat(0.08 + (t.sin() * 0.5 + 0.5) * 0.04));
-        rec.sphere(&mut commands, &mut meshes, &mut materials, 0.5, ShapeDetail::Low, mat);
+        rec.sphere(
+            &mut commands,
+            &mut meshes,
+            &mut materials,
+            0.5,
+            ShapeDetail::Low,
+            mat,
+        );
     }
 
     // ─── Push/Pop State Stack (nested transforms) ───
@@ -150,8 +185,12 @@ fn draw_immediate(
 
     // Base cuboid
     rec.cuboid(
-        &mut commands, &mut meshes, &mut materials,
-        Vec3::splat(0.6), 0.0, ShapeDetail::Low,
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        Vec3::splat(0.6),
+        0.0,
+        ShapeDetail::Low,
         imm_opaque(0.3, 0.5, 0.9),
     );
 
@@ -160,8 +199,12 @@ fn draw_immediate(
     rec.set_position(base + Vec3::new(0.0, 0.5, 0.0));
     rec.set_rotation(Quat::from_rotation_y(t * 0.8));
     rec.cuboid(
-        &mut commands, &mut meshes, &mut materials,
-        Vec3::splat(0.4), 0.1, ShapeDetail::Low,
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        Vec3::splat(0.4),
+        0.1,
+        ShapeDetail::Low,
         imm_opaque(0.9, 0.5, 0.3),
     );
 
@@ -170,8 +213,11 @@ fn draw_immediate(
     rec.set_position(base + Vec3::new(0.0, 0.9, 0.0));
     rec.set_rotation(Quat::from_rotation_x(t * 1.2));
     rec.sphere(
-        &mut commands, &mut meshes, &mut materials,
-        0.2, ShapeDetail::Low,
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        0.2,
+        ShapeDetail::Low,
         imm_opaque(0.3, 0.9, 0.5),
     );
     rec.pop_state(); // Back to child level
@@ -180,8 +226,12 @@ fn draw_immediate(
     rec.set_position(base + Vec3::new(0.5, 0.5, 0.0));
     rec.set_rotation(Quat::from_rotation_z(t * 0.6));
     rec.cone(
-        &mut commands, &mut meshes, &mut materials,
-        0.15, 0.4, ShapeDetail::Low,
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        0.15,
+        0.4,
+        ShapeDetail::Low,
         imm_opaque(0.9, 0.3, 0.6),
     );
     rec.pop_state(); // Back to base level
@@ -192,24 +242,33 @@ fn draw_immediate(
     // FaceCameraY disc
     rec.set_position(bill_pos + Vec3::new(-0.8, 0.0, 0.0));
     rec.disc(
-        &mut commands, &mut meshes, &mut materials,
-        0.4, imm_opaque(0.3, 0.8, 0.9),
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        0.4,
+        imm_opaque(0.3, 0.8, 0.9),
         BillboardMode::FaceCameraY,
     );
 
     // FaceCamera disc
     rec.set_position(bill_pos + Vec3::new(0.0, 0.0, 0.0));
     rec.disc(
-        &mut commands, &mut meshes, &mut materials,
-        0.4, imm_opaque(0.9, 0.4, 0.7),
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        0.4,
+        imm_opaque(0.9, 0.4, 0.7),
         BillboardMode::FaceCamera,
     );
 
     // No billboard disc (flat, facing +Z)
     rec.set_position(bill_pos + Vec3::new(0.8, 0.0, 0.0));
     rec.disc(
-        &mut commands, &mut meshes, &mut materials,
-        0.4, imm_opaque(0.4, 0.9, 0.4),
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        0.4,
+        imm_opaque(0.4, 0.9, 0.4),
         BillboardMode::None,
     );
 
@@ -217,8 +276,12 @@ fn draw_immediate(
     rec.set_position(bill_pos + Vec3::new(0.0, 1.2, 0.0));
     rec.set_scale(Vec3::splat(1.0 + t.sin() * 0.2));
     rec.disc_rim(
-        &mut commands, &mut meshes, &mut materials,
-        0.3, 0.05, imm_opaque(0.9, 0.8, 0.2),
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        0.3,
+        0.05,
+        imm_opaque(0.9, 0.8, 0.2),
         BillboardMode::FaceCamera,
     );
 
@@ -232,9 +295,33 @@ fn draw_immediate(
         line_base + Vec3::new(0.6, 0.0, 0.0),
     ];
     let line_mat = || imm_opaque(0.3, 0.7, 0.9);
-    rec.line_3d(&mut commands, &mut meshes, &mut materials, tri_pts[0], tri_pts[1], 0.02, line_mat());
-    rec.line_3d(&mut commands, &mut meshes, &mut materials, tri_pts[1], tri_pts[2], 0.02, line_mat());
-    rec.line_3d(&mut commands, &mut meshes, &mut materials, tri_pts[2], tri_pts[0], 0.02, line_mat());
+    rec.line_3d(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        tri_pts[0],
+        tri_pts[1],
+        0.02,
+        line_mat(),
+    );
+    rec.line_3d(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        tri_pts[1],
+        tri_pts[2],
+        0.02,
+        line_mat(),
+    );
+    rec.line_3d(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        tri_pts[2],
+        tri_pts[0],
+        0.02,
+        line_mat(),
+    );
 
     // Animated spiral lines
     let spiral_center = line_base + Vec3::new(2.0, 0.6, 0.0);
@@ -247,7 +334,15 @@ fn draw_immediate(
         let p1 = spiral_center + Vec3::new(a1.cos() * r1, a1.sin() * r1, 0.0);
         let p2 = spiral_center + Vec3::new(a2.cos() * r2, a2.sin() * r2, 0.0);
         let spiral_mat = imm_opaque(0.9, 0.5, 0.2);
-        rec.line_3d(&mut commands, &mut meshes, &mut materials, p1, p2, 0.02, spiral_mat);
+        rec.line_3d(
+            &mut commands,
+            &mut meshes,
+            &mut materials,
+            p1,
+            p2,
+            0.02,
+            spiral_mat,
+        );
     }
 
     // ─── Render Layers (depth ordering) ───
@@ -257,8 +352,11 @@ fn draw_immediate(
     rec.set_position(layer_base + Vec3::new(0.0, 0.3, 0.0));
     rec.set_scale(Vec3::splat(1.5));
     rec.disc(
-        &mut commands, &mut meshes, &mut materials,
-        0.5, imm_transparent(0.2, 0.3, 0.6, 0.3),
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        0.5,
+        imm_transparent(0.2, 0.3, 0.6, 0.3),
         BillboardMode::FaceCamera,
     );
 
@@ -266,8 +364,11 @@ fn draw_immediate(
     rec.set_position(layer_base + Vec3::new(0.0, 0.3, 0.0));
     rec.set_scale(Vec3::ONE);
     rec.sphere(
-        &mut commands, &mut meshes, &mut materials,
-        0.3, ShapeDetail::High,
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        0.3,
+        ShapeDetail::High,
         imm_dual_directional([0.5, 0.2, 0.15], [0.96, 0.8, 0.69], [0.0, 1.0, 0.0]),
     );
 
@@ -275,8 +376,11 @@ fn draw_immediate(
     rec.set_position(layer_base + Vec3::new(0.0, 0.8, 0.0));
     rec.set_scale(Vec3::splat(0.15 + t.sin() * 0.05));
     rec.sphere(
-        &mut commands, &mut meshes, &mut materials,
-        0.5, ShapeDetail::Low,
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        0.5,
+        ShapeDetail::Low,
         imm_additive(1.0, 0.9, 0.3),
     );
 
@@ -288,8 +392,14 @@ fn draw_immediate(
     rec.set_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2));
     rec.set_scale(Vec3::ONE);
     rec.torus(
-        &mut commands, &mut meshes, &mut materials,
-        0.3, 0.1, 0.0, std::f32::consts::TAU, ShapeDetail::High,
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        0.3,
+        0.1,
+        0.0,
+        std::f32::consts::TAU,
+        ShapeDetail::High,
         imm_opaque(0.5, 0.8, 0.3),
     );
 
@@ -297,8 +407,13 @@ fn draw_immediate(
     rec.set_position(mixed_base + Vec3::new(0.0, 0.3, 0.0));
     rec.set_rotation(Quat::from_rotation_y(t * 0.5));
     rec.pyramid(
-        &mut commands, &mut meshes, &mut materials,
-        4, 0.3, 0.6, ShapeDetail::High,
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        4,
+        0.3,
+        0.6,
+        ShapeDetail::High,
         imm_opaque(0.9, 0.4, 0.3),
     );
 
@@ -306,8 +421,12 @@ fn draw_immediate(
     rec.set_position(mixed_base + Vec3::new(1.0, 0.4, 0.0));
     rec.set_rotation(Quat::from_rotation_z(t * 0.7));
     rec.capsule(
-        &mut commands, &mut meshes, &mut materials,
-        0.12, 0.5, ShapeDetail::High,
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        0.12,
+        0.5,
+        ShapeDetail::High,
         imm_opaque(0.3, 0.5, 0.9),
     );
 
@@ -315,8 +434,12 @@ fn draw_immediate(
     rec.set_position(mixed_base + Vec3::new(0.0, 1.2, 0.0));
     rec.set_scale(Vec3::splat(1.0 + t.sin() * 0.1));
     rec.regular_polygon(
-        &mut commands, &mut meshes, &mut materials,
-        6, 0.25, imm_opaque(0.8, 0.3, 0.7),
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        6,
+        0.25,
+        imm_opaque(0.8, 0.3, 0.7),
         BillboardMode::FaceCamera,
     );
 
@@ -324,8 +447,13 @@ fn draw_immediate(
     rec.set_position(mixed_base + Vec3::new(1.0, 1.2, 0.0));
     rec.set_scale(Vec3::splat(1.0 + t.cos() * 0.1));
     rec.polygon_rim(
-        &mut commands, &mut meshes, &mut materials,
-        8, 0.25, 0.04, imm_opaque(0.3, 0.9, 0.6),
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        8,
+        0.25,
+        0.04,
+        imm_opaque(0.3, 0.9, 0.6),
         BillboardMode::FaceCamera,
     );
 }
@@ -356,7 +484,10 @@ fn hsl_to_rgb(h: f32, s: f32, l: f32) -> [f32; 3] {
 fn spawn_label(commands: &mut Commands, text: &str, position: Vec3) {
     commands.spawn((
         Text::new(text.to_string()),
-        TextFont { font_size: FontSize::Px(15.0), ..default() },
+        TextFont {
+            font_size: FontSize::Px(15.0),
+            ..default()
+        },
         TextColor(Color::srgb(0.88, 0.91, 0.98)),
         Node {
             position_type: PositionType::Absolute,
@@ -376,7 +507,9 @@ fn position_labels(
     camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     mut labels: Query<(&WorldLabel, &mut Node)>,
 ) {
-    let Ok((camera, camera_transform)) = camera.single() else { return; };
+    let Ok((camera, camera_transform)) = camera.single() else {
+        return;
+    };
     for (label, mut node) in &mut labels {
         if let Ok(viewport) = camera.world_to_viewport(camera_transform, label.0) {
             node.left = Val::Px(viewport.x - 75.0);

@@ -91,7 +91,9 @@ impl GradMeshMaterialKey {
         }
         // Return existing handle or create a new material
         if let Some(id) = matched_id {
-            return assets.get_strong_handle(id).expect("asset should exist after iteration");
+            return assets
+                .get_strong_handle(id)
+                .expect("asset should exist after iteration");
         }
         let material = self.build();
         assets.add(material)

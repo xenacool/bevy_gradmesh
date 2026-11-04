@@ -83,11 +83,7 @@ impl LodConfig {
     /// rapid oscillation.
     ///
     /// Note: Close objects get high detail (Extreme=4), far objects get low detail (Minimal=0).
-    pub fn compute_lod(
-        &self,
-        distance: f32,
-        previous_lod: Option<u8>,
-    ) -> (u8, f32) {
+    pub fn compute_lod(&self, distance: f32, previous_lod: Option<u8>) -> (u8, f32) {
         // Find the first threshold that the distance exceeds.
         // This determines the raw LOD level (0=closer, higher=farther).
         let mut raw_level = 0u8;
@@ -160,11 +156,7 @@ impl LodResult {
 
 impl LodConfig {
     /// Compute LOD with full result including transition state.
-    pub fn compute_lod_result(
-        &self,
-        distance: f32,
-        previous_lod: Option<u8>,
-    ) -> LodResult {
+    pub fn compute_lod_result(&self, distance: f32, previous_lod: Option<u8>) -> LodResult {
         let (lod_level, transition_weight) = self.compute_lod(distance, previous_lod);
         let in_transition = transition_weight > 0.0 && transition_weight < 1.0;
         LodResult {
@@ -178,10 +170,10 @@ impl LodConfig {
 /// Bayer 4x4 dither matrix for cross-fade blending.
 /// Used in the WGSL shader to generate the dither pattern.
 pub const BAYER_DITHER_4X4: [[f32; 4]; 4] = [
-    [ 0.0/16.0,  8.0/16.0,  2.0/16.0, 10.0/16.0],
-    [12.0/16.0,  4.0/16.0, 14.0/16.0,  6.0/16.0],
-    [ 3.0/16.0, 11.0/16.0,  1.0/16.0,  9.0/16.0],
-    [15.0/16.0,  7.0/16.0, 13.0/16.0,  5.0/16.0],
+    [0.0 / 16.0, 8.0 / 16.0, 2.0 / 16.0, 10.0 / 16.0],
+    [12.0 / 16.0, 4.0 / 16.0, 14.0 / 16.0, 6.0 / 16.0],
+    [3.0 / 16.0, 11.0 / 16.0, 1.0 / 16.0, 9.0 / 16.0],
+    [15.0 / 16.0, 7.0 / 16.0, 13.0 / 16.0, 5.0 / 16.0],
 ];
 
 /// Generate the WGSL code for the Bayer dither function.
@@ -276,15 +268,15 @@ mod tests {
     #[test]
     fn lod_result_needs_dither() {
         let config = LodConfig::default();
-        
+
         // In transition
         let result = config.compute_lod_result(12.5, None);
         assert!(result.needs_dither());
-        
+
         // Not in transition (very close)
         let result = config.compute_lod_result(1.0, None);
         assert!(!result.needs_dither());
-        
+
         // Fully transitioned (past the zone)
         let result = config.compute_lod_result(20.0, None);
         assert!(!result.needs_dither());

@@ -11,29 +11,33 @@ mod common;
 use bevy::prelude::*;
 use bevy::render::RenderPlugin;
 use bevy_gradmesh::{
-    additive, dual_directional, dual_directional_oklab, dual_radial_oklab,
-    opaque, screen, transparent, Shape, ShapeDetail, GradMeshMaterial, GradMeshPlugin,
+    GradMeshMaterial, GradMeshPlugin, Shape, ShapeDetail, additive, dual_directional,
+    dual_directional_oklab, dual_radial_oklab, opaque, screen, transparent,
 };
 use common::screenshot::AutoScreenshotPlugin;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "BevyGradmesh PBR Effects".into(),
-                resolution: (1280, 720).into(),
-                ..default()
-            }),
-            ..default()
-        }).set(RenderPlugin {
-            synchronous_pipeline_compilation: true,
-            ..default()
-        }))
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "BevyGradmesh PBR Effects".into(),
+                        resolution: (1280, 720).into(),
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .set(RenderPlugin {
+                    synchronous_pipeline_compilation: true,
+                    ..default()
+                }),
+        )
         .add_plugins(GradMeshPlugin)
         .add_plugins(
             AutoScreenshotPlugin::new("screenshot_pbr_effects.png")
                 .with_title("PBR Effects")
-                .with_description("Transparency, emission, roughness, and metallicity")
+                .with_description("Transparency, emission, roughness, and metallicity"),
         )
         .add_systems(Startup, setup)
         .add_systems(PostUpdate, (rotate_shapes, position_labels).chain())
@@ -85,9 +89,7 @@ fn setup(
     });
 
     // Dark backdrop
-    let backdrop_mesh = meshes.add(
-        Plane3d::new(Vec3::Z, Vec2::new(24.0, 16.0))
-    );
+    let backdrop_mesh = meshes.add(Plane3d::new(Vec3::Z, Vec2::new(24.0, 16.0)));
     commands.spawn((
         Mesh3d(backdrop_mesh),
         MeshMaterial3d(materials.add(opaque(0.06, 0.06, 0.08))),
@@ -101,7 +103,8 @@ fn setup(
 
     // Semi-transparent sphere
     add_shape(
-        &mut commands, &mut meshes,
+        &mut commands,
+        &mut meshes,
         &materials.add(transparent(0.3, 0.7, 1.0, 0.4)),
         Shape::sphere(0.4, ShapeDetail::High),
         Vec3::new(xs1[0], y1, 0.0),
@@ -113,7 +116,8 @@ fn setup(
         let mut mat = transparent(0.8, 0.95, 1.0, 0.2);
         mat.base.perceptual_roughness = 0.05;
         add_shape(
-            &mut commands, &mut meshes,
+            &mut commands,
+            &mut meshes,
             &materials.add(mat),
             Shape::sphere(0.4, ShapeDetail::High),
             Vec3::new(xs1[1], y1, 0.0),
@@ -123,7 +127,8 @@ fn setup(
 
     // Gradient transparent
     add_shape(
-        &mut commands, &mut meshes,
+        &mut commands,
+        &mut meshes,
         &materials.add(transparent(1.0, 0.4, 0.4, 0.5)),
         Shape::cuboid(Vec3::new(0.55, 0.55, 0.55), 0.2, ShapeDetail::High),
         Vec3::new(xs1[2], y1, 0.0),
@@ -132,7 +137,8 @@ fn setup(
 
     // Dual radial with alpha (inner glow fading to transparent)
     add_shape(
-        &mut commands, &mut meshes,
+        &mut commands,
+        &mut meshes,
         &materials.add(dual_radial_oklab(
             [1.0, 0.8, 0.3, 0.8],
             [0.2, 0.1, 0.5, 0.0],
@@ -145,7 +151,8 @@ fn setup(
 
     // Dither blend
     add_shape(
-        &mut commands, &mut meshes,
+        &mut commands,
+        &mut meshes,
         &materials.add(bevy_gradmesh::dither(0.9, 0.5, 1.0, 0.5)),
         Shape::disc(0.4, ShapeDetail::High),
         Vec3::new(xs1[4], y1, 0.0),
@@ -158,7 +165,8 @@ fn setup(
 
     // Additive glow sphere
     add_shape(
-        &mut commands, &mut meshes,
+        &mut commands,
+        &mut meshes,
         &materials.add(additive(1.0, 0.3, 0.2)),
         Shape::sphere(0.35, ShapeDetail::High),
         Vec3::new(xs2[0], y2, 0.0),
@@ -167,7 +175,8 @@ fn setup(
 
     // Additive cyan
     add_shape(
-        &mut commands, &mut meshes,
+        &mut commands,
+        &mut meshes,
         &materials.add(additive(0.2, 1.0, 0.9)),
         Shape::sphere(0.35, ShapeDetail::High),
         Vec3::new(xs2[1], y2, 0.0),
@@ -176,7 +185,8 @@ fn setup(
 
     // Screen blend
     add_shape(
-        &mut commands, &mut meshes,
+        &mut commands,
+        &mut meshes,
         &materials.add(screen(1.0, 0.7, 0.2)),
         Shape::cuboid(Vec3::new(0.5, 0.5, 0.5), 0.15, ShapeDetail::High),
         Vec3::new(xs2[2], y2, 0.0),
@@ -188,7 +198,8 @@ fn setup(
         let mut mat = dual_directional([0.2, 0.0, 0.4], [1.0, 0.3, 0.1], [0.0, 1.0, 0.0]);
         mat.base.emissive = bevy::color::LinearRgba::rgb(0.8, 0.2, 0.5) * 2.0;
         add_shape(
-            &mut commands, &mut meshes,
+            &mut commands,
+            &mut meshes,
             &materials.add(mat),
             Shape::capsule(0.2, 0.55, ShapeDetail::High),
             Vec3::new(xs2[3], y2, 0.0),
@@ -201,7 +212,8 @@ fn setup(
         let mut mat = dual_directional_oklab([0.1, 0.5, 0.2], [0.9, 1.0, 0.3], [1.0, 0.0, 0.0]);
         mat.base.emissive = bevy::color::LinearRgba::rgb(0.3, 1.0, 0.4) * 5.0;
         add_shape_rotated(
-            &mut commands, &mut meshes,
+            &mut commands,
+            &mut meshes,
             &materials.add(mat),
             Shape::torus(0.3, 0.1, 0.0, std::f32::consts::TAU),
             Vec3::new(xs2[4], y2, 0.0),
@@ -220,7 +232,8 @@ fn setup(
         mat.base.perceptual_roughness = 0.05;
         mat.base.metallic = 1.0;
         add_shape(
-            &mut commands, &mut meshes,
+            &mut commands,
+            &mut meshes,
             &materials.add(mat),
             Shape::sphere(0.4, ShapeDetail::High),
             Vec3::new(xs3[0], y3, 0.0),
@@ -234,7 +247,8 @@ fn setup(
         mat.base.perceptual_roughness = 1.0;
         mat.base.metallic = 0.0;
         add_shape(
-            &mut commands, &mut meshes,
+            &mut commands,
+            &mut meshes,
             &materials.add(mat),
             Shape::sphere(0.4, ShapeDetail::High),
             Vec3::new(xs3[1], y3, 0.0),
@@ -248,7 +262,8 @@ fn setup(
         mat.base.perceptual_roughness = 0.3;
         mat.base.metallic = 1.0;
         add_shape(
-            &mut commands, &mut meshes,
+            &mut commands,
+            &mut meshes,
             &materials.add(mat),
             Shape::cuboid(Vec3::new(0.5, 0.5, 0.5), 0.1, ShapeDetail::High),
             Vec3::new(xs3[2], y3, 0.0),
@@ -262,7 +277,8 @@ fn setup(
         mat.base.perceptual_roughness = 0.15;
         mat.base.metallic = 0.8;
         add_shape(
-            &mut commands, &mut meshes,
+            &mut commands,
+            &mut meshes,
             &materials.add(mat),
             Shape::cylinder(0.28, 0.55, ShapeDetail::High),
             Vec3::new(xs3[3], y3, 0.0),
@@ -276,7 +292,8 @@ fn setup(
         mat.base.perceptual_roughness = 0.9;
         mat.base.metallic = 0.0;
         add_shape(
-            &mut commands, &mut meshes,
+            &mut commands,
+            &mut meshes,
             &materials.add(mat),
             Shape::cylinder(0.28, 0.55, ShapeDetail::High),
             Vec3::new(xs3[4], y3, 0.0),
@@ -294,7 +311,8 @@ fn setup(
         mat.base.perceptual_roughness = 0.05;
         mat.base.emissive = bevy::color::LinearRgba::rgb(0.1, 1.0, 0.4) * 3.0;
         add_shape(
-            &mut commands, &mut meshes,
+            &mut commands,
+            &mut meshes,
             &materials.add(mat),
             Shape::capsule(0.2, 0.55, ShapeDetail::High),
             Vec3::new(xs4[0], y4, 0.0),
@@ -309,7 +327,8 @@ fn setup(
         mat.base.metallic = 1.0;
         mat.base.emissive = bevy::color::LinearRgba::rgb(0.5, 0.3, 1.0) * 1.5;
         add_shape(
-            &mut commands, &mut meshes,
+            &mut commands,
+            &mut meshes,
             &materials.add(mat),
             Shape::pyramid(4, 0.35, 0.6, ShapeDetail::High),
             Vec3::new(xs4[1], y4, 0.0),
@@ -319,15 +338,12 @@ fn setup(
 
     // Dual radial + transparent + emissive (orb)
     {
-        let mut mat = dual_radial_oklab(
-            [1.0, 0.9, 0.5, 0.9],
-            [0.3, 0.1, 0.8, 0.1],
-            0.5,
-        );
+        let mut mat = dual_radial_oklab([1.0, 0.9, 0.5, 0.9], [0.3, 0.1, 0.8, 0.1], 0.5);
         mat.base.perceptual_roughness = 0.0;
         mat.base.emissive = bevy::color::LinearRgba::rgb(1.0, 0.8, 0.3) * 2.0;
         add_shape(
-            &mut commands, &mut meshes,
+            &mut commands,
+            &mut meshes,
             &materials.add(mat),
             Shape::sphere(0.4, ShapeDetail::High),
             Vec3::new(xs4[2], y4, 0.0),
@@ -337,7 +353,8 @@ fn setup(
 
     // Dashed outline on metallic
     add_shape(
-        &mut commands, &mut meshes,
+        &mut commands,
+        &mut meshes,
         &materials.add(bevy_gradmesh::dashed(0.9, 0.5, 1.0, 8, 0.3, 0.0, 0, 0.0, 0)),
         Shape::disc(0.4, ShapeDetail::High),
         Vec3::new(xs4[3], y4, 0.0),
@@ -346,7 +363,8 @@ fn setup(
 
     // Multiplicative blend
     add_shape(
-        &mut commands, &mut meshes,
+        &mut commands,
+        &mut meshes,
         &materials.add(bevy_gradmesh::multiplicative(0.5, 0.2, 0.8)),
         Shape::hemisphere(0.35, true, ShapeDetail::High),
         Vec3::new(xs4[4], y4, 0.0),
@@ -388,7 +406,10 @@ fn add_shape_rotated(
 fn spawn_label(commands: &mut Commands, text: &str, position: Vec3) {
     commands.spawn((
         Text::new(text.to_string()),
-        TextFont { font_size: FontSize::Px(12.0), ..default() },
+        TextFont {
+            font_size: FontSize::Px(12.0),
+            ..default()
+        },
         TextColor(Color::srgb(0.88, 0.91, 0.98)),
         Node {
             position_type: PositionType::Absolute,
@@ -408,7 +429,9 @@ fn position_labels(
     camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     mut labels: Query<(&WorldLabel, &mut Node)>,
 ) {
-    let Ok((camera, camera_transform)) = camera.single() else { return; };
+    let Ok((camera, camera_transform)) = camera.single() else {
+        return;
+    };
     for (label, mut node) in &mut labels {
         if let Ok(viewport) = camera.world_to_viewport(camera_transform, label.0) {
             node.left = Val::Px(viewport.x - 55.0);

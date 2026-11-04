@@ -34,7 +34,7 @@
 use std::mem::size_of;
 
 use bevy::core_pipeline::core_3d::{Opaque3d, Opaque3dBatchSetKey, Opaque3dBinKey};
-use bevy::ecs::system::{lifetimeless::*, SystemParamItem};
+use bevy::ecs::system::{SystemParamItem, lifetimeless::*};
 use bevy::mesh::{MeshVertexBufferLayoutRef, VertexBufferLayout};
 use bevy::pbr::{
     MeshPipeline, MeshPipelineKey, RenderMeshInstances, SetMeshBindGroup, SetMeshViewBindGroup,
@@ -43,12 +43,11 @@ use bevy::pbr::{
 use bevy::prelude::*;
 use bevy::render::extract_component::{ExtractComponent, ExtractComponentPlugin};
 use bevy::render::mesh::allocator::MeshSlabs;
-use bevy::render::mesh::{allocator::MeshAllocator, RenderMesh, RenderMeshBufferInfo};
+use bevy::render::mesh::{RenderMesh, RenderMeshBufferInfo, allocator::MeshAllocator};
 use bevy::render::render_asset::RenderAssets;
 use bevy::render::render_phase::{
     AddRenderCommand, BinnedRenderPhaseType, DrawFunctions, InputUniformIndex, PhaseItem,
-    RenderCommand, RenderCommandResult, SetItemPipeline, TrackedRenderPass,
-    ViewBinnedRenderPhases,
+    RenderCommand, RenderCommandResult, SetItemPipeline, TrackedRenderPass, ViewBinnedRenderPhases,
 };
 use bevy::render::render_resource::*;
 use bevy::render::renderer::RenderDevice;
@@ -109,7 +108,10 @@ pub struct StandalonePipeline {
 
 impl StandalonePipeline {
     pub fn new(mesh_pipeline: MeshPipeline, shader: Handle<Shader>) -> Self {
-        Self { mesh_pipeline, shader }
+        Self {
+            mesh_pipeline,
+            shader,
+        }
     }
 }
 
@@ -157,17 +159,53 @@ impl SpecializedMeshPipeline for StandalonePipeline {
             attributes: [
                 // InstanceTransform: 4×vec4 at locations 3-6
                 (3u32, 0u64, VertexFormat::Float32x4),
-                (4u32, VertexFormat::Float32x4.size(), VertexFormat::Float32x4),
-                (5u32, VertexFormat::Float32x4.size() * 2, VertexFormat::Float32x4),
-                (6u32, VertexFormat::Float32x4.size() * 3, VertexFormat::Float32x4),
+                (
+                    4u32,
+                    VertexFormat::Float32x4.size(),
+                    VertexFormat::Float32x4,
+                ),
+                (
+                    5u32,
+                    VertexFormat::Float32x4.size() * 2,
+                    VertexFormat::Float32x4,
+                ),
+                (
+                    6u32,
+                    VertexFormat::Float32x4.size() * 3,
+                    VertexFormat::Float32x4,
+                ),
                 // InstanceProperties: 7×vec4 at locations 7-13
                 (7u32, transform_stride, VertexFormat::Float32x4),
-                (8u32, transform_stride + VertexFormat::Float32x4.size(), VertexFormat::Float32x4),
-                (9u32, transform_stride + VertexFormat::Float32x4.size() * 2, VertexFormat::Float32x4),
-                (10u32, transform_stride + VertexFormat::Float32x4.size() * 3, VertexFormat::Float32x4),
-                (11u32, transform_stride + VertexFormat::Float32x4.size() * 4, VertexFormat::Float32x4),
-                (12u32, transform_stride + VertexFormat::Float32x4.size() * 5, VertexFormat::Float32x4),
-                (13u32, transform_stride + VertexFormat::Float32x4.size() * 6, VertexFormat::Float32x4),
+                (
+                    8u32,
+                    transform_stride + VertexFormat::Float32x4.size(),
+                    VertexFormat::Float32x4,
+                ),
+                (
+                    9u32,
+                    transform_stride + VertexFormat::Float32x4.size() * 2,
+                    VertexFormat::Float32x4,
+                ),
+                (
+                    10u32,
+                    transform_stride + VertexFormat::Float32x4.size() * 3,
+                    VertexFormat::Float32x4,
+                ),
+                (
+                    11u32,
+                    transform_stride + VertexFormat::Float32x4.size() * 4,
+                    VertexFormat::Float32x4,
+                ),
+                (
+                    12u32,
+                    transform_stride + VertexFormat::Float32x4.size() * 5,
+                    VertexFormat::Float32x4,
+                ),
+                (
+                    13u32,
+                    transform_stride + VertexFormat::Float32x4.size() * 6,
+                    VertexFormat::Float32x4,
+                ),
             ]
             .map(|(loc, offset, fmt)| VertexAttribute {
                 shader_location: loc,
@@ -222,7 +260,9 @@ impl<P: PhaseItem> RenderCommand<P> for DrawStandaloneBatchImpl {
             return RenderCommandResult::Skip;
         };
 
-        let Some(mesh_instance) = render_mesh_instances.into_inner().render_mesh_queue_data(item.main_entity())
+        let Some(mesh_instance) = render_mesh_instances
+            .into_inner()
+            .render_mesh_queue_data(item.main_entity())
         else {
             return RenderCommandResult::Skip;
         };
@@ -244,17 +284,17 @@ impl<P: PhaseItem> RenderCommand<P> for DrawStandaloneBatchImpl {
         pass.set_vertex_buffer(1, gpu_buffers.buffer.slice(..));
 
         match &gpu_mesh.buffer_info {
-            RenderMeshBufferInfo::Indexed { index_format, count } => {
+            RenderMeshBufferInfo::Indexed {
+                index_format,
+                count,
+            } => {
                 let Some(index_buffer_slice) =
                     mesh_allocator.mesh_index_slice(&mesh_instance.mesh_asset_id())
                 else {
                     return RenderCommandResult::Skip;
                 };
 
-                pass.set_index_buffer(
-                    index_buffer_slice.buffer.slice(..),
-                    *index_format,
-                );
+                pass.set_index_buffer(index_buffer_slice.buffer.slice(..), *index_format);
 
                 pass.draw_indexed(
                     index_buffer_slice.range.start..(index_buffer_slice.range.start + count),
@@ -263,10 +303,7 @@ impl<P: PhaseItem> RenderCommand<P> for DrawStandaloneBatchImpl {
                 );
             }
             RenderMeshBufferInfo::NonIndexed => {
-                pass.draw(
-                    vertex_buffer_slice.range,
-                    0..gpu_buffers.instance_count,
-                );
+                pass.draw(vertex_buffer_slice.range, 0..gpu_buffers.instance_count);
             }
         }
 
@@ -326,14 +363,10 @@ fn build_combined_buffer(batch_data: &StandaloneBatchData) -> Vec<u8> {
         let p_start = i * property_stride;
 
         if t_start + transform_stride <= batch_data.transforms.len() {
-            combined.extend_from_slice(
-                &batch_data.transforms[t_start..t_start + transform_stride],
-            );
+            combined.extend_from_slice(&batch_data.transforms[t_start..t_start + transform_stride]);
         }
         if p_start + property_stride <= batch_data.properties.len() {
-            combined.extend_from_slice(
-                &batch_data.properties[p_start..p_start + property_stride],
-            );
+            combined.extend_from_slice(&batch_data.properties[p_start..p_start + property_stride]);
         }
     }
 
@@ -379,7 +412,9 @@ fn queue_standalone_batches(
             continue;
         };
 
-        let clip_from_world = view.clip_from_world.unwrap_or(view.clip_from_view * bevy::math::Affine3A::from(view.world_from_view.affine()));
+        let clip_from_world = view.clip_from_world.unwrap_or(
+            view.clip_from_view * bevy::math::Affine3A::from(view.world_from_view.affine()),
+        );
         let frustum = culling::FrustumPlanes::from_view_projection(&clip_from_world);
         let _camera_world_pos = view.world_from_view.translation();
 
@@ -404,12 +439,9 @@ fn queue_standalone_batches(
                     mesh.index_format(),
                 );
 
-            let Ok(pipeline) = pipelines.specialize(
-                &pipeline_cache,
-                &standalone_pipeline,
-                key,
-                &mesh.layout,
-            ) else {
+            let Ok(pipeline) =
+                pipelines.specialize(&pipeline_cache, &standalone_pipeline, key, &mesh.layout)
+            else {
                 continue;
             };
 
@@ -468,7 +500,8 @@ fn parse_transforms(batch_data: &StandaloneBatchData) -> Vec<culling::InstanceTr
         }
 
         let bytes = &batch_data.transforms[start..start + transform_stride];
-        let values: [f32; 16] = bytemuck::pod_read_unaligned(&bytes[..std::mem::size_of::<[f32; 16]>()]);
+        let values: [f32; 16] =
+            bytemuck::pod_read_unaligned(&bytes[..std::mem::size_of::<[f32; 16]>()]);
 
         transforms.push(culling::InstanceTransform {
             col0: [values[0], values[1], values[2], values[3]],
@@ -518,9 +551,8 @@ fn init_standalone_pipeline(
         return;
     };
     use bevy::asset::AssetPath;
-    let path = AssetPath::from_path_buf(
-        bevy::asset::embedded_path!("shader/standalone.wgsl"),
-    ).with_source("embedded");
+    let path = AssetPath::from_path_buf(bevy::asset::embedded_path!("shader/standalone.wgsl"))
+        .with_source("embedded");
     let shader = asset_server.load(path);
     commands.insert_resource(StandalonePipeline::new(mesh_pipeline.clone(), shader));
 }
@@ -558,27 +590,35 @@ pub fn render_standalone_batches(
         let mesh_id = mesh_handle.id();
         let mesh_aabb = AABB::from_mesh(&batch.mesh);
         let vertex_count = batch.mesh.count_vertices();
-        let lod_level = if vertex_count < 50 { 0 }
-        else if vertex_count < 100 { 1 }
-        else if vertex_count < 200 { 2 }
-        else if vertex_count < 400 { 3 }
-        else { 4 };
+        let lod_level = if vertex_count < 50 {
+            0
+        } else if vertex_count < 100 {
+            1
+        } else if vertex_count < 200 {
+            2
+        } else if vertex_count < 400 {
+            3
+        } else {
+            4
+        };
 
-        let entity_id = commands.spawn((
-            StandaloneBatchData {
-                mesh_id,
-                instance_count: buffer_data.instance_count,
-                transforms: buffer_data.transforms,
-                properties: buffer_data.properties,
-                dirty: batch.is_dirty(),
-                render_state: key.render_state,
-                mesh_aabb,
-                lod_level,
-                lod_transition_weight: 0.0,
-            },
-            Transform::default(),
-            GlobalTransform::default(),
-        )).id();
+        let entity_id = commands
+            .spawn((
+                StandaloneBatchData {
+                    mesh_id,
+                    instance_count: buffer_data.instance_count,
+                    transforms: buffer_data.transforms,
+                    properties: buffer_data.properties,
+                    dirty: batch.is_dirty(),
+                    render_state: key.render_state,
+                    mesh_aabb,
+                    lod_level,
+                    lod_transition_weight: 0.0,
+                },
+                Transform::default(),
+                GlobalTransform::default(),
+            ))
+            .id();
 
         if let Some(p) = parent {
             commands.entity(p).add_child(entity_id);

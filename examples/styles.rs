@@ -10,28 +10,32 @@ mod common;
 use bevy::prelude::*;
 use bevy::render::RenderPlugin;
 use bevy_gradmesh::{
-    Style, Dash, GradMeshMaterial, GradMeshPlugin, Shape, ShapeDetail, ShapeType, opaque,
+    Dash, GradMeshMaterial, GradMeshPlugin, Shape, ShapeDetail, ShapeType, Style, opaque,
 };
 use common::screenshot::AutoScreenshotPlugin;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "BevyGradmesh Style Showcase".into(),
-                resolution: (1280, 720).into(),
-                ..default()
-            }),
-            ..default()
-        }).set(RenderPlugin {
-            synchronous_pipeline_compilation: true,
-            ..default()
-        }))
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "BevyGradmesh Style Showcase".into(),
+                        resolution: (1280, 720).into(),
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .set(RenderPlugin {
+                    synchronous_pipeline_compilation: true,
+                    ..default()
+                }),
+        )
         .add_plugins(GradMeshPlugin)
         .add_plugins(
             AutoScreenshotPlugin::new("screenshot_styles.png")
                 .with_title("Style Showcase")
-                .with_description("Blend modes, color modes, dash patterns, and material presets")
+                .with_description("Blend modes, color modes, dash patterns, and material presets"),
         )
         .insert_resource(ClearColor(Color::srgb(0.15, 0.15, 0.18)))
         .add_systems(Startup, setup)
@@ -82,7 +86,8 @@ fn setup(
     // Disc rims give chevrons a visible width to form their V-shape
     let disc_rim = meshes.add(Shape::disc_rim(0.55, 0.18, ShapeDetail::High).build());
     // Larger cuboid for rectangle dash examples
-    let big_cuboid = meshes.add(Shape::cuboid(Vec3::new(1.0, 1.0, 0.6), 0.0, ShapeDetail::High).build());
+    let big_cuboid =
+        meshes.add(Shape::cuboid(Vec3::new(1.0, 1.0, 0.6), 0.0, ShapeDetail::High).build());
 
     let row_spacing = 3.2;
     let col_spacing = 2.6;
@@ -94,11 +99,19 @@ fn setup(
     let z3 = row_spacing * 1.5;
 
     // ─── Row 1: Color Modes ───
-    let r1_xs = [-col_spacing * 2.2, -col_spacing * 1.1, 0.0, col_spacing * 1.1, col_spacing * 2.2];
+    let r1_xs = [
+        -col_spacing * 2.2,
+        -col_spacing * 1.1,
+        0.0,
+        col_spacing * 1.1,
+        col_spacing * 2.2,
+    ];
 
     // Single (opaque)
     add_shape(
-        &mut commands, &mut materials, &sphere,
+        &mut commands,
+        &mut materials,
+        &sphere,
         Style::opaque(Color::srgb(0.9, 0.3, 0.3)),
         Vec3::new(r1_xs[0], origin_y, z0),
         "Single",
@@ -106,7 +119,9 @@ fn setup(
 
     // Dual Directional
     add_shape(
-        &mut commands, &mut materials, &sphere,
+        &mut commands,
+        &mut materials,
+        &sphere,
         Style::dual_directional(
             Color::srgb(0.5, 0.2, 0.15),
             Color::srgb(0.96, 0.8, 0.69),
@@ -118,7 +133,9 @@ fn setup(
 
     // Dual Directional OKLAB
     add_shape(
-        &mut commands, &mut materials, &sphere,
+        &mut commands,
+        &mut materials,
+        &sphere,
         Style::dual_directional_oklab(
             Color::srgb(0.5, 0.2, 0.15),
             Color::srgb(0.96, 0.8, 0.69),
@@ -130,32 +147,39 @@ fn setup(
 
     // Dual Radial
     add_shape(
-        &mut commands, &mut materials, &disc,
-        Style::dual_radial(
-            Color::srgb(0.1, 0.25, 0.5),
-            Color::srgb(0.3, 0.6, 0.9),
-        ),
+        &mut commands,
+        &mut materials,
+        &disc,
+        Style::dual_radial(Color::srgb(0.1, 0.25, 0.5), Color::srgb(0.3, 0.6, 0.9)),
         Vec3::new(r1_xs[3], origin_y, z0),
         "Dual Radial",
     );
 
     // Dual Radial OKLAB
     add_shape(
-        &mut commands, &mut materials, &disc,
-        Style::dual_radial(
-            Color::srgb(0.1, 0.25, 0.5),
-            Color::srgb(0.3, 0.6, 0.9),
-        ).with_oklab(),
+        &mut commands,
+        &mut materials,
+        &disc,
+        Style::dual_radial(Color::srgb(0.1, 0.25, 0.5), Color::srgb(0.3, 0.6, 0.9)).with_oklab(),
         Vec3::new(r1_xs[4], origin_y, z0),
         "Dual Radial OKLAB",
     );
 
     // ─── Row 2: Blend Modes ───
-    let r2_xs = [-col_spacing * 2.5, -col_spacing * 1.5, -col_spacing * 0.5, col_spacing * 0.5, col_spacing * 1.5, col_spacing * 2.5];
+    let r2_xs = [
+        -col_spacing * 2.5,
+        -col_spacing * 1.5,
+        -col_spacing * 0.5,
+        col_spacing * 0.5,
+        col_spacing * 1.5,
+        col_spacing * 2.5,
+    ];
 
     // Opaque
     add_shape(
-        &mut commands, &mut materials, &cuboid,
+        &mut commands,
+        &mut materials,
+        &cuboid,
         Style::opaque(Color::srgb(0.3, 0.8, 0.3)),
         Vec3::new(r2_xs[0], origin_y, z1),
         "Opaque",
@@ -163,7 +187,9 @@ fn setup(
 
     // Transparent
     add_shape(
-        &mut commands, &mut materials, &sphere,
+        &mut commands,
+        &mut materials,
+        &sphere,
         Style::transparent(Color::srgba(1.0, 0.4, 0.4, 0.4)),
         Vec3::new(r2_xs[1], origin_y, z1),
         "Transparent",
@@ -180,11 +206,17 @@ fn setup(
         MeshMaterial3d(additive_mat),
         Transform::from_translation(Vec3::new(r2_xs[2], origin_y, z1)),
     ));
-    spawn_label(&mut commands, "Additive", Vec3::new(r2_xs[2], origin_y + 0.8, z1));
+    spawn_label(
+        &mut commands,
+        "Additive",
+        Vec3::new(r2_xs[2], origin_y + 0.8, z1),
+    );
 
     // Multiplicative
     add_shape(
-        &mut commands, &mut materials, &cuboid,
+        &mut commands,
+        &mut materials,
+        &cuboid,
         Style::multiplicative(Color::srgb(0.2, 0.4, 0.8)),
         Vec3::new(r2_xs[3], origin_y, z1),
         "Multiplicative",
@@ -192,7 +224,9 @@ fn setup(
 
     // Screen
     add_shape(
-        &mut commands, &mut materials, &sphere,
+        &mut commands,
+        &mut materials,
+        &sphere,
         Style::screen(Color::srgb(0.9, 0.3, 0.6)),
         Vec3::new(r2_xs[4], origin_y, z1),
         "Screen",
@@ -200,7 +234,9 @@ fn setup(
 
     // Dither
     add_shape(
-        &mut commands, &mut materials, &disc,
+        &mut commands,
+        &mut materials,
+        &disc,
         Style::dither(Color::srgba(0.3, 0.9, 0.5, 0.5)),
         Vec3::new(r2_xs[5], origin_y, z1),
         "Dither",
@@ -211,7 +247,9 @@ fn setup(
 
     // Normal dash on disc rim
     add_shape_tilted(
-        &mut commands, &mut materials, &disc_rim,
+        &mut commands,
+        &mut materials,
+        &disc_rim,
         Style::opaque(Color::srgb(0.9, 0.5, 0.2))
             .with_shape_type(ShapeType::Disc)
             .with_dash(Dash::fixed(8, 0.35)),
@@ -221,7 +259,9 @@ fn setup(
 
     // Chevron dash on disc rim — V-shapes visible across rim width
     add_shape_tilted(
-        &mut commands, &mut materials, &disc_rim,
+        &mut commands,
+        &mut materials,
+        &disc_rim,
         Style::opaque(Color::srgb(0.3, 0.7, 0.9))
             .with_shape_type(ShapeType::Disc)
             .with_dash(Dash::chevron(8, 0.35)),
@@ -231,7 +271,9 @@ fn setup(
 
     // Rounded dash on disc rim
     add_shape_tilted(
-        &mut commands, &mut materials, &disc_rim,
+        &mut commands,
+        &mut materials,
+        &disc_rim,
         Style::opaque(Color::srgb(0.8, 0.3, 0.7))
             .with_shape_type(ShapeType::Disc)
             .with_dash(Dash::rounded(8, 0.35)),
@@ -241,7 +283,9 @@ fn setup(
 
     // Normal dash on larger rect
     add_shape(
-        &mut commands, &mut materials, &big_cuboid,
+        &mut commands,
+        &mut materials,
+        &big_cuboid,
         Style::opaque(Color::srgb(0.4, 0.9, 0.4))
             .with_shape_type(ShapeType::Rectangle)
             .with_dash(Dash::fixed(8, 0.35)),
@@ -251,7 +295,9 @@ fn setup(
 
     // Chevron dash on larger rect
     add_shape(
-        &mut commands, &mut materials, &big_cuboid,
+        &mut commands,
+        &mut materials,
+        &big_cuboid,
         Style::opaque(Color::srgb(0.9, 0.7, 0.3))
             .with_shape_type(ShapeType::Rectangle)
             .with_dash(Dash::chevron(8, 0.35)),
@@ -261,7 +307,9 @@ fn setup(
 
     // Rounded dash on larger rect
     add_shape(
-        &mut commands, &mut materials, &big_cuboid,
+        &mut commands,
+        &mut materials,
+        &big_cuboid,
         Style::opaque(Color::srgb(0.5, 0.5, 0.95))
             .with_shape_type(ShapeType::Rectangle)
             .with_dash(Dash::rounded(8, 0.35)),
@@ -274,40 +322,39 @@ fn setup(
 
     // Skin tone
     add_shape(
-        &mut commands, &mut materials, &sphere,
-        Style::dual_directional_up(
-            Color::srgb(0.74, 0.62, 0.53),
-            Color::srgb(0.96, 0.80, 0.69),
-        ),
+        &mut commands,
+        &mut materials,
+        &sphere,
+        Style::dual_directional_up(Color::srgb(0.74, 0.62, 0.53), Color::srgb(0.96, 0.80, 0.69)),
         Vec3::new(r4_xs[0], origin_y, z3),
         "Skin",
     );
 
     // Hair
     add_shape(
-        &mut commands, &mut materials, &sphere,
-        Style::dual_directional_up(
-            Color::srgb(0.1, 0.07, 0.05),
-            Color::srgb(0.2, 0.14, 0.1),
-        ),
+        &mut commands,
+        &mut materials,
+        &sphere,
+        Style::dual_directional_up(Color::srgb(0.1, 0.07, 0.05), Color::srgb(0.2, 0.14, 0.1)),
         Vec3::new(r4_xs[1], origin_y, z3),
         "Hair",
     );
 
     // Eye iris
     add_shape(
-        &mut commands, &mut materials, &disc,
-        Style::dual_radial(
-            Color::srgb(0.1, 0.25, 0.5),
-            Color::srgb(0.18, 0.38, 0.68),
-        ),
+        &mut commands,
+        &mut materials,
+        &disc,
+        Style::dual_radial(Color::srgb(0.1, 0.25, 0.5), Color::srgb(0.18, 0.38, 0.68)),
         Vec3::new(r4_xs[2], origin_y, z3),
         "Eye Iris",
     );
 
     // Blush
     add_shape(
-        &mut commands, &mut materials, &sphere,
+        &mut commands,
+        &mut materials,
+        &sphere,
         Style::transparent(Color::srgba(1.0, 0.5, 0.5, 0.35)),
         Vec3::new(r4_xs[3], origin_y, z3),
         "Blush",
@@ -315,18 +362,19 @@ fn setup(
 
     // Metal
     add_shape(
-        &mut commands, &mut materials, &cuboid,
-        Style::dual_directional_up(
-            Color::srgb(0.3, 0.32, 0.35),
-            Color::srgb(0.85, 0.87, 0.9),
-        ),
+        &mut commands,
+        &mut materials,
+        &cuboid,
+        Style::dual_directional_up(Color::srgb(0.3, 0.32, 0.35), Color::srgb(0.85, 0.87, 0.9)),
         Vec3::new(r4_xs[4], origin_y, z3),
         "Metal",
     );
 
     // Neon glow
     add_shape(
-        &mut commands, &mut materials, &sphere,
+        &mut commands,
+        &mut materials,
+        &sphere,
         Style::dual_directional_oklab(
             Color::srgb(0.0, 0.8, 0.2),
             Color::srgb(0.3, 1.0, 0.5),
@@ -374,7 +422,10 @@ fn add_shape_tilted(
 fn spawn_label(commands: &mut Commands, text: &str, position: Vec3) {
     commands.spawn((
         Text::new(text.to_string()),
-        TextFont { font_size: FontSize::Px(12.5), ..default() },
+        TextFont {
+            font_size: FontSize::Px(12.5),
+            ..default()
+        },
         TextColor(Color::srgb(0.88, 0.91, 0.98)),
         Node {
             position_type: PositionType::Absolute,
@@ -394,7 +445,9 @@ fn position_labels(
     camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     mut labels: Query<(&WorldLabel, &mut Node)>,
 ) {
-    let Ok((camera, camera_transform)) = camera.single() else { return; };
+    let Ok((camera, camera_transform)) = camera.single() else {
+        return;
+    };
     for (label, mut node) in &mut labels {
         if let Ok(viewport) = camera.world_to_viewport(camera_transform, label.0) {
             node.left = Val::Px(viewport.x - 60.0);

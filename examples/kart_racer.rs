@@ -12,51 +12,56 @@ mod common;
 use std::sync::LazyLock;
 
 use bevy::prelude::*;
-use bevy::render::mesh::{Indices, PrimitiveTopology};
 use bevy::render::RenderPlugin;
+use bevy::render::mesh::{Indices, PrimitiveTopology};
 use bevy_asset::RenderAssetUsages;
 use bevy_gradmesh::{
-    additive, dual_directional_oklab, dual_radial_oklab,
-    opaque, Shape, ShapeDetail,
-    GradMeshMaterial, GradMeshPlugin, transparent,
-    BatchRecorder, LodConfig, DeformationParams,
+    BatchRecorder, DeformationParams, GradMeshMaterial, GradMeshPlugin, LodConfig, Shape,
+    ShapeDetail, additive, dual_directional_oklab, dual_radial_oklab, opaque, transparent,
 };
 use common::screenshot::AutoScreenshotPlugin;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "BevyGradmesh Kart Racer".into(),
-                resolution: (1920, 1080).into(),
-                ..default()
-            }),
-            ..default()
-        }).set(RenderPlugin {
-            synchronous_pipeline_compilation: true,
-            ..default()
-        }))
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "BevyGradmesh Kart Racer".into(),
+                        resolution: (1920, 1080).into(),
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .set(RenderPlugin {
+                    synchronous_pipeline_compilation: true,
+                    ..default()
+                }),
+        )
         .add_plugins(GradMeshPlugin)
         .add_plugins(
             AutoScreenshotPlugin::new("screenshot_kart_racer.png")
                 .with_title("Kart Racer")
                 .with_description("Bézier track, PBR kart, collectibles, HUD")
-                .wait_frames(5)
+                .wait_frames(5),
         )
         .insert_resource(ClearColor(Color::srgb(0.1, 0.15, 0.3)))
         .insert_resource(LapTimer::default())
         .insert_resource(KartState::default())
         .insert_resource(DecorationsRecorder(BatchRecorder::new()))
         .add_systems(Startup, setup)
-        .add_systems(Update, (
-            handle_input,
-            update_physics,
-            update_kart_transform,
-            (update_camera, update_hud_follow, update_speed_hud).chain(),
-            check_checkpoints,
-            update_hud_text,
-            (check_coin_collection, animate_coins).chain(),
-        ))
+        .add_systems(
+            Update,
+            (
+                handle_input,
+                update_physics,
+                update_kart_transform,
+                (update_camera, update_hud_follow, update_speed_hud).chain(),
+                check_checkpoints,
+                update_hud_text,
+                (check_coin_collection, animate_coins).chain(),
+            ),
+        )
         .add_systems(PostUpdate, draw_decorations)
         .run();
 }
@@ -278,7 +283,10 @@ impl TrackSampler {
             });
         }
 
-        TrackSampler { frames, total_distance }
+        TrackSampler {
+            frames,
+            total_distance,
+        }
     }
 
     /// Sample the track at normalized parameter t ∈ [0, 1).
@@ -467,7 +475,11 @@ fn setup(
     let start_heading = track_heading(0.0).angle_between(Vec3::Z);
 
     // 3D Camera
-    let cam_offset = Vec3::new(start_heading.sin() * -20.0, 12.0, start_heading.cos() * -20.0);
+    let cam_offset = Vec3::new(
+        start_heading.sin() * -20.0,
+        12.0,
+        start_heading.cos() * -20.0,
+    );
     commands.spawn((
         Camera3d::default(),
         IsDefaultUiCamera,
@@ -486,7 +498,6 @@ fn setup(
         Name::new("Camera2d"),
     ));
 
-
     // Lighting
     commands.spawn((
         DirectionalLight {
@@ -494,8 +505,7 @@ fn setup(
             illuminance: 15_000.0,
             ..default()
         },
-        Transform::from_xyz(200.0, 300.0, 100.0)
-            .looking_at(Vec3::new(-100.0, 0.0, -50.0), Vec3::Y),
+        Transform::from_xyz(200.0, 300.0, 100.0).looking_at(Vec3::new(-100.0, 0.0, -50.0), Vec3::Y),
         Name::new("Sun"),
     ));
     commands.spawn((
@@ -519,7 +529,9 @@ fn setup(
     commands.spawn((
         Mesh3d(ground),
         MeshMaterial3d(materials.add(dual_directional_oklab(
-            [0.08, 0.15, 0.06], [0.12, 0.22, 0.10], [0.2, 0.6, 0.15],
+            [0.08, 0.15, 0.06],
+            [0.12, 0.22, 0.10],
+            [0.2, 0.6, 0.15],
         ))),
         Transform::from_translation(Vec3::new(-120.0, -1.0, -50.0)),
         Name::new("Ground"),
@@ -540,23 +552,23 @@ fn setup(
     });
 
     // HUD: 3D billboard follows camera for mesh elements
-    let hud_root = commands.spawn((
-        Transform::default(),
-        InheritedVisibility::default(),
-        Name::new("HUD Root"),
-    )).id();
+    let hud_root = commands
+        .spawn((
+            Transform::default(),
+            InheritedVisibility::default(),
+            Name::new("HUD Root"),
+        ))
+        .id();
     commands.entity(hud_root).insert(HudRootMarker);
 
     let hud_rot = Quat::from_rotation_x(-std::f32::consts::PI / 2.0);
     const HUD_Z_BACK: f32 = -7.0;
-    const HUD_Z_MID: f32  = -6.5;
+    const HUD_Z_MID: f32 = -6.5;
     const HUD_TOP_Y: f32 = 2.0;
     const HUD_BOTTOM_Y: f32 = -2.0;
 
     // Speed bar background
-    let speed_bg = meshes.add(
-        Shape::rectangle(Vec2::new(4.0, 0.35), ShapeDetail::Low).build()
-    );
+    let speed_bg = meshes.add(Shape::rectangle(Vec2::new(4.0, 0.35), ShapeDetail::Low).build());
     commands.spawn((
         Mesh3d(speed_bg),
         MeshMaterial3d(materials.add(opaque(0.05, 0.05, 0.15))),
@@ -566,11 +578,11 @@ fn setup(
     ));
 
     // Speed bar fill
-    let speed_fill = meshes.add(
-        Shape::rectangle(Vec2::new(3.9, 0.25), ShapeDetail::Low).build()
-    );
+    let speed_fill = meshes.add(Shape::rectangle(Vec2::new(3.9, 0.25), ShapeDetail::Low).build());
     let speed_fill_mat = materials.add(dual_directional_oklab(
-        [0.0, 0.5, 1.0], [0.0, 1.0, 0.5], [1.0, 0.0, 0.0],
+        [0.0, 0.5, 1.0],
+        [0.0, 1.0, 0.5],
+        [1.0, 0.0, 0.0],
     ));
     commands.spawn((
         Mesh3d(speed_fill),
@@ -586,7 +598,9 @@ fn setup(
     // Coin icon — star shape (top-right)
     let coin_star = meshes.add(Shape::star(5, 0.35, 0.14, ShapeDetail::Medium).build());
     let coin_star_mat = materials.add(dual_radial_oklab(
-        [1.0, 0.85, 0.2, 1.0], [0.8, 0.5, 0.1, 1.0], 0.7,
+        [1.0, 0.85, 0.2, 1.0],
+        [0.8, 0.5, 0.1, 1.0],
+        0.7,
     ));
     commands.spawn((
         Mesh3d(coin_star),
@@ -601,7 +615,9 @@ fn setup(
     // Lap indicator — hexagon (top-left)
     let lap_hex = meshes.add(Shape::polygon(6, 0.3, ShapeDetail::Low).build());
     let lap_hex_mat = materials.add(dual_directional_oklab(
-        [0.1, 0.4, 0.8], [0.3, 0.8, 1.0], [0.0, 1.0, 0.0],
+        [0.1, 0.4, 0.8],
+        [0.3, 0.8, 1.0],
+        [0.0, 1.0, 0.0],
     ));
     commands.spawn((
         Mesh3d(lap_hex),
@@ -697,9 +713,8 @@ fn build_track(
     // Road surface — uses sampler for variable width and banking
     let track_mesh = meshes.add(build_road_mesh_from_sampler(sampler));
     let road_mat = materials.add({
-        let mut mat = dual_directional_oklab(
-            [0.45, 0.45, 0.47], [0.55, 0.55, 0.57], [0.0, 1.0, 0.0],
-        );
+        let mut mat =
+            dual_directional_oklab([0.45, 0.45, 0.47], [0.55, 0.55, 0.57], [0.0, 1.0, 0.0]);
         mat.base.metallic = 0.0;
         mat.base.perceptual_roughness = 0.85;
         mat.base.cull_mode = None;
@@ -714,14 +729,17 @@ fn build_track(
 
     // Curbs — use sampler for position, right, and width
     let curb_count = 60;
-    let curb_mesh = meshes.add(
-        Shape::cuboid(Vec3::new(1.5, 0.12, 0.3), 0.02, ShapeDetail::Low).build()
-    );
+    let curb_mesh =
+        meshes.add(Shape::cuboid(Vec3::new(1.5, 0.12, 0.3), 0.02, ShapeDetail::Low).build());
     let curb_red = materials.add(dual_directional_oklab(
-        [0.7, 0.05, 0.05], [1.0, 0.2, 0.2], [0.0, 1.0, 0.0],
+        [0.7, 0.05, 0.05],
+        [1.0, 0.2, 0.2],
+        [0.0, 1.0, 0.0],
     ));
     let curb_white = materials.add(dual_directional_oklab(
-        [0.8, 0.8, 0.8], [1.0, 1.0, 1.0], [0.0, 1.0, 0.0],
+        [0.8, 0.8, 0.8],
+        [1.0, 1.0, 1.0],
+        [0.0, 1.0, 0.0],
     ));
 
     for i in 0..curb_count {
@@ -744,13 +762,9 @@ fn build_track(
     }
 
     // Guardrail posts — use sampler
-    let post_mesh = meshes.add(
-        Shape::tapered_cylinder(0.08, 0.15, 2.0, ShapeDetail::Low).build()
-    );
+    let post_mesh = meshes.add(Shape::tapered_cylinder(0.08, 0.15, 2.0, ShapeDetail::Low).build());
     let post_mat = materials.add({
-        let mut mat = dual_directional_oklab(
-            [0.4, 0.4, 0.45], [0.7, 0.7, 0.75], [0.0, 1.0, 0.0],
-        );
+        let mut mat = dual_directional_oklab([0.4, 0.4, 0.45], [0.7, 0.7, 0.75], [0.0, 1.0, 0.0]);
         mat.base.metallic = 0.5;
         mat.base.perceptual_roughness = 0.3;
         mat
@@ -773,13 +787,10 @@ fn build_track(
     }
 
     // Checkpoint arches — use sampler for variable width
-    let arch_pillar = meshes.add(
-        Shape::tapered_cylinder(0.15, 0.25, 4.0, ShapeDetail::Medium).build()
-    );
+    let arch_pillar =
+        meshes.add(Shape::tapered_cylinder(0.15, 0.25, 4.0, ShapeDetail::Medium).build());
     let arch_mat = materials.add({
-        let mut mat = dual_directional_oklab(
-            [0.1, 0.5, 0.15], [0.3, 1.0, 0.4], [0.0, 1.0, 0.0],
-        );
+        let mut mat = dual_directional_oklab([0.1, 0.5, 0.15], [0.3, 1.0, 0.4], [0.0, 1.0, 0.0]);
         mat.base.metallic = 0.3;
         mat.base.perceptual_roughness = 0.4;
         mat
@@ -800,13 +811,14 @@ fn build_track(
             commands.spawn((
                 Mesh3d(arch_pillar.clone()),
                 MeshMaterial3d(arch_mat.clone()),
-                Transform::from_translation(center + right * pillar_offset * side as f32 + Vec3::Y * 2.0),
+                Transform::from_translation(
+                    center + right * pillar_offset * side as f32 + Vec3::Y * 2.0,
+                ),
                 Name::new(format!("Checkpoint {} Pillar", i)),
             ));
         }
-        let arch_beam = meshes.add(
-            Shape::cuboid(Vec3::new(width + 2.0, 0.2, 0.3), 0.03, ShapeDetail::Low).build()
-        );
+        let arch_beam = meshes
+            .add(Shape::cuboid(Vec3::new(width + 2.0, 0.2, 0.3), 0.03, ShapeDetail::Low).build());
         commands.spawn((
             Mesh3d(arch_beam),
             MeshMaterial3d(arch_mat.clone()),
@@ -823,13 +835,9 @@ fn build_track(
     }
 
     // Light posts — use sampler
-    let light_post = meshes.add(
-        Shape::tapered_cylinder(0.06, 0.12, 4.0, ShapeDetail::Low).build()
-    );
+    let light_post = meshes.add(Shape::tapered_cylinder(0.06, 0.12, 4.0, ShapeDetail::Low).build());
     let light_post_mat = materials.add({
-        let mut mat = dual_directional_oklab(
-            [0.3, 0.3, 0.35], [0.6, 0.6, 0.65], [0.0, 1.0, 0.0],
-        );
+        let mut mat = dual_directional_oklab([0.3, 0.3, 0.35], [0.6, 0.6, 0.65], [0.0, 1.0, 0.0]);
         mat.base.metallic = 0.7;
         mat.base.perceptual_roughness = 0.2;
         mat
@@ -910,7 +918,10 @@ fn build_road_mesh_from_sampler(sampler: &TrackSampler) -> bevy::render::mesh::M
         indices.extend_from_slice(&[a, c, b, b, c, d]);
     }
 
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    );
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
@@ -929,54 +940,53 @@ fn build_kart(
     let (start_pos, start_fwd, _, _, _, _) = sampler.sample(0.0);
     let start_yaw = start_fwd.angle_between(Vec3::Z);
 
-    let kart_root = commands.spawn((
-        Transform::from_translation(start_pos)
-            .with_rotation(Quat::from_rotation_y(start_yaw)),
-        Kart,
-        InheritedVisibility::default(),
-        Name::new("Kart"),
-    )).id();
+    let kart_root = commands
+        .spawn((
+            Transform::from_translation(start_pos).with_rotation(Quat::from_rotation_y(start_yaw)),
+            Kart,
+            InheritedVisibility::default(),
+            Name::new("Kart"),
+        ))
+        .id();
 
     // Body
-    let body = meshes.add(
-        Shape::cuboid(Vec3::new(1.0, 0.4, 2.0), 0.12, ShapeDetail::Medium).build()
-    );
+    let body =
+        meshes.add(Shape::cuboid(Vec3::new(1.0, 0.4, 2.0), 0.12, ShapeDetail::Medium).build());
     let body_mat = materials.add({
-        let mut mat = dual_directional_oklab(
-            [0.6, 0.05, 0.05], [1.0, 0.25, 0.2], [0.0, 1.0, 0.0],
-        );
+        let mut mat = dual_directional_oklab([0.6, 0.05, 0.05], [1.0, 0.25, 0.2], [0.0, 1.0, 0.0]);
         mat.base.metallic = 0.8;
         mat.base.perceptual_roughness = 0.2;
         mat
     });
     commands.spawn((
-        Mesh3d(body), MeshMaterial3d(body_mat),
+        Mesh3d(body),
+        MeshMaterial3d(body_mat),
         Transform::from_translation(Vec3::Y * 0.5),
-        ChildOf(kart_root), Name::new("Body"),
+        ChildOf(kart_root),
+        Name::new("Body"),
     ));
 
     // Cabin
-    let cabin = meshes.add(
-        Shape::cuboid(Vec3::new(0.7, 0.35, 0.9), 0.15, ShapeDetail::Medium).build()
-    );
+    let cabin =
+        meshes.add(Shape::cuboid(Vec3::new(0.7, 0.35, 0.9), 0.15, ShapeDetail::Medium).build());
     let cabin_mat = materials.add({
-        let mut mat = dual_directional_oklab(
-            [0.15, 0.05, 0.08], [0.35, 0.12, 0.15], [0.0, 1.0, 0.0],
-        );
+        let mut mat =
+            dual_directional_oklab([0.15, 0.05, 0.08], [0.35, 0.12, 0.15], [0.0, 1.0, 0.0]);
         mat.base.metallic = 0.6;
         mat.base.perceptual_roughness = 0.15;
         mat
     });
     commands.spawn((
-        Mesh3d(cabin), MeshMaterial3d(cabin_mat),
+        Mesh3d(cabin),
+        MeshMaterial3d(cabin_mat),
         Transform::from_translation(Vec3::new(0.0, 0.88, -0.15)),
-        ChildOf(kart_root), Name::new("Cabin"),
+        ChildOf(kart_root),
+        Name::new("Cabin"),
     ));
 
     // Windshield
-    let windshield = meshes.add(
-        Shape::cuboid(Vec3::new(0.65, 0.3, 0.05), 0.0, ShapeDetail::Low).build()
-    );
+    let windshield =
+        meshes.add(Shape::cuboid(Vec3::new(0.65, 0.3, 0.05), 0.0, ShapeDetail::Low).build());
     let windshield_mat = materials.add({
         let mut mat = transparent(0.4, 0.6, 0.8, 0.3);
         mat.base.metallic = 0.0;
@@ -984,16 +994,16 @@ fn build_kart(
         mat
     });
     commands.spawn((
-        Mesh3d(windshield), MeshMaterial3d(windshield_mat),
+        Mesh3d(windshield),
+        MeshMaterial3d(windshield_mat),
         Transform::from_translation(Vec3::new(0.0, 0.85, 0.32))
             .with_rotation(Quat::from_rotation_x(-0.3)),
-        ChildOf(kart_root), Name::new("Windshield"),
+        ChildOf(kart_root),
+        Name::new("Windshield"),
     ));
 
     // Wheels
-    let wheel = meshes.add(
-        Shape::cylinder(0.22, 0.18, ShapeDetail::Medium).build()
-    );
+    let wheel = meshes.add(Shape::cylinder(0.22, 0.18, ShapeDetail::Medium).build());
     let wheel_mat = materials.add({
         let mut mat = opaque(0.12, 0.12, 0.14);
         mat.base.perceptual_roughness = 0.8;
@@ -1001,30 +1011,40 @@ fn build_kart(
     });
     let rim = meshes.add(Shape::ring(0.18, 0.08, ShapeDetail::Medium).build());
     let rim_mat = materials.add({
-        let mut mat = dual_directional_oklab(
-            [0.5, 0.5, 0.55], [0.9, 0.9, 0.95], [0.0, 1.0, 0.0],
-        );
+        let mut mat = dual_directional_oklab([0.5, 0.5, 0.55], [0.9, 0.9, 0.95], [0.0, 1.0, 0.0]);
         mat.base.metallic = 0.95;
         mat.base.perceptual_roughness = 0.1;
         mat
     });
 
     for (i, &pos) in [
-        Vec3::new(0.6, 0.22, 0.7), Vec3::new(-0.6, 0.22, 0.7),
-        Vec3::new(0.6, 0.22, -0.7), Vec3::new(-0.6, 0.22, -0.7),
-    ].iter().enumerate() {
-        let wheel_root = commands.spawn((
-            Transform::from_translation(pos)
-                .with_rotation(Quat::from_rotation_z(std::f32::consts::PI / 2.0)),
-            ChildOf(kart_root),
-            InheritedVisibility::default(),
-            Name::new(format!("Wheel {}", i)),
-        )).id();
+        Vec3::new(0.6, 0.22, 0.7),
+        Vec3::new(-0.6, 0.22, 0.7),
+        Vec3::new(0.6, 0.22, -0.7),
+        Vec3::new(-0.6, 0.22, -0.7),
+    ]
+    .iter()
+    .enumerate()
+    {
+        let wheel_root = commands
+            .spawn((
+                Transform::from_translation(pos)
+                    .with_rotation(Quat::from_rotation_z(std::f32::consts::PI / 2.0)),
+                ChildOf(kart_root),
+                InheritedVisibility::default(),
+                Name::new(format!("Wheel {}", i)),
+            ))
+            .id();
         commands.entity(wheel_root).with_children(|p| {
-            p.spawn((Mesh3d(wheel.clone()), MeshMaterial3d(wheel_mat.clone()), Transform::default()));
+            p.spawn((
+                Mesh3d(wheel.clone()),
+                MeshMaterial3d(wheel_mat.clone()),
+                Transform::default(),
+            ));
             for side in [-1.0, 1.0] {
                 p.spawn((
-                    Mesh3d(rim.clone()), MeshMaterial3d(rim_mat.clone()),
+                    Mesh3d(rim.clone()),
+                    MeshMaterial3d(rim_mat.clone()),
                     Transform::from_translation(Vec3::new(0.0, 0.0, side * 0.09)),
                 ));
             }
@@ -1032,28 +1052,29 @@ fn build_kart(
     }
 
     // Spoiler
-    let spoiler = meshes.add(
-        Shape::cuboid(Vec3::new(1.2, 0.06, 0.35), 0.02, ShapeDetail::Low).build()
-    );
+    let spoiler =
+        meshes.add(Shape::cuboid(Vec3::new(1.2, 0.06, 0.35), 0.02, ShapeDetail::Low).build());
     let spoiler_mat = materials.add({
-        let mut mat = dual_directional_oklab(
-            [0.8, 0.25, 0.0], [1.0, 0.55, 0.1], [0.0, 1.0, 0.0],
-        );
+        let mut mat = dual_directional_oklab([0.8, 0.25, 0.0], [1.0, 0.55, 0.1], [0.0, 1.0, 0.0]);
         mat.base.metallic = 0.7;
         mat.base.perceptual_roughness = 0.25;
         mat
     });
     commands.spawn((
-        Mesh3d(spoiler), MeshMaterial3d(spoiler_mat.clone()),
+        Mesh3d(spoiler),
+        MeshMaterial3d(spoiler_mat.clone()),
         Transform::from_translation(Vec3::new(0.0, 0.75, -0.95)),
-        ChildOf(kart_root), Name::new("Spoiler"),
+        ChildOf(kart_root),
+        Name::new("Spoiler"),
     ));
     for side in [-0.4, 0.4] {
         let support = meshes.add(Shape::cylinder(0.03, 0.3, ShapeDetail::Low).build());
         commands.spawn((
-            Mesh3d(support), MeshMaterial3d(spoiler_mat.clone()),
+            Mesh3d(support),
+            MeshMaterial3d(spoiler_mat.clone()),
             Transform::from_translation(Vec3::new(side, 0.6, -0.95)),
-            ChildOf(kart_root), Name::new("Spoiler Support"),
+            ChildOf(kart_root),
+            Name::new("Spoiler Support"),
         ));
     }
 
@@ -1066,9 +1087,11 @@ fn build_kart(
     });
     for side in [-0.3, 0.3] {
         commands.spawn((
-            Mesh3d(light.clone()), MeshMaterial3d(headlight_mat.clone()),
+            Mesh3d(light.clone()),
+            MeshMaterial3d(headlight_mat.clone()),
             Transform::from_translation(Vec3::new(side, 0.25, 1.02)),
-            ChildOf(kart_root), Name::new("Headlight"),
+            ChildOf(kart_root),
+            Name::new("Headlight"),
         ));
     }
 
@@ -1080,9 +1103,11 @@ fn build_kart(
     });
     for side in [-0.35, 0.35] {
         commands.spawn((
-            Mesh3d(light.clone()), MeshMaterial3d(tail_mat.clone()),
+            Mesh3d(light.clone()),
+            MeshMaterial3d(tail_mat.clone()),
             Transform::from_translation(Vec3::new(side, 0.25, -1.02)),
-            ChildOf(kart_root), Name::new("Tail Light"),
+            ChildOf(kart_root),
+            Name::new("Tail Light"),
         ));
     }
 }
@@ -1099,18 +1124,30 @@ fn populate_decorations(recorder: &mut BatchRecorder, _time: f32) {
         ([0.10, 0.30, 0.05], [0.25, 0.60, 0.12]),
     ];
     let tree_positions = [
-        Vec3::new(-250.0, 0.0, -250.0), Vec3::new(-280.0, 0.0, -230.0),
-        Vec3::new(-230.0, 0.0, -270.0), Vec3::new(-100.0, 0.0, -260.0),
-        Vec3::new(50.0, 0.0, -270.0), Vec3::new(200.0, 0.0, -250.0),
-        Vec3::new(250.0, 0.0, -200.0), Vec3::new(320.0, 0.0, -50.0),
-        Vec3::new(340.0, 0.0, 30.0), Vec3::new(250.0, 0.0, 180.0),
-        Vec3::new(300.0, 0.0, 200.0), Vec3::new(100.0, 0.0, 200.0),
-        Vec3::new(150.0, 0.0, 220.0), Vec3::new(-150.0, 0.0, 200.0),
-        Vec3::new(-180.0, 0.0, 180.0), Vec3::new(-340.0, 0.0, -30.0),
-        Vec3::new(-330.0, 0.0, 50.0), Vec3::new(100.0, 0.0, -150.0),
-        Vec3::new(-80.0, 0.0, -130.0), Vec3::new(150.0, 0.0, 50.0),
-        Vec3::new(-120.0, 0.0, 50.0), Vec3::new(-200.0, 0.0, -100.0),
-        Vec3::new(80.0, 0.0, -200.0), Vec3::new(180.0, 0.0, 150.0),
+        Vec3::new(-250.0, 0.0, -250.0),
+        Vec3::new(-280.0, 0.0, -230.0),
+        Vec3::new(-230.0, 0.0, -270.0),
+        Vec3::new(-100.0, 0.0, -260.0),
+        Vec3::new(50.0, 0.0, -270.0),
+        Vec3::new(200.0, 0.0, -250.0),
+        Vec3::new(250.0, 0.0, -200.0),
+        Vec3::new(320.0, 0.0, -50.0),
+        Vec3::new(340.0, 0.0, 30.0),
+        Vec3::new(250.0, 0.0, 180.0),
+        Vec3::new(300.0, 0.0, 200.0),
+        Vec3::new(100.0, 0.0, 200.0),
+        Vec3::new(150.0, 0.0, 220.0),
+        Vec3::new(-150.0, 0.0, 200.0),
+        Vec3::new(-180.0, 0.0, 180.0),
+        Vec3::new(-340.0, 0.0, -30.0),
+        Vec3::new(-330.0, 0.0, 50.0),
+        Vec3::new(100.0, 0.0, -150.0),
+        Vec3::new(-80.0, 0.0, -130.0),
+        Vec3::new(150.0, 0.0, 50.0),
+        Vec3::new(-120.0, 0.0, 50.0),
+        Vec3::new(-200.0, 0.0, -100.0),
+        Vec3::new(80.0, 0.0, -200.0),
+        Vec3::new(180.0, 0.0, 150.0),
     ];
 
     for (i, &pos) in tree_positions.iter().enumerate() {
@@ -1121,13 +1158,25 @@ fn populate_decorations(recorder: &mut BatchRecorder, _time: f32) {
         recorder.set_position(pos + Vec3::Y * 2.0 * scale);
         recorder.set_scale(Vec3::splat(scale));
         recorder.set_rotation(Quat::IDENTITY);
-        recorder.cone(0.3, 4.0, ShapeDetail::Low, [trunk_light[0], trunk_light[1], trunk_light[2], 1.0]);
+        recorder.cone(
+            0.3,
+            4.0,
+            ShapeDetail::Low,
+            [trunk_light[0], trunk_light[1], trunk_light[2], 1.0],
+        );
 
         recorder.set_position(pos + Vec3::Y * 5.5 * scale);
         recorder.set_scale(Vec3::splat(scale));
         recorder.set_rotation(Quat::IDENTITY);
         recorder.set_deformation(DeformationParams::wobble(0.15, 1.0, i as f32 * 0.3));
-        recorder.sphere_dual_directional(canopy_r, ShapeDetail::Medium, dark, light, [0.0, 1.0, 0.0], true);
+        recorder.sphere_dual_directional(
+            canopy_r,
+            ShapeDetail::Medium,
+            dark,
+            light,
+            [0.0, 1.0, 0.0],
+            true,
+        );
     }
 
     let bush_colors = [
@@ -1135,10 +1184,14 @@ fn populate_decorations(recorder: &mut BatchRecorder, _time: f32) {
         ([0.04, 0.20, 0.06], [0.14, 0.45, 0.12]),
     ];
     let bush_positions = [
-        Vec3::new(-220.0, 0.0, -220.0), Vec3::new(-80.0, 0.0, -240.0),
-        Vec3::new(180.0, 0.0, -230.0), Vec3::new(300.0, 0.0, -30.0),
-        Vec3::new(220.0, 0.0, 180.0), Vec3::new(80.0, 0.0, 220.0),
-        Vec3::new(-120.0, 0.0, 160.0), Vec3::new(-260.0, 0.0, -10.0),
+        Vec3::new(-220.0, 0.0, -220.0),
+        Vec3::new(-80.0, 0.0, -240.0),
+        Vec3::new(180.0, 0.0, -230.0),
+        Vec3::new(300.0, 0.0, -30.0),
+        Vec3::new(220.0, 0.0, 180.0),
+        Vec3::new(80.0, 0.0, 220.0),
+        Vec3::new(-120.0, 0.0, 160.0),
+        Vec3::new(-260.0, 0.0, -10.0),
     ];
 
     for (i, &pos) in bush_positions.iter().enumerate() {
@@ -1178,13 +1231,9 @@ fn build_coins(
     materials: &mut Assets<GradMeshMaterial>,
     sampler: &TrackSampler,
 ) {
-    let coin_mesh = meshes.add(
-        Shape::cylinder(0.3, 0.08, ShapeDetail::Medium).build()
-    );
+    let coin_mesh = meshes.add(Shape::cylinder(0.3, 0.08, ShapeDetail::Medium).build());
     let coin_mat = materials.add({
-        let mut mat = dual_radial_oklab(
-            [1.0, 0.85, 0.2, 1.0], [0.8, 0.5, 0.1, 1.0], 0.7,
-        );
+        let mut mat = dual_radial_oklab([1.0, 0.85, 0.2, 1.0], [0.8, 0.5, 0.1, 1.0], 0.7);
         mat.base.metallic = 0.9;
         mat.base.perceptual_roughness = 0.1;
         mat.base.emissive = bevy::color::LinearRgba::rgb(1.0, 0.85, 0.2) * 5_000.0;
@@ -1202,7 +1251,10 @@ fn build_coins(
             MeshMaterial3d(coin_mat.clone()),
             Transform::from_translation(pos)
                 .with_rotation(Quat::from_rotation_x(std::f32::consts::PI / 2.0)),
-            Coin { id: i as u32, collected: false },
+            Coin {
+                id: i as u32,
+                collected: false,
+            },
             Name::new(format!("Coin {}", i)),
         ));
     }
@@ -1253,7 +1305,9 @@ fn handle_input(
     state.speed *= if throttle > 0.0 { 0.998 } else { 0.99 };
     state.speed = state.speed.clamp(-24.0, 80.0);
     state.boost *= 0.99;
-    if state.boost < 0.01 { state.boost = 0.0; }
+    if state.boost < 0.01 {
+        state.boost = 0.0;
+    }
 
     let forward = Vec3::new(state.heading.sin(), 0.0, state.heading.cos());
     state.velocity = forward * state.speed;
@@ -1286,10 +1340,7 @@ fn update_physics(mut state: ResMut<KartState>, time: Res<Time>, sampler: Res<Tr
 
 // ─── Kart Transform ───
 
-fn update_kart_transform(
-    state: Res<KartState>,
-    mut kart_query: Query<&mut Transform, With<Kart>>,
-) {
+fn update_kart_transform(state: Res<KartState>, mut kart_query: Query<&mut Transform, With<Kart>>) {
     if let Ok(mut transform) = kart_query.single_mut() {
         transform.translation = state.position;
         transform.rotation = Quat::from_rotation_y(state.heading);
@@ -1309,7 +1360,9 @@ fn update_camera(
 ) {
     if let Ok(mut cam) = camera_query.single_mut() {
         let offset = Vec3::new(
-            state.heading.sin() * -20.0, 12.0, state.heading.cos() * -20.0,
+            state.heading.sin() * -20.0,
+            12.0,
+            state.heading.cos() * -20.0,
         );
         let desired = state.position + offset;
         let lerp = (1.0 - 2.0_f32.powf(-4.0 * time.delta_secs())).min(1.0);
@@ -1370,7 +1423,6 @@ fn check_checkpoints(
     }
 }
 
-
 // ─── Coin Collection ───
 
 fn check_coin_collection(
@@ -1379,7 +1431,9 @@ fn check_coin_collection(
 ) {
     let kart_pos = state.position;
     for (mut transform, mut coin) in &mut coin_query {
-        if coin.collected { continue; }
+        if coin.collected {
+            continue;
+        }
         if (kart_pos - transform.translation).length_squared() < 2.25 {
             coin.collected = true;
             transform.translation.y -= 100.0;
@@ -1406,13 +1460,12 @@ fn update_speed_hud(
 
 // ─── Animate Coins ───
 
-fn animate_coins(
-    time: Res<Time>,
-    mut coin_query: Query<(&Coin, &mut Transform)>,
-) {
+fn animate_coins(time: Res<Time>, mut coin_query: Query<(&Coin, &mut Transform)>) {
     let t = time.elapsed_secs();
     for (coin, mut transform) in &mut coin_query {
-        if coin.collected { continue; }
+        if coin.collected {
+            continue;
+        }
         transform.rotation = Quat::from_rotation_x(std::f32::consts::PI / 2.0)
             * Quat::from_rotation_y(t * 2.0 + coin.id as f32);
         transform.translation.y = 0.8 + (t * 1.5 + coin.id as f32 * 0.5).sin() * 0.15;

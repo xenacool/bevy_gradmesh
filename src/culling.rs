@@ -27,13 +27,16 @@ impl AABB {
     pub fn from_min_max(min: Vec3, max: Vec3) -> Self {
         let center = (min + max) * 0.5;
         let half_extents = (max - min) * 0.5;
-        Self { center, half_extents }
+        Self {
+            center,
+            half_extents,
+        }
     }
 
     /// Create an AABB from a mesh's vertex positions.
     pub fn from_mesh(mesh: &bevy::render::mesh::Mesh) -> Option<Self> {
         use bevy::render::mesh::VertexAttributeValues;
-        
+
         let Ok(VertexAttributeValues::Float32x3(values)) =
             mesh.try_attribute(bevy::render::mesh::Mesh::ATTRIBUTE_POSITION)
         else {
@@ -125,9 +128,21 @@ impl FrustumPlane {
 
         // The most negative point along the plane normal
         let negative_point = Vec3::new(
-            if self.abc.x >= 0.0 { center.x - half.x } else { center.x + half.x },
-            if self.abc.y >= 0.0 { center.y - half.y } else { center.y + half.y },
-            if self.abc.z >= 0.0 { center.z - half.z } else { center.z + half.z },
+            if self.abc.x >= 0.0 {
+                center.x - half.x
+            } else {
+                center.x + half.x
+            },
+            if self.abc.y >= 0.0 {
+                center.y - half.y
+            } else {
+                center.y + half.y
+            },
+            if self.abc.z >= 0.0 {
+                center.z - half.z
+            } else {
+                center.z + half.z
+            },
         );
 
         self.contains_point(&negative_point)
@@ -315,10 +330,7 @@ mod tests {
         assert!(plane.contains_aabb(&aabb));
 
         // AABB entirely outside the plane
-        let outside = AABB::from_min_max(
-            Vec3::new(-1.0, -1.0, -10.0),
-            Vec3::new(1.0, 1.0, -6.0),
-        );
+        let outside = AABB::from_min_max(Vec3::new(-1.0, -1.0, -10.0), Vec3::new(1.0, 1.0, -6.0));
         assert!(!plane.contains_aabb(&outside));
     }
 
@@ -365,10 +377,7 @@ mod tests {
         let vp = proj * view;
         let frustum = FrustumPlanes::from_view_projection(&vp);
 
-        let base_aabb = AABB::from_min_max(
-            Vec3::new(-0.1, -0.1, -0.1),
-            Vec3::new(0.1, 0.1, 0.1),
-        );
+        let base_aabb = AABB::from_min_max(Vec3::new(-0.1, -0.1, -0.1), Vec3::new(0.1, 0.1, 0.1));
 
         // 3 instances near origin, all should be visible
         let transforms = vec![
@@ -413,10 +422,7 @@ mod tests {
         let vp = proj * view;
         let frustum = FrustumPlanes::from_view_projection(&vp);
 
-        let base_aabb = AABB::from_min_max(
-            Vec3::new(-0.1, -0.1, -0.1),
-            Vec3::new(0.1, 0.1, 0.1),
-        );
+        let base_aabb = AABB::from_min_max(Vec3::new(-0.1, -0.1, -0.1), Vec3::new(0.1, 0.1, 0.1));
 
         // One instance at origin (visible), one far to the side (culled)
         let transforms = vec![

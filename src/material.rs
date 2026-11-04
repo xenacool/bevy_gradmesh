@@ -10,12 +10,17 @@
 use bevy::asset::{Asset, AssetPath};
 use bevy::color::Color;
 use bevy::math::Vec3;
-use bevy::pbr::{ExtendedMaterial, MaterialExtension, MaterialExtensionPipeline, MaterialExtensionKey, StandardMaterial};
-use bevy_material::AlphaMode;
-use bevy::reflect::Reflect;
-use bevy::render::render_resource::{AsBindGroup, RenderPipelineDescriptor, ShaderType, SpecializedMeshPipelineError};
 use bevy::mesh::MeshVertexBufferLayoutRef;
+use bevy::pbr::{
+    ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline,
+    StandardMaterial,
+};
+use bevy::reflect::Reflect;
+use bevy::render::render_resource::{
+    AsBindGroup, RenderPipelineDescriptor, ShaderType, SpecializedMeshPipelineError,
+};
 use bevy::shader::ShaderRef;
+use bevy_material::AlphaMode;
 
 /// 16-byte aligned vec4 for GPU uniform buffers.
 ///
@@ -32,9 +37,20 @@ pub struct Vec4 {
 }
 
 impl Vec4 {
-    pub const fn new(x: f32, y: f32, z: f32, w: f32) -> Self { Self { x, y, z, w } }
-    pub const fn as_array(&self) -> [f32; 4] { [self.x, self.y, self.z, self.w] }
-    pub const fn from_array(arr: [f32; 4]) -> Self { Self { x: arr[0], y: arr[1], z: arr[2], w: arr[3] } }
+    pub const fn new(x: f32, y: f32, z: f32, w: f32) -> Self {
+        Self { x, y, z, w }
+    }
+    pub const fn as_array(&self) -> [f32; 4] {
+        [self.x, self.y, self.z, self.w]
+    }
+    pub const fn from_array(arr: [f32; 4]) -> Self {
+        Self {
+            x: arr[0],
+            y: arr[1],
+            z: arr[2],
+            w: arr[3],
+        }
+    }
 }
 
 /// Shader uniform data for the GradMesh material extension.
@@ -69,13 +85,19 @@ impl GradMeshUniform {
     }
     /// Get the color mode.
     #[inline]
-    pub fn color_mode(&self) -> f32 { self.flags[0] }
+    pub fn color_mode(&self) -> f32 {
+        self.flags[0]
+    }
     /// Get the blend mode.
     #[inline]
-    pub fn blend_mode(&self) -> f32 { self.flags[1] }
+    pub fn blend_mode(&self) -> f32 {
+        self.flags[1]
+    }
     /// Get the emission strength.
     #[inline]
-    pub fn emission_strength(&self) -> f32 { self.flags[2] }
+    pub fn emission_strength(&self) -> f32 {
+        self.flags[2]
+    }
 }
 
 /// GPU uniform buffer for the GradMesh material extension.
@@ -96,14 +118,39 @@ pub struct GradMeshUniformBuffer {
 }
 
 impl GradMeshUniformBuffer {
-    pub fn new(color: Vec4, secondary_color: Vec4, direction: Vec4, flags: Vec4, dash: Vec4) -> Self {
-        Self { color, secondary_color, direction, flags, dash, world_center: Vec4::default() }
+    pub fn new(
+        color: Vec4,
+        secondary_color: Vec4,
+        direction: Vec4,
+        flags: Vec4,
+        dash: Vec4,
+    ) -> Self {
+        Self {
+            color,
+            secondary_color,
+            direction,
+            flags,
+            dash,
+            world_center: Vec4::default(),
+        }
     }
 
     pub fn new_with_center(
-        color: Vec4, secondary_color: Vec4, direction: Vec4, flags: Vec4, dash: Vec4, world_center: Vec4,
+        color: Vec4,
+        secondary_color: Vec4,
+        direction: Vec4,
+        flags: Vec4,
+        dash: Vec4,
+        world_center: Vec4,
     ) -> Self {
-        Self { color, secondary_color, direction, flags, dash, world_center }
+        Self {
+            color,
+            secondary_color,
+            direction,
+            flags,
+            dash,
+            world_center,
+        }
     }
 }
 
@@ -157,9 +204,10 @@ impl GradMeshExtension {
 }
 
 fn gradmesh_shader_ref() -> ShaderRef {
-    ShaderRef::Path(AssetPath::from_path_buf(
-        bevy::asset::embedded_path!("shader/gradmesh.wesl"),
-    ).with_source("embedded"))
+    ShaderRef::Path(
+        AssetPath::from_path_buf(bevy::asset::embedded_path!("shader/gradmesh.wesl"))
+            .with_source("embedded"),
+    )
 }
 
 impl MaterialExtension for GradMeshExtension {
@@ -258,11 +306,7 @@ pub fn additive(r: f32, g: f32, b: f32) -> GradMeshMaterial {
 ///
 /// `dark` is the shadow-side color, `light` is the highlight-side color,
 /// and `direction` defines the gradient axis in world space.
-pub fn dual_directional(
-    dark: [f32; 3],
-    light: [f32; 3],
-    direction: [f32; 3],
-) -> GradMeshMaterial {
+pub fn dual_directional(dark: [f32; 3], light: [f32; 3], direction: [f32; 3]) -> GradMeshMaterial {
     let dir = Vec3::new(direction[0], direction[1], direction[2]);
     let dir_norm = dir.normalize();
     GradMeshMaterial {
@@ -557,7 +601,9 @@ pub fn darken(r: f32, g: f32, b: f32) -> GradMeshMaterial {
 /// `modifier` controls chevron V-shape or rounded end-cap intensity (-1..1),
 /// and `shape_type` selects the perimeter progress function (0=generic, 1=disc, 2=rectangle).
 pub fn dashed(
-    r: f32, g: f32, b: f32,
+    r: f32,
+    g: f32,
+    b: f32,
     dash_count: u32,
     spacing: f32,
     offset: f32,

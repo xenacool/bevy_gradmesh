@@ -22,7 +22,9 @@ use bevy::prelude::{Mesh3d, MeshMaterial3d};
 use bevy::render::mesh::Mesh;
 use bevy::transform::components::{GlobalTransform, Transform};
 
-use crate::{dual_directional, opaque, transparent, additive, Shape, ShapeDetail, GradMeshMaterial};
+use crate::{
+    GradMeshMaterial, Shape, ShapeDetail, additive, dual_directional, opaque, transparent,
+};
 
 /// Render state for a drawing group, controlling layer, depth test, and depth write.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -48,7 +50,11 @@ impl Default for RenderState {
 impl RenderState {
     /// Create a new render state with the given parameters.
     pub fn new(layer: i32, depth_test: DepthTest, depth_write: DepthWrite) -> Self {
-        Self { layer, depth_test, depth_write }
+        Self {
+            layer,
+            depth_test,
+            depth_write,
+        }
     }
 }
 
@@ -255,12 +261,14 @@ impl ImmediateRecorder {
         let mat = materials.add(material);
 
         let rotation = Quat::from_rotation_arc(Vec3::Y, line_direction);
-        let entity = commands.spawn((
-            Mesh3d(mesh),
-            MeshMaterial3d(mat),
-            Transform::from_translation(midpoint).with_rotation(rotation),
-            GlobalTransform::default(),
-        )).id();
+        let entity = commands
+            .spawn((
+                Mesh3d(mesh),
+                MeshMaterial3d(mat),
+                Transform::from_translation(midpoint).with_rotation(rotation),
+                GlobalTransform::default(),
+            ))
+            .id();
         self.entities.push(entity);
     }
 
@@ -289,12 +297,14 @@ impl ImmediateRecorder {
         let mat = materials.add(material);
 
         let rotation = Quat::from_rotation_arc(Vec3::Y, line_direction);
-        let entity = commands.spawn((
-            Mesh3d(mesh),
-            MeshMaterial3d(mat),
-            Transform::from_translation(midpoint).with_rotation(rotation),
-            GlobalTransform::default(),
-        )).id();
+        let entity = commands
+            .spawn((
+                Mesh3d(mesh),
+                MeshMaterial3d(mat),
+                Transform::from_translation(midpoint).with_rotation(rotation),
+                GlobalTransform::default(),
+            ))
+            .id();
         self.entities.push(entity);
     }
 
@@ -328,7 +338,8 @@ impl ImmediateRecorder {
         detail: ShapeDetail,
         material: GradMeshMaterial,
     ) {
-        let mesh = meshes.add(Shape::regular_prism(sides, radius, height, roundness, detail).build());
+        let mesh =
+            meshes.add(Shape::regular_prism(sides, radius, height, roundness, detail).build());
         let mat = materials.add(material);
         let entity = self.spawn_mesh(commands, mesh, mat);
         self.entities.push(entity);
@@ -517,7 +528,8 @@ impl ImmediateRecorder {
         material: GradMeshMaterial,
         billboard: BillboardMode,
     ) {
-        let mesh = meshes.add(Shape::polygon_rim(sides, radius, rim_width, ShapeDetail::Minimal).build());
+        let mesh =
+            meshes.add(Shape::polygon_rim(sides, radius, rim_width, ShapeDetail::Minimal).build());
         let mat = materials.add(material);
         let entity = self.spawn_2d(commands, mesh, mat, billboard);
         self.entities.push(entity);
@@ -568,14 +580,17 @@ impl ImmediateRecorder {
             .with_scale(self.current_state.scale);
 
         let root = self.root.unwrap();
-        commands.entity(root).with_children(|parent| {
-            parent.spawn((
-                Mesh3d(mesh),
-                MeshMaterial3d(material),
-                transform,
-                GlobalTransform::default(),
-            ));
-        }).id()
+        commands
+            .entity(root)
+            .with_children(|parent| {
+                parent.spawn((
+                    Mesh3d(mesh),
+                    MeshMaterial3d(material),
+                    transform,
+                    GlobalTransform::default(),
+                ));
+            })
+            .id()
     }
 
     /// Helper: spawn a 2D mesh with billboard support.
@@ -604,14 +619,17 @@ impl ImmediateRecorder {
         }
 
         let root = self.root.unwrap();
-        commands.entity(root).with_children(|parent| {
-            parent.spawn((
-                Mesh3d(mesh),
-                MeshMaterial3d(material),
-                transform,
-                GlobalTransform::default(),
-            ));
-        }).id()
+        commands
+            .entity(root)
+            .with_children(|parent| {
+                parent.spawn((
+                    Mesh3d(mesh),
+                    MeshMaterial3d(material),
+                    transform,
+                    GlobalTransform::default(),
+                ));
+            })
+            .id()
     }
 }
 

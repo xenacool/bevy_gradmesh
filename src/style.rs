@@ -8,9 +8,9 @@ use bevy::math::Vec3;
 use bevy::prelude::Shader;
 
 use crate::material::{
-    additive, color_burn, color_dodge, dashed, darken, dither, dual_directional, dual_directional_oklab,
-    dual_radial, dual_radial_oklab, lighten, linear_burn, multiplicative, opaque, screen, subtractive,
-    transparent, GradMeshMaterial,
+    GradMeshMaterial, additive, color_burn, color_dodge, darken, dashed, dither, dual_directional,
+    dual_directional_oklab, dual_radial, dual_radial_oklab, lighten, linear_burn, multiplicative,
+    opaque, screen, subtractive, transparent,
 };
 
 /// Blend mode for material rendering.
@@ -94,7 +94,13 @@ pub struct Dash {
 impl Dash {
     /// Creates a dash pattern with a fixed number of dashes.
     pub fn fixed(count: u32, spacing: f32) -> Self {
-        Self { count, spacing, offset: 0.0, style: DashType::Normal, modifier: 0.0 }
+        Self {
+            count,
+            spacing,
+            offset: 0.0,
+            style: DashType::Normal,
+            modifier: 0.0,
+        }
     }
 
     /// Creates a dash pattern with chevron-style dashes.
@@ -102,7 +108,13 @@ impl Dash {
     /// The `modifier` controls the V-shape intensity (default 0.8).
     /// Range: -1.0..1.0.
     pub fn chevron(count: u32, spacing: f32) -> Self {
-        Self { count, spacing, offset: 0.0, style: DashType::Chevron, modifier: 0.8 }
+        Self {
+            count,
+            spacing,
+            offset: 0.0,
+            style: DashType::Chevron,
+            modifier: 0.8,
+        }
     }
 
     /// Creates a dash pattern with rounded end-caps.
@@ -110,11 +122,19 @@ impl Dash {
     /// The `modifier` controls the rounding intensity (default 0.6).
     /// Range: -1.0..1.0.
     pub fn rounded(count: u32, spacing: f32) -> Self {
-        Self { count, spacing, offset: 0.0, style: DashType::Rounded, modifier: 0.6 }
+        Self {
+            count,
+            spacing,
+            offset: 0.0,
+            style: DashType::Rounded,
+            modifier: 0.6,
+        }
     }
 
     /// Returns true if the dash pattern is enabled.
-    pub fn is_enabled(&self) -> bool { self.count > 0 }
+    pub fn is_enabled(&self) -> bool {
+        self.count > 0
+    }
 }
 
 /// Material style descriptor.
@@ -387,7 +407,10 @@ impl Style {
     /// Builds a `GradMeshMaterial` from this style and registers it in the asset server.
     ///
     /// Returns a handle to the newly created material.
-    pub fn build_material(&self, materials: &mut Assets<GradMeshMaterial>) -> Handle<GradMeshMaterial> {
+    pub fn build_material(
+        &self,
+        materials: &mut Assets<GradMeshMaterial>,
+    ) -> Handle<GradMeshMaterial> {
         let material = self.build();
         materials.add(material)
     }
@@ -397,23 +420,24 @@ impl Style {
         // Extract color components using to_srgba() which handles all Color variants
         let srgba = self.color.to_srgba();
         let (r, g, b, a) = (srgba.red, srgba.green, srgba.blue, srgba.alpha);
-        let (sr, sg, sb, sa) = self.secondary_color
-            .map_or((r, g, b, a), |c| {
-                let s = c.to_srgba();
-                (s.red, s.green, s.blue, s.alpha)
-            });
+        let (sr, sg, sb, sa) = self.secondary_color.map_or((r, g, b, a), |c| {
+            let s = c.to_srgba();
+            (s.red, s.green, s.blue, s.alpha)
+        });
 
         // Build based on color mode and blend mode
         let base_material = match self.color_mode {
             ColorMode::DualDirectional => {
                 if self.oklab {
                     dual_directional_oklab(
-                        [r, g, b], [sr, sg, sb],
+                        [r, g, b],
+                        [sr, sg, sb],
                         [self.direction.x, self.direction.y, self.direction.z],
                     )
                 } else {
                     dual_directional(
-                        [r, g, b], [sr, sg, sb],
+                        [r, g, b],
+                        [sr, sg, sb],
                         [self.direction.x, self.direction.y, self.direction.z],
                     )
                 }
@@ -425,23 +449,21 @@ impl Style {
                     dual_radial([r, g, b], [sr, sg, sb])
                 }
             }
-            ColorMode::Single => {
-                match &self.blend_mode {
-                    BlendMode::Opaque => opaque(r, g, b),
-                    BlendMode::Transparent => transparent(r, g, b, a),
-                    BlendMode::Additive => additive(r, g, b),
-                    BlendMode::Multiplicative => multiplicative(r, g, b),
-                    BlendMode::Screen => screen(r, g, b),
-                    BlendMode::Dither => dither(r, g, b, a),
-                    BlendMode::Subtractive => subtractive(r, g, b),
-                    BlendMode::Lighten => lighten(r, g, b),
-                    BlendMode::ColorDodge => color_dodge(r, g, b),
-                    BlendMode::LinearBurn => linear_burn(r, g, b),
-                    BlendMode::ColorBurn => color_burn(r, g, b),
-                    BlendMode::Darken => darken(r, g, b),
-                    BlendMode::Custom(_) => opaque(r, g, b),
-                }
-            }
+            ColorMode::Single => match &self.blend_mode {
+                BlendMode::Opaque => opaque(r, g, b),
+                BlendMode::Transparent => transparent(r, g, b, a),
+                BlendMode::Additive => additive(r, g, b),
+                BlendMode::Multiplicative => multiplicative(r, g, b),
+                BlendMode::Screen => screen(r, g, b),
+                BlendMode::Dither => dither(r, g, b, a),
+                BlendMode::Subtractive => subtractive(r, g, b),
+                BlendMode::Lighten => lighten(r, g, b),
+                BlendMode::ColorDodge => color_dodge(r, g, b),
+                BlendMode::LinearBurn => linear_burn(r, g, b),
+                BlendMode::ColorBurn => color_burn(r, g, b),
+                BlendMode::Darken => darken(r, g, b),
+                BlendMode::Custom(_) => opaque(r, g, b),
+            },
         };
 
         // Apply dash pattern if set
@@ -458,7 +480,9 @@ impl Style {
                     ShapeType::Rectangle => 2,
                 };
                 return dashed(
-                    r, g, b,
+                    r,
+                    g,
+                    b,
                     dash.count,
                     dash.spacing,
                     dash.offset,

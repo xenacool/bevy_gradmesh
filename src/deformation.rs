@@ -14,8 +14,8 @@
 //! The vertex shader reads this attribute and displaces vertices before
 //! the world-space transform, keeping deformation entirely on the GPU.
 
-use bevy::ecs::prelude::Resource;
 use crate::material::Vec4;
+use bevy::ecs::prelude::Resource;
 
 /// Deformation type identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

@@ -61,39 +61,121 @@ impl std::hash::Hash for Shape {
 
 #[derive(Debug, Clone)]
 enum ShapeKind {
-    Sphere { radius: f32 },
-    Ellipsoid { size: Vec3 },
-    Cuboid { size: Vec3, roundness: f32 },
-    Cylinder { radius: f32, height: f32, roundness: f32 },
-    Cone { radius: f32, height: f32 },
-    Capsule { radius: f32, height: f32 },
-    Hemisphere { radius: f32, capped: bool },
-    Torus { radius: f32, thickness: f32, start: f32, span: f32 },
-    RegularPrism { sides: u32, radius: f32, height: f32, roundness: f32 },
-    Pyramid { sides: u32, radius: f32, height: f32 },
+    Sphere {
+        radius: f32,
+    },
+    Ellipsoid {
+        size: Vec3,
+    },
+    Cuboid {
+        size: Vec3,
+        roundness: f32,
+    },
+    Cylinder {
+        radius: f32,
+        height: f32,
+        roundness: f32,
+    },
+    Cone {
+        radius: f32,
+        height: f32,
+    },
+    Capsule {
+        radius: f32,
+        height: f32,
+    },
+    Hemisphere {
+        radius: f32,
+        capped: bool,
+    },
+    Torus {
+        radius: f32,
+        thickness: f32,
+        start: f32,
+        span: f32,
+    },
+    RegularPrism {
+        sides: u32,
+        radius: f32,
+        height: f32,
+        roundness: f32,
+    },
+    Pyramid {
+        sides: u32,
+        radius: f32,
+        height: f32,
+    },
     // 2D shapes (billboarded flat quads)
-    Rectangle { size: Vec2 },
-    RectangleRim { size: Vec2, rim_width: f32 },
-    Disc { radius: f32 },
-    DiscRim { radius: f32, rim_width: f32 },
-    Polygon { sides: u32, radius: f32 },
-    PolygonRim { sides: u32, radius: f32, rim_width: f32 },
-    Ellipse { radius: Vec2 },
-    EllipseRim { radius: Vec2, rim_width: f32 },
+    Rectangle {
+        size: Vec2,
+    },
+    RectangleRim {
+        size: Vec2,
+        rim_width: f32,
+    },
+    Disc {
+        radius: f32,
+    },
+    DiscRim {
+        radius: f32,
+        rim_width: f32,
+    },
+    Polygon {
+        sides: u32,
+        radius: f32,
+    },
+    PolygonRim {
+        sides: u32,
+        radius: f32,
+        rim_width: f32,
+    },
+    Ellipse {
+        radius: Vec2,
+    },
+    EllipseRim {
+        radius: Vec2,
+        rim_width: f32,
+    },
     /// Arbitrary polygon with optional per-vertex colors.
-    ArbitraryPolygon { vertices: Vec<Vec2>, colors: Option<Vec<[f32; 4]>> },
+    ArbitraryPolygon {
+        vertices: Vec<Vec2>,
+        colors: Option<Vec<[f32; 4]>>,
+    },
     /// 3D polyline rendered as tube geometry.
-    Polyline3D { points: Vec<Vec3>, thickness: f32, closed: bool, segments: u32 },
+    Polyline3D {
+        points: Vec<Vec3>,
+        thickness: f32,
+        closed: bool,
+        segments: u32,
+    },
     /// Bézier curve rendered as a tube along the curve path.
-    BezierCurve { control_points: Vec<Vec3>, thickness: f32, segments: u32 },
+    BezierCurve {
+        control_points: Vec<Vec3>,
+        thickness: f32,
+        segments: u32,
+    },
     /// N-pointed star (2D flat quad, like polygon).
-    Star { points: u32, outer_radius: f32, inner_radius: f32 },
+    Star {
+        points: u32,
+        outer_radius: f32,
+        inner_radius: f32,
+    },
     /// Ring/annulus (2D flat quad with a hole).
-    Ring { outer_radius: f32, inner_radius: f32 },
+    Ring {
+        outer_radius: f32,
+        inner_radius: f32,
+    },
     /// Wedge/slice of a cylinder (2D flat pie slice).
-    Wedge { radius: f32, angle: f32 },
+    Wedge {
+        radius: f32,
+        angle: f32,
+    },
     /// Tapered cylinder (cone-frustum-like, but with flat top and bottom).
-    TaperedCylinder { top_radius: f32, bottom_radius: f32, height: f32 },
+    TaperedCylinder {
+        top_radius: f32,
+        bottom_radius: f32,
+        height: f32,
+    },
 }
 
 fn hash_vec3<H: std::hash::Hasher>(v: &Vec3, state: &mut H) {
@@ -110,103 +192,322 @@ fn hash_vec2<H: std::hash::Hasher>(v: &Vec2, state: &mut H) {
 impl PartialEq for ShapeKind {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Sphere { radius: r1 }, Self::Sphere { radius: r2 }) => r1.to_bits() == r2.to_bits(),
-            (Self::Ellipsoid { size: s1 }, Self::Ellipsoid { size: s2 }) => {
-                s1.x.to_bits() == s2.x.to_bits() && s1.y.to_bits() == s2.y.to_bits() && s1.z.to_bits() == s2.z.to_bits()
+            (Self::Sphere { radius: r1 }, Self::Sphere { radius: r2 }) => {
+                r1.to_bits() == r2.to_bits()
             }
-            (Self::Cuboid { size: s1, roundness: r1 }, Self::Cuboid { size: s2, roundness: r2 }) => {
-                s1.x.to_bits() == s2.x.to_bits() && s1.y.to_bits() == s2.y.to_bits() && s1.z.to_bits() == s2.z.to_bits()
+            (Self::Ellipsoid { size: s1 }, Self::Ellipsoid { size: s2 }) => {
+                s1.x.to_bits() == s2.x.to_bits()
+                    && s1.y.to_bits() == s2.y.to_bits()
+                    && s1.z.to_bits() == s2.z.to_bits()
+            }
+            (
+                Self::Cuboid {
+                    size: s1,
+                    roundness: r1,
+                },
+                Self::Cuboid {
+                    size: s2,
+                    roundness: r2,
+                },
+            ) => {
+                s1.x.to_bits() == s2.x.to_bits()
+                    && s1.y.to_bits() == s2.y.to_bits()
+                    && s1.z.to_bits() == s2.z.to_bits()
                     && r1.to_bits() == r2.to_bits()
             }
-            (Self::Cylinder { radius: r1, height: h1, roundness: rn1 }, Self::Cylinder { radius: r2, height: h2, roundness: rn2 }) => {
-                r1.to_bits() == r2.to_bits() && h1.to_bits() == h2.to_bits() && rn1.to_bits() == rn2.to_bits()
+            (
+                Self::Cylinder {
+                    radius: r1,
+                    height: h1,
+                    roundness: rn1,
+                },
+                Self::Cylinder {
+                    radius: r2,
+                    height: h2,
+                    roundness: rn2,
+                },
+            ) => {
+                r1.to_bits() == r2.to_bits()
+                    && h1.to_bits() == h2.to_bits()
+                    && rn1.to_bits() == rn2.to_bits()
             }
-            (Self::Cone { radius: r1, height: h1 }, Self::Cone { radius: r2, height: h2 }) => {
-                r1.to_bits() == r2.to_bits() && h1.to_bits() == h2.to_bits()
+            (
+                Self::Cone {
+                    radius: r1,
+                    height: h1,
+                },
+                Self::Cone {
+                    radius: r2,
+                    height: h2,
+                },
+            ) => r1.to_bits() == r2.to_bits() && h1.to_bits() == h2.to_bits(),
+            (
+                Self::Capsule {
+                    radius: r1,
+                    height: h1,
+                },
+                Self::Capsule {
+                    radius: r2,
+                    height: h2,
+                },
+            ) => r1.to_bits() == r2.to_bits() && h1.to_bits() == h2.to_bits(),
+            (
+                Self::Hemisphere {
+                    radius: r1,
+                    capped: c1,
+                },
+                Self::Hemisphere {
+                    radius: r2,
+                    capped: c2,
+                },
+            ) => r1.to_bits() == r2.to_bits() && c1 == c2,
+            (
+                Self::Torus {
+                    radius: r1,
+                    thickness: t1,
+                    start: s1,
+                    span: sp1,
+                },
+                Self::Torus {
+                    radius: r2,
+                    thickness: t2,
+                    start: s2,
+                    span: sp2,
+                },
+            ) => {
+                r1.to_bits() == r2.to_bits()
+                    && t1.to_bits() == t2.to_bits()
+                    && s1.to_bits() == s2.to_bits()
+                    && sp1.to_bits() == sp2.to_bits()
             }
-            (Self::Capsule { radius: r1, height: h1 }, Self::Capsule { radius: r2, height: h2 }) => {
-                r1.to_bits() == r2.to_bits() && h1.to_bits() == h2.to_bits()
+            (
+                Self::RegularPrism {
+                    sides: s1,
+                    radius: r1,
+                    height: h1,
+                    roundness: rn1,
+                },
+                Self::RegularPrism {
+                    sides: s2,
+                    radius: r2,
+                    height: h2,
+                    roundness: rn2,
+                },
+            ) => {
+                s1 == s2
+                    && r1.to_bits() == r2.to_bits()
+                    && h1.to_bits() == h2.to_bits()
+                    && rn1.to_bits() == rn2.to_bits()
             }
-            (Self::Hemisphere { radius: r1, capped: c1 }, Self::Hemisphere { radius: r2, capped: c2 }) => {
-                r1.to_bits() == r2.to_bits() && c1 == c2
-            }
-            (Self::Torus { radius: r1, thickness: t1, start: s1, span: sp1 }, Self::Torus { radius: r2, thickness: t2, start: s2, span: sp2 }) => {
-                r1.to_bits() == r2.to_bits() && t1.to_bits() == t2.to_bits()
-                    && s1.to_bits() == s2.to_bits() && sp1.to_bits() == sp2.to_bits()
-            }
-            (Self::RegularPrism { sides: s1, radius: r1, height: h1, roundness: rn1 }, Self::RegularPrism { sides: s2, radius: r2, height: h2, roundness: rn2 }) => {
-                s1 == s2 && r1.to_bits() == r2.to_bits() && h1.to_bits() == h2.to_bits() && rn1.to_bits() == rn2.to_bits()
-            }
-            (Self::Pyramid { sides: s1, radius: r1, height: h1 }, Self::Pyramid { sides: s2, radius: r2, height: h2 }) => {
-                s1 == s2 && r1.to_bits() == r2.to_bits() && h1.to_bits() == h2.to_bits()
-            }
+            (
+                Self::Pyramid {
+                    sides: s1,
+                    radius: r1,
+                    height: h1,
+                },
+                Self::Pyramid {
+                    sides: s2,
+                    radius: r2,
+                    height: h2,
+                },
+            ) => s1 == s2 && r1.to_bits() == r2.to_bits() && h1.to_bits() == h2.to_bits(),
             (Self::Rectangle { size: s1 }, Self::Rectangle { size: s2 }) => {
                 s1.x.to_bits() == s2.x.to_bits() && s1.y.to_bits() == s2.y.to_bits()
             }
-            (Self::RectangleRim { size: s1, rim_width: r1 }, Self::RectangleRim { size: s2, rim_width: r2 }) => {
-                s1.x.to_bits() == s2.x.to_bits() && s1.y.to_bits() == s2.y.to_bits() && r1.to_bits() == r2.to_bits()
+            (
+                Self::RectangleRim {
+                    size: s1,
+                    rim_width: r1,
+                },
+                Self::RectangleRim {
+                    size: s2,
+                    rim_width: r2,
+                },
+            ) => {
+                s1.x.to_bits() == s2.x.to_bits()
+                    && s1.y.to_bits() == s2.y.to_bits()
+                    && r1.to_bits() == r2.to_bits()
             }
             (Self::Disc { radius: r1 }, Self::Disc { radius: r2 }) => r1.to_bits() == r2.to_bits(),
-            (Self::DiscRim { radius: r1, rim_width: rw1 }, Self::DiscRim { radius: r2, rim_width: rw2 }) => {
-                r1.to_bits() == r2.to_bits() && rw1.to_bits() == rw2.to_bits()
-            }
-            (Self::Polygon { sides: s1, radius: r1 }, Self::Polygon { sides: s2, radius: r2 }) => {
-                s1 == s2 && r1.to_bits() == r2.to_bits()
-            }
-            (Self::PolygonRim { sides: s1, radius: r1, rim_width: rw1 }, Self::PolygonRim { sides: s2, radius: r2, rim_width: rw2 }) => {
-                s1 == s2 && r1.to_bits() == r2.to_bits() && rw1.to_bits() == rw2.to_bits()
-            }
+            (
+                Self::DiscRim {
+                    radius: r1,
+                    rim_width: rw1,
+                },
+                Self::DiscRim {
+                    radius: r2,
+                    rim_width: rw2,
+                },
+            ) => r1.to_bits() == r2.to_bits() && rw1.to_bits() == rw2.to_bits(),
+            (
+                Self::Polygon {
+                    sides: s1,
+                    radius: r1,
+                },
+                Self::Polygon {
+                    sides: s2,
+                    radius: r2,
+                },
+            ) => s1 == s2 && r1.to_bits() == r2.to_bits(),
+            (
+                Self::PolygonRim {
+                    sides: s1,
+                    radius: r1,
+                    rim_width: rw1,
+                },
+                Self::PolygonRim {
+                    sides: s2,
+                    radius: r2,
+                    rim_width: rw2,
+                },
+            ) => s1 == s2 && r1.to_bits() == r2.to_bits() && rw1.to_bits() == rw2.to_bits(),
             (Self::Ellipse { radius: r1 }, Self::Ellipse { radius: r2 }) => {
                 r1.x.to_bits() == r2.x.to_bits() && r1.y.to_bits() == r2.y.to_bits()
             }
-            (Self::EllipseRim { radius: r1, rim_width: rw1 }, Self::EllipseRim { radius: r2, rim_width: rw2 }) => {
-                r1.x.to_bits() == r2.x.to_bits() && r1.y.to_bits() == r2.y.to_bits() && rw1.to_bits() == rw2.to_bits()
+            (
+                Self::EllipseRim {
+                    radius: r1,
+                    rim_width: rw1,
+                },
+                Self::EllipseRim {
+                    radius: r2,
+                    rim_width: rw2,
+                },
+            ) => {
+                r1.x.to_bits() == r2.x.to_bits()
+                    && r1.y.to_bits() == r2.y.to_bits()
+                    && rw1.to_bits() == rw2.to_bits()
             }
-            (Self::ArbitraryPolygon { vertices: v1, colors: c1 }, Self::ArbitraryPolygon { vertices: v2, colors: c2 }) => {
-                v1.len() == v2.len() && v1.iter().zip(v2.iter()).all(|(a, b)| {
-                    a.x.to_bits() == b.x.to_bits() && a.y.to_bits() == b.y.to_bits()
-                }) && c1 == c2
+            (
+                Self::ArbitraryPolygon {
+                    vertices: v1,
+                    colors: c1,
+                },
+                Self::ArbitraryPolygon {
+                    vertices: v2,
+                    colors: c2,
+                },
+            ) => {
+                v1.len() == v2.len()
+                    && v1.iter().zip(v2.iter()).all(|(a, b)| {
+                        a.x.to_bits() == b.x.to_bits() && a.y.to_bits() == b.y.to_bits()
+                    })
+                    && c1 == c2
             }
-            (Self::Polyline3D { points: p1, thickness: t1, closed: c1, segments: s1 },
-             Self::Polyline3D { points: p2, thickness: t2, closed: c2, segments: s2 }) => {
+            (
+                Self::Polyline3D {
+                    points: p1,
+                    thickness: t1,
+                    closed: c1,
+                    segments: s1,
+                },
+                Self::Polyline3D {
+                    points: p2,
+                    thickness: t2,
+                    closed: c2,
+                    segments: s2,
+                },
+            ) => {
                 p1.len() == p2.len()
                     && p1.iter().zip(p2.iter()).all(|(a, b)| {
                         // Quantize to 2 decimal places for stable comparison
-                        let qa = Vec3::new((a.x * 100.0).round() / 100.0, (a.y * 100.0).round() / 100.0, (a.z * 100.0).round() / 100.0);
-                        let qb = Vec3::new((b.x * 100.0).round() / 100.0, (b.y * 100.0).round() / 100.0, (b.z * 100.0).round() / 100.0);
-                        qa.x.to_bits() == qb.x.to_bits() && qa.y.to_bits() == qb.y.to_bits() && qa.z.to_bits() == qb.z.to_bits()
+                        let qa = Vec3::new(
+                            (a.x * 100.0).round() / 100.0,
+                            (a.y * 100.0).round() / 100.0,
+                            (a.z * 100.0).round() / 100.0,
+                        );
+                        let qb = Vec3::new(
+                            (b.x * 100.0).round() / 100.0,
+                            (b.y * 100.0).round() / 100.0,
+                            (b.z * 100.0).round() / 100.0,
+                        );
+                        qa.x.to_bits() == qb.x.to_bits()
+                            && qa.y.to_bits() == qb.y.to_bits()
+                            && qa.z.to_bits() == qb.z.to_bits()
                     })
                     && t1.to_bits() == t2.to_bits()
                     && c1 == c2
                     && s1 == s2
             }
-            (Self::BezierCurve { control_points: c1, thickness: t1, segments: s1 },
-             Self::BezierCurve { control_points: c2, thickness: t2, segments: s2 }) => {
+            (
+                Self::BezierCurve {
+                    control_points: c1,
+                    thickness: t1,
+                    segments: s1,
+                },
+                Self::BezierCurve {
+                    control_points: c2,
+                    thickness: t2,
+                    segments: s2,
+                },
+            ) => {
                 c1.len() == c2.len()
                     && c1.iter().zip(c2.iter()).all(|(a, b)| {
                         // Quantize to 2 decimal places for stable comparison
-                        let qa = Vec3::new((a.x * 100.0).round() / 100.0, (a.y * 100.0).round() / 100.0, (a.z * 100.0).round() / 100.0);
-                        let qb = Vec3::new((b.x * 100.0).round() / 100.0, (b.y * 100.0).round() / 100.0, (b.z * 100.0).round() / 100.0);
-                        qa.x.to_bits() == qb.x.to_bits() && qa.y.to_bits() == qb.y.to_bits() && qa.z.to_bits() == qb.z.to_bits()
+                        let qa = Vec3::new(
+                            (a.x * 100.0).round() / 100.0,
+                            (a.y * 100.0).round() / 100.0,
+                            (a.z * 100.0).round() / 100.0,
+                        );
+                        let qb = Vec3::new(
+                            (b.x * 100.0).round() / 100.0,
+                            (b.y * 100.0).round() / 100.0,
+                            (b.z * 100.0).round() / 100.0,
+                        );
+                        qa.x.to_bits() == qb.x.to_bits()
+                            && qa.y.to_bits() == qb.y.to_bits()
+                            && qa.z.to_bits() == qb.z.to_bits()
                     })
                     && t1.to_bits() == t2.to_bits()
                     && s1 == s2
             }
-            (Self::Star { points: p1, outer_radius: o1, inner_radius: i1 },
-             Self::Star { points: p2, outer_radius: o2, inner_radius: i2 }) => {
-                p1 == p2 && o1.to_bits() == o2.to_bits() && i1.to_bits() == i2.to_bits()
-            }
-            (Self::Ring { outer_radius: o1, inner_radius: i1 },
-             Self::Ring { outer_radius: o2, inner_radius: i2 }) => {
-                o1.to_bits() == o2.to_bits() && i1.to_bits() == i2.to_bits()
-            }
-            (Self::Wedge { radius: r1, angle: a1 },
-             Self::Wedge { radius: r2, angle: a2 }) => {
-                r1.to_bits() == r2.to_bits() && a1.to_bits() == a2.to_bits()
-            }
-            (Self::TaperedCylinder { top_radius: t1, bottom_radius: b1, height: h1 },
-             Self::TaperedCylinder { top_radius: t2, bottom_radius: b2, height: h2 }) => {
-                t1.to_bits() == t2.to_bits() && b1.to_bits() == b2.to_bits() && h1.to_bits() == h2.to_bits()
+            (
+                Self::Star {
+                    points: p1,
+                    outer_radius: o1,
+                    inner_radius: i1,
+                },
+                Self::Star {
+                    points: p2,
+                    outer_radius: o2,
+                    inner_radius: i2,
+                },
+            ) => p1 == p2 && o1.to_bits() == o2.to_bits() && i1.to_bits() == i2.to_bits(),
+            (
+                Self::Ring {
+                    outer_radius: o1,
+                    inner_radius: i1,
+                },
+                Self::Ring {
+                    outer_radius: o2,
+                    inner_radius: i2,
+                },
+            ) => o1.to_bits() == o2.to_bits() && i1.to_bits() == i2.to_bits(),
+            (
+                Self::Wedge {
+                    radius: r1,
+                    angle: a1,
+                },
+                Self::Wedge {
+                    radius: r2,
+                    angle: a2,
+                },
+            ) => r1.to_bits() == r2.to_bits() && a1.to_bits() == a2.to_bits(),
+            (
+                Self::TaperedCylinder {
+                    top_radius: t1,
+                    bottom_radius: b1,
+                    height: h1,
+                },
+                Self::TaperedCylinder {
+                    top_radius: t2,
+                    bottom_radius: b2,
+                    height: h2,
+                },
+            ) => {
+                t1.to_bits() == t2.to_bits()
+                    && b1.to_bits() == b2.to_bits()
+                    && h1.to_bits() == h2.to_bits()
             }
             _ => false,
         }
@@ -225,7 +526,11 @@ impl std::hash::Hash for ShapeKind {
                 hash_vec3(size, state);
                 roundness.to_bits().hash(state);
             }
-            Self::Cylinder { radius, height, roundness } => {
+            Self::Cylinder {
+                radius,
+                height,
+                roundness,
+            } => {
                 radius.to_bits().hash(state);
                 height.to_bits().hash(state);
                 roundness.to_bits().hash(state);
@@ -242,19 +547,33 @@ impl std::hash::Hash for ShapeKind {
                 radius.to_bits().hash(state);
                 capped.hash(state);
             }
-            Self::Torus { radius, thickness, start, span } => {
+            Self::Torus {
+                radius,
+                thickness,
+                start,
+                span,
+            } => {
                 radius.to_bits().hash(state);
                 thickness.to_bits().hash(state);
                 start.to_bits().hash(state);
                 span.to_bits().hash(state);
             }
-            Self::RegularPrism { sides, radius, height, roundness } => {
+            Self::RegularPrism {
+                sides,
+                radius,
+                height,
+                roundness,
+            } => {
                 sides.hash(state);
                 radius.to_bits().hash(state);
                 height.to_bits().hash(state);
                 roundness.to_bits().hash(state);
             }
-            Self::Pyramid { sides, radius, height } => {
+            Self::Pyramid {
+                sides,
+                radius,
+                height,
+            } => {
                 sides.hash(state);
                 radius.to_bits().hash(state);
                 height.to_bits().hash(state);
@@ -273,7 +592,11 @@ impl std::hash::Hash for ShapeKind {
                 sides.hash(state);
                 radius.to_bits().hash(state);
             }
-            Self::PolygonRim { sides, radius, rim_width } => {
+            Self::PolygonRim {
+                sides,
+                radius,
+                rim_width,
+            } => {
                 sides.hash(state);
                 radius.to_bits().hash(state);
                 rim_width.to_bits().hash(state);
@@ -301,7 +624,12 @@ impl std::hash::Hash for ShapeKind {
                     }
                 }
             }
-            Self::Polyline3D { points, thickness, closed, segments } => {
+            Self::Polyline3D {
+                points,
+                thickness,
+                closed,
+                segments,
+            } => {
                 points.len().hash(state);
                 for p in points {
                     // Quantize to 2 decimal places for stable hashing
@@ -316,7 +644,11 @@ impl std::hash::Hash for ShapeKind {
                 closed.hash(state);
                 segments.hash(state);
             }
-            Self::BezierCurve { control_points, thickness, segments } => {
+            Self::BezierCurve {
+                control_points,
+                thickness,
+                segments,
+            } => {
                 control_points.len().hash(state);
                 for p in control_points {
                     // Quantize to 2 decimal places for stable hashing
@@ -330,12 +662,19 @@ impl std::hash::Hash for ShapeKind {
                 thickness.to_bits().hash(state);
                 segments.hash(state);
             }
-            Self::Star { points, outer_radius, inner_radius } => {
+            Self::Star {
+                points,
+                outer_radius,
+                inner_radius,
+            } => {
                 points.hash(state);
                 outer_radius.to_bits().hash(state);
                 inner_radius.to_bits().hash(state);
             }
-            Self::Ring { outer_radius, inner_radius } => {
+            Self::Ring {
+                outer_radius,
+                inner_radius,
+            } => {
                 outer_radius.to_bits().hash(state);
                 inner_radius.to_bits().hash(state);
             }
@@ -343,7 +682,11 @@ impl std::hash::Hash for ShapeKind {
                 radius.to_bits().hash(state);
                 angle.to_bits().hash(state);
             }
-            Self::TaperedCylinder { top_radius, bottom_radius, height } => {
+            Self::TaperedCylinder {
+                top_radius,
+                bottom_radius,
+                height,
+            } => {
                 top_radius.to_bits().hash(state);
                 bottom_radius.to_bits().hash(state);
                 height.to_bits().hash(state);
@@ -430,7 +773,13 @@ impl Shape {
     }
 
     /// Creates a regular prism with the given number of sides, radius, and height.
-    pub fn regular_prism(sides: u32, radius: f32, height: f32, roundness: f32, detail: ShapeDetail) -> Self {
+    pub fn regular_prism(
+        sides: u32,
+        radius: f32,
+        height: f32,
+        roundness: f32,
+        detail: ShapeDetail,
+    ) -> Self {
         Self {
             kind: ShapeKind::RegularPrism {
                 sides,
@@ -497,7 +846,11 @@ impl Shape {
     /// Creates a 2D regular polygon with a hollow rim.
     pub fn polygon_rim(sides: u32, radius: f32, rim_width: f32, detail: ShapeDetail) -> Self {
         Self {
-            kind: ShapeKind::PolygonRim { sides, radius, rim_width },
+            kind: ShapeKind::PolygonRim {
+                sides,
+                radius,
+                rim_width,
+            },
             detail,
         }
     }
@@ -528,7 +881,10 @@ impl Shape {
     /// * `detail` - Ignored; polygon uses exact vertices.
     pub fn arbitrary_polygon(vertices: Vec<Vec2>, detail: ShapeDetail) -> Self {
         Self {
-            kind: ShapeKind::ArbitraryPolygon { vertices, colors: None },
+            kind: ShapeKind::ArbitraryPolygon {
+                vertices,
+                colors: None,
+            },
             detail,
         }
     }
@@ -664,9 +1020,7 @@ impl Shape {
         match &self.kind {
             ShapeKind::Sphere { radius } => build_sphere(*radius, self.detail),
             ShapeKind::Ellipsoid { size } => build_ellipsoid(*size, self.detail),
-            ShapeKind::Cuboid { size, roundness } => {
-                build_cuboid(*size, *roundness, self.detail)
-            }
+            ShapeKind::Cuboid { size, roundness } => build_cuboid(*size, *roundness, self.detail),
             ShapeKind::Cylinder {
                 radius,
                 height,
@@ -703,12 +1057,12 @@ impl Shape {
             ShapeKind::DiscRim { radius, rim_width } => {
                 build_disc_rim(*radius, *rim_width, self.detail)
             }
-            ShapeKind::Polygon { sides, radius } => {
-                build_polygon(*sides, *radius, self.detail)
-            }
-            ShapeKind::PolygonRim { sides, radius, rim_width } => {
-                build_polygon_rim(*sides, *radius, *rim_width, self.detail)
-            }
+            ShapeKind::Polygon { sides, radius } => build_polygon(*sides, *radius, self.detail),
+            ShapeKind::PolygonRim {
+                sides,
+                radius,
+                rim_width,
+            } => build_polygon_rim(*sides, *radius, *rim_width, self.detail),
             ShapeKind::Ellipse { radius } => build_ellipse(*radius, self.detail),
             ShapeKind::EllipseRim { radius, rim_width } => {
                 build_ellipse_rim(*radius, *rim_width, self.detail)
@@ -716,24 +1070,32 @@ impl Shape {
             ShapeKind::ArbitraryPolygon { vertices, colors } => {
                 build_arbitrary_polygon(vertices.clone(), colors.clone())
             }
-            ShapeKind::Polyline3D { points, thickness, closed, segments } => {
-                build_polyline3d(points.clone(), *thickness, *closed, *segments)
-            }
-            ShapeKind::BezierCurve { control_points, thickness, segments } => {
-                build_bezier_curve(control_points.clone(), *thickness, *segments)
-            }
-            ShapeKind::Star { points, outer_radius, inner_radius } => {
-                build_star(*points, *outer_radius, *inner_radius, self.detail)
-            }
-            ShapeKind::Ring { outer_radius, inner_radius } => {
-                build_ring(*outer_radius, *inner_radius, self.detail)
-            }
-            ShapeKind::Wedge { radius, angle } => {
-                build_wedge(*radius, *angle, self.detail)
-            }
-            ShapeKind::TaperedCylinder { top_radius, bottom_radius, height } => {
-                build_tapered_cylinder(*top_radius, *bottom_radius, *height, self.detail)
-            }
+            ShapeKind::Polyline3D {
+                points,
+                thickness,
+                closed,
+                segments,
+            } => build_polyline3d(points.clone(), *thickness, *closed, *segments),
+            ShapeKind::BezierCurve {
+                control_points,
+                thickness,
+                segments,
+            } => build_bezier_curve(control_points.clone(), *thickness, *segments),
+            ShapeKind::Star {
+                points,
+                outer_radius,
+                inner_radius,
+            } => build_star(*points, *outer_radius, *inner_radius, self.detail),
+            ShapeKind::Ring {
+                outer_radius,
+                inner_radius,
+            } => build_ring(*outer_radius, *inner_radius, self.detail),
+            ShapeKind::Wedge { radius, angle } => build_wedge(*radius, *angle, self.detail),
+            ShapeKind::TaperedCylinder {
+                top_radius,
+                bottom_radius,
+                height,
+            } => build_tapered_cylinder(*top_radius, *bottom_radius, *height, self.detail),
         }
     }
 }
@@ -763,7 +1125,10 @@ fn build_sphere(radius: f32, detail: ShapeDetail) -> Mesh {
 
             vertices.push(Vec3::new(nx, ny, nz) * radius);
             normals.push(Vec3::new(nx, ny, nz));
-            uvs.push(Vec2::new(lon as f32 / segments as f32, lat as f32 / segments as f32));
+            uvs.push(Vec2::new(
+                lon as f32 / segments as f32,
+                lat as f32 / segments as f32,
+            ));
         }
     }
 
@@ -807,13 +1172,19 @@ fn build_ellipsoid(size: Vec3, detail: ShapeDetail) -> Mesh {
             let len = (nx * nx / (half.x * half.x)
                 + ny * ny / (half.y * half.y)
                 + nz * nz / (half.z * half.z))
-            .sqrt();
-            normals.push(Vec3::new(
-                nx / (half.x * half.x * len),
-                ny / (half.y * half.y * len),
-                nz / (half.z * half.z * len),
-            ).normalize());
-            uvs.push(Vec2::new(lon as f32 / segments as f32, lat as f32 / segments as f32));
+                .sqrt();
+            normals.push(
+                Vec3::new(
+                    nx / (half.x * half.x * len),
+                    ny / (half.y * half.y * len),
+                    nz / (half.z * half.z * len),
+                )
+                .normalize(),
+            );
+            uvs.push(Vec2::new(
+                lon as f32 / segments as f32,
+                lat as f32 / segments as f32,
+            ));
         }
     }
 
@@ -847,17 +1218,35 @@ fn build_simple_box(size: Vec3) -> Mesh {
     // 24 vertices (one per face corner, no sharing for correct normals)
     let vertices: [Vec3; 24] = [
         // Front face
-        Vec3::new(-hx, -hy, hz), Vec3::new(hx, -hy, hz), Vec3::new(hx, hy, hz), Vec3::new(-hx, hy, hz),
+        Vec3::new(-hx, -hy, hz),
+        Vec3::new(hx, -hy, hz),
+        Vec3::new(hx, hy, hz),
+        Vec3::new(-hx, hy, hz),
         // Back face
-        Vec3::new(hx, -hy, -hz), Vec3::new(-hx, -hy, -hz), Vec3::new(-hx, hy, -hz), Vec3::new(hx, hy, -hz),
+        Vec3::new(hx, -hy, -hz),
+        Vec3::new(-hx, -hy, -hz),
+        Vec3::new(-hx, hy, -hz),
+        Vec3::new(hx, hy, -hz),
         // Top face
-        Vec3::new(-hx, hy, -hz), Vec3::new(-hx, hy, hz), Vec3::new(hx, hy, hz), Vec3::new(hx, hy, -hz),
+        Vec3::new(-hx, hy, -hz),
+        Vec3::new(-hx, hy, hz),
+        Vec3::new(hx, hy, hz),
+        Vec3::new(hx, hy, -hz),
         // Bottom face
-        Vec3::new(-hx, -hy, hz), Vec3::new(hx, -hy, hz), Vec3::new(hx, -hy, -hz), Vec3::new(-hx, -hy, -hz),
+        Vec3::new(-hx, -hy, hz),
+        Vec3::new(hx, -hy, hz),
+        Vec3::new(hx, -hy, -hz),
+        Vec3::new(-hx, -hy, -hz),
         // Right face
-        Vec3::new(hx, -hy, -hz), Vec3::new(hx, -hy, hz), Vec3::new(hx, hy, hz), Vec3::new(hx, hy, -hz),
+        Vec3::new(hx, -hy, -hz),
+        Vec3::new(hx, -hy, hz),
+        Vec3::new(hx, hy, hz),
+        Vec3::new(hx, hy, -hz),
         // Left face
-        Vec3::new(-hx, -hy, hz), Vec3::new(-hx, -hy, -hz), Vec3::new(-hx, hy, -hz), Vec3::new(-hx, hy, hz),
+        Vec3::new(-hx, -hy, hz),
+        Vec3::new(-hx, -hy, -hz),
+        Vec3::new(-hx, hy, -hz),
+        Vec3::new(-hx, hy, hz),
     ];
 
     let normals: [Vec3; 6] = [
@@ -887,15 +1276,20 @@ fn build_simple_box(size: Vec3) -> Mesh {
     // All triangles use CCW winding when viewed from outside the box.
     // Bottom, Right, and Left faces need reversed winding for outward normals.
     let indices: [u32; 36] = [
-        0, 1, 2, 2, 3, 0,       // Front (+Z)
-        4, 5, 6, 6, 7, 4,       // Back (-Z)
-        8, 9, 10, 10, 11, 8,    // Top (+Y)
+        0, 1, 2, 2, 3, 0, // Front (+Z)
+        4, 5, 6, 6, 7, 4, // Back (-Z)
+        8, 9, 10, 10, 11, 8, // Top (+Y)
         12, 14, 13, 14, 12, 15, // Bottom (-Y) — reversed winding
         16, 18, 17, 18, 16, 19, // Right (+X) — reversed winding
         20, 22, 21, 22, 20, 23, // Left (-X) — reversed winding
     ];
 
-    build_mesh(vertices.to_vec(), all_normals, uvs.to_vec(), indices.to_vec())
+    build_mesh(
+        vertices.to_vec(),
+        all_normals,
+        uvs.to_vec(),
+        indices.to_vec(),
+    )
 }
 
 fn build_rounded_box(size: Vec3, roundness: f32, segments: usize) -> Mesh {
@@ -944,13 +1338,29 @@ fn build_rounded_box(size: Vec3, roundness: f32, segments: usize) -> Mesh {
         // Front face (+Z)
         (Vec3::new(-1.0, 0.0, 0.0), Vec3::Y, Vec3::Z),
         // Left face (-X)
-        (Vec3::Z, Vec3::new(0.0, -1.0, 0.0), Vec3::new(-1.0, 0.0, 0.0)),
+        (
+            Vec3::Z,
+            Vec3::new(0.0, -1.0, 0.0),
+            Vec3::new(-1.0, 0.0, 0.0),
+        ),
         // Right face (+X)
-        (Vec3::new(0.0, 0.0, -1.0), Vec3::new(0.0, -1.0, 0.0), Vec3::X),
+        (
+            Vec3::new(0.0, 0.0, -1.0),
+            Vec3::new(0.0, -1.0, 0.0),
+            Vec3::X,
+        ),
         // Bottom face (-Y)
-        (Vec3::X, Vec3::new(0.0, 0.0, -1.0), Vec3::new(0.0, -1.0, 0.0)),
+        (
+            Vec3::X,
+            Vec3::new(0.0, 0.0, -1.0),
+            Vec3::new(0.0, -1.0, 0.0),
+        ),
         // Top face (+Y)
-        (Vec3::new(-1.0, 0.0, 0.0), Vec3::new(0.0, 0.0, -1.0), Vec3::Y),
+        (
+            Vec3::new(-1.0, 0.0, 0.0),
+            Vec3::new(0.0, 0.0, -1.0),
+            Vec3::Y,
+        ),
     ];
 
     for &(axis_u, axis_v, normal) in faces.iter() {
@@ -990,8 +1400,12 @@ fn build_rounded_box(size: Vec3, roundness: f32, segments: usize) -> Mesh {
             for column in 0..edge_vertices - 1 {
                 let idx = base_idx + row as u32 * edge_vertices as u32 + column as u32;
                 indices.extend_from_slice(&[
-                    idx, idx + edge_vertices as u32, idx + 1,
-                    idx + 1, idx + edge_vertices as u32, idx + edge_vertices as u32 + 1,
+                    idx,
+                    idx + edge_vertices as u32,
+                    idx + 1,
+                    idx + 1,
+                    idx + edge_vertices as u32,
+                    idx + edge_vertices as u32 + 1,
                 ]);
             }
         }
@@ -1077,7 +1491,8 @@ fn rounded_box_round_point(cube_point: &Vec3, radii: &Vec3, face_normal: &Vec3) 
         direction.x / radii.x,
         direction.y / radii.y,
         direction.z / radii.z,
-    ).normalize_or(*face_normal);
+    )
+    .normalize_or(*face_normal);
 
     (position, normal)
 }
@@ -1126,16 +1541,21 @@ fn build_cylinder(radius: f32, height: f32, _roundness: f32, detail: ShapeDetail
 
     for i in 0..=segments {
         let angle = i as f32 * 2.0 * PI / segments as f32;
-        vertices.push(Vec3::new(angle.cos() * radius, half_h, angle.sin() * radius));
-        normals.push(Vec3::new(0.0, 1.0, 0.0));
-        uvs.push(Vec2::new(
-            0.5 + angle.cos() * 0.5,
-            0.5 + angle.sin() * 0.5,
+        vertices.push(Vec3::new(
+            angle.cos() * radius,
+            half_h,
+            angle.sin() * radius,
         ));
+        normals.push(Vec3::new(0.0, 1.0, 0.0));
+        uvs.push(Vec2::new(0.5 + angle.cos() * 0.5, 0.5 + angle.sin() * 0.5));
     }
 
     for i in 0..segments {
-        indices.extend_from_slice(&[top_center, top_center + 1 + i as u32, top_center + 2 + i as u32]);
+        indices.extend_from_slice(&[
+            top_center,
+            top_center + 1 + i as u32,
+            top_center + 2 + i as u32,
+        ]);
     }
 
     // Bottom cap
@@ -1146,16 +1566,21 @@ fn build_cylinder(radius: f32, height: f32, _roundness: f32, detail: ShapeDetail
 
     for i in 0..=segments {
         let angle = i as f32 * 2.0 * PI / segments as f32;
-        vertices.push(Vec3::new(angle.cos() * radius, -half_h, angle.sin() * radius));
-        normals.push(Vec3::new(0.0, -1.0, 0.0));
-        uvs.push(Vec2::new(
-            0.5 + angle.cos() * 0.5,
-            0.5 + angle.sin() * 0.5,
+        vertices.push(Vec3::new(
+            angle.cos() * radius,
+            -half_h,
+            angle.sin() * radius,
         ));
+        normals.push(Vec3::new(0.0, -1.0, 0.0));
+        uvs.push(Vec2::new(0.5 + angle.cos() * 0.5, 0.5 + angle.sin() * 0.5));
     }
 
     for i in 0..segments {
-        indices.extend_from_slice(&[bottom_center, bottom_center + 2 + i as u32, bottom_center + 1 + i as u32]);
+        indices.extend_from_slice(&[
+            bottom_center,
+            bottom_center + 2 + i as u32,
+            bottom_center + 1 + i as u32,
+        ]);
     }
 
     build_mesh(vertices, normals, uvs, indices)
@@ -1211,16 +1636,21 @@ fn build_cone(radius: f32, height: f32, detail: ShapeDetail) -> Mesh {
 
     for i in 0..=segments {
         let angle = i as f32 * 2.0 * PI / segments as f32;
-        vertices.push(Vec3::new(angle.cos() * radius, -half_h, angle.sin() * radius));
-        normals.push(Vec3::new(0.0, -1.0, 0.0));
-        uvs.push(Vec2::new(
-            0.5 + angle.cos() * 0.5,
-            0.5 + angle.sin() * 0.5,
+        vertices.push(Vec3::new(
+            angle.cos() * radius,
+            -half_h,
+            angle.sin() * radius,
         ));
+        normals.push(Vec3::new(0.0, -1.0, 0.0));
+        uvs.push(Vec2::new(0.5 + angle.cos() * 0.5, 0.5 + angle.sin() * 0.5));
     }
 
     for i in 0..segments {
-        indices.extend_from_slice(&[base_center, base_center + 2 + i as u32, base_center + 1 + i as u32]);
+        indices.extend_from_slice(&[
+            base_center,
+            base_center + 2 + i as u32,
+            base_center + 1 + i as u32,
+        ]);
     }
 
     build_mesh(vertices, normals, uvs, indices)
@@ -1404,20 +1834,17 @@ fn build_hemisphere(radius: f32, capped: bool, detail: ShapeDetail) -> Mesh {
 
         for i in 0..=segments {
             let angle = i as f32 * 2.0 * PI / segments as f32;
-            vertices.push(Vec3::new(
-                angle.cos() * radius,
-                0.0,
-                angle.sin() * radius,
-            ));
+            vertices.push(Vec3::new(angle.cos() * radius, 0.0, angle.sin() * radius));
             normals.push(Vec3::new(0.0, -1.0, 0.0));
-            uvs.push(Vec2::new(
-                0.5 + angle.cos() * 0.5,
-                0.5 + angle.sin() * 0.5,
-            ));
+            uvs.push(Vec2::new(0.5 + angle.cos() * 0.5, 0.5 + angle.sin() * 0.5));
         }
 
         for i in 0..segments {
-            indices.extend_from_slice(&[cap_center, cap_center + 2 + i as u32, cap_center + 1 + i as u32]);
+            indices.extend_from_slice(&[
+                cap_center,
+                cap_center + 2 + i as u32,
+                cap_center + 1 + i as u32,
+            ]);
         }
     }
 
@@ -1483,7 +1910,11 @@ fn build_torus(radius: f32, thickness: f32, start: f32, span: f32, detail: Shape
             let _v = j as f32 / minor_segments as f32;
             let _phi = _v * 2.0 * PI;
             // Order: outer ring vertices in CCW order
-            indices.extend_from_slice(&[start_center as u32, j as u32, (j + 1) as u32 % (minor_segments + 1) as u32]);
+            indices.extend_from_slice(&[
+                start_center as u32,
+                j as u32,
+                (j + 1) as u32 % (minor_segments + 1) as u32,
+            ]);
         }
 
         // End cap — fan from center of last ring
@@ -1510,7 +1941,13 @@ fn build_torus(radius: f32, thickness: f32, start: f32, span: f32, detail: Shape
     build_mesh(vertices, normals, uvs, indices)
 }
 
-fn build_regular_prism(sides: u32, radius: f32, height: f32, _roundness: f32, _detail: ShapeDetail) -> Mesh {
+fn build_regular_prism(
+    sides: u32,
+    radius: f32,
+    height: f32,
+    _roundness: f32,
+    _detail: ShapeDetail,
+) -> Mesh {
     let sides = sides.max(3) as usize;
     let mut vertices = Vec::new();
     let mut normals = Vec::new();
@@ -1554,16 +1991,21 @@ fn build_regular_prism(sides: u32, radius: f32, height: f32, _roundness: f32, _d
 
     for i in 0..=sides {
         let angle = i as f32 * 2.0 * PI / sides as f32;
-        vertices.push(Vec3::new(angle.cos() * radius, half_h, angle.sin() * radius));
-        normals.push(Vec3::new(0.0, 1.0, 0.0));
-        uvs.push(Vec2::new(
-            0.5 + angle.cos() * 0.5,
-            0.5 + angle.sin() * 0.5,
+        vertices.push(Vec3::new(
+            angle.cos() * radius,
+            half_h,
+            angle.sin() * radius,
         ));
+        normals.push(Vec3::new(0.0, 1.0, 0.0));
+        uvs.push(Vec2::new(0.5 + angle.cos() * 0.5, 0.5 + angle.sin() * 0.5));
     }
 
     for i in 0..sides {
-        indices.extend_from_slice(&[top_center, top_center + 1 + i as u32, top_center + 2 + i as u32]);
+        indices.extend_from_slice(&[
+            top_center,
+            top_center + 1 + i as u32,
+            top_center + 2 + i as u32,
+        ]);
     }
 
     // Bottom cap
@@ -1574,16 +2016,21 @@ fn build_regular_prism(sides: u32, radius: f32, height: f32, _roundness: f32, _d
 
     for i in 0..=sides {
         let angle = i as f32 * 2.0 * PI / sides as f32;
-        vertices.push(Vec3::new(angle.cos() * radius, -half_h, angle.sin() * radius));
-        normals.push(Vec3::new(0.0, -1.0, 0.0));
-        uvs.push(Vec2::new(
-            0.5 + angle.cos() * 0.5,
-            0.5 + angle.sin() * 0.5,
+        vertices.push(Vec3::new(
+            angle.cos() * radius,
+            -half_h,
+            angle.sin() * radius,
         ));
+        normals.push(Vec3::new(0.0, -1.0, 0.0));
+        uvs.push(Vec2::new(0.5 + angle.cos() * 0.5, 0.5 + angle.sin() * 0.5));
     }
 
     for i in 0..sides {
-        indices.extend_from_slice(&[bottom_center, bottom_center + 2 + i as u32, bottom_center + 1 + i as u32]);
+        indices.extend_from_slice(&[
+            bottom_center,
+            bottom_center + 2 + i as u32,
+            bottom_center + 1 + i as u32,
+        ]);
     }
 
     build_mesh(vertices, normals, uvs, indices)
@@ -1642,16 +2089,21 @@ fn build_pyramid(sides: u32, radius: f32, height: f32, _detail: ShapeDetail) -> 
 
     for i in 0..=sides {
         let angle = i as f32 * 2.0 * PI / sides as f32;
-        vertices.push(Vec3::new(angle.cos() * radius, -half_h, angle.sin() * radius));
-        normals.push(Vec3::new(0.0, -1.0, 0.0));
-        uvs.push(Vec2::new(
-            0.5 + angle.cos() * 0.5,
-            0.5 + angle.sin() * 0.5,
+        vertices.push(Vec3::new(
+            angle.cos() * radius,
+            -half_h,
+            angle.sin() * radius,
         ));
+        normals.push(Vec3::new(0.0, -1.0, 0.0));
+        uvs.push(Vec2::new(0.5 + angle.cos() * 0.5, 0.5 + angle.sin() * 0.5));
     }
 
     for i in 0..sides {
-        indices.extend_from_slice(&[base_center, base_center + 2 + i as u32, base_center + 1 + i as u32]);
+        indices.extend_from_slice(&[
+            base_center,
+            base_center + 2 + i as u32,
+            base_center + 1 + i as u32,
+        ]);
     }
 
     build_mesh(vertices, normals, uvs, indices)
@@ -1687,26 +2139,33 @@ fn build_rectangle_rim(size: Vec2, rim_width: f32, _detail: ShapeDetail) -> Mesh
     // Outer ring (CCW) + inner ring (CW) for a hollow rectangle
     let vertices = vec![
         // Outer ring
-        Vec3::new(-hx, -hy, 0.0), Vec3::new(hx, -hy, 0.0),
-        Vec3::new(hx, hy, 0.0), Vec3::new(-hx, hy, 0.0),
+        Vec3::new(-hx, -hy, 0.0),
+        Vec3::new(hx, -hy, 0.0),
+        Vec3::new(hx, hy, 0.0),
+        Vec3::new(-hx, hy, 0.0),
         // Inner ring
-        Vec3::new(-ix, -iy, 0.0), Vec3::new(-ix, iy, 0.0),
-        Vec3::new(ix, iy, 0.0), Vec3::new(ix, -iy, 0.0),
+        Vec3::new(-ix, -iy, 0.0),
+        Vec3::new(-ix, iy, 0.0),
+        Vec3::new(ix, iy, 0.0),
+        Vec3::new(ix, -iy, 0.0),
     ];
     let normals = vec![Vec3::Z; 8];
     let uvs = vec![
-        Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0), Vec2::new(1.0, 1.0), Vec2::new(0.0, 1.0),
-        Vec2::new(0.2, 0.2), Vec2::new(0.2, 0.8), Vec2::new(0.8, 0.8), Vec2::new(0.8, 0.2),
+        Vec2::new(0.0, 0.0),
+        Vec2::new(1.0, 0.0),
+        Vec2::new(1.0, 1.0),
+        Vec2::new(0.0, 1.0),
+        Vec2::new(0.2, 0.2),
+        Vec2::new(0.2, 0.8),
+        Vec2::new(0.8, 0.8),
+        Vec2::new(0.8, 0.2),
     ];
     // Connect outer to inner rings
     let indices = vec![
         // Top edge
-        0, 3, 5, 0, 5, 4,
-        // Right edge
-        1, 2, 6, 1, 6, 7,
-        // Bottom edge
-        2, 3, 5, 2, 5, 6,
-        // Left edge
+        0, 3, 5, 0, 5, 4, // Right edge
+        1, 2, 6, 1, 6, 7, // Bottom edge
+        2, 3, 5, 2, 5, 6, // Left edge
         0, 4, 7, 0, 7, 1,
     ];
     build_mesh(vertices, normals, uvs, indices)
@@ -1755,7 +2214,11 @@ fn build_disc_rim(radius: f32, rim_width: f32, detail: ShapeDetail) -> Mesh {
     // Inner ring
     for i in 0..=segments {
         let angle = i as f32 * 2.0 * PI / segments as f32;
-        vertices.push(Vec3::new(angle.cos() * inner_radius, angle.sin() * inner_radius, 0.0));
+        vertices.push(Vec3::new(
+            angle.cos() * inner_radius,
+            angle.sin() * inner_radius,
+            0.0,
+        ));
         normals.push(Vec3::Z);
         uvs.push(Vec2::new(0.5 + angle.cos() * 0.2, 0.5 + angle.sin() * 0.2));
     }
@@ -1815,7 +2278,11 @@ fn build_polygon_rim(sides: u32, radius: f32, rim_width: f32, _detail: ShapeDeta
     // Inner ring
     for i in 0..=sides {
         let angle = i as f32 * 2.0 * PI / sides as f32;
-        vertices.push(Vec3::new(angle.cos() * inner_radius, angle.sin() * inner_radius, 0.0));
+        vertices.push(Vec3::new(
+            angle.cos() * inner_radius,
+            angle.sin() * inner_radius,
+            0.0,
+        ));
         normals.push(Vec3::Z);
         uvs.push(Vec2::new(0.5 + angle.cos() * 0.2, 0.5 + angle.sin() * 0.2));
     }
@@ -1841,7 +2308,11 @@ fn build_ellipse(radius: Vec2, detail: ShapeDetail) -> Mesh {
 
     for i in 0..=segments {
         let angle = i as f32 * 2.0 * PI / segments as f32;
-        vertices.push(Vec3::new(angle.cos() * radius.x, angle.sin() * radius.y, 0.0));
+        vertices.push(Vec3::new(
+            angle.cos() * radius.x,
+            angle.sin() * radius.y,
+            0.0,
+        ));
         normals.push(Vec3::Z);
         uvs.push(Vec2::new(0.5 + angle.cos() * 0.5, 0.5 + angle.sin() * 0.5));
     }
@@ -1869,7 +2340,11 @@ fn build_ellipse_rim(radius: Vec2, rim_width: f32, detail: ShapeDetail) -> Mesh 
     // Outer ring
     for i in 0..=segments {
         let angle = i as f32 * 2.0 * PI / segments as f32;
-        vertices.push(Vec3::new(angle.cos() * radius.x, angle.sin() * radius.y, 0.0));
+        vertices.push(Vec3::new(
+            angle.cos() * radius.x,
+            angle.sin() * radius.y,
+            0.0,
+        ));
         normals.push(Vec3::Z);
         uvs.push(Vec2::new(0.5 + angle.cos() * 0.5, 0.5 + angle.sin() * 0.5));
     }
@@ -1894,10 +2369,7 @@ fn build_ellipse_rim(radius: Vec2, rim_width: f32, detail: ShapeDetail) -> Mesh 
 }
 
 /// Build an arbitrary polygon mesh using ear-clipping triangulation.
-fn build_arbitrary_polygon(
-    vertices: Vec<Vec2>,
-    colors: Option<Vec<[f32; 4]>>,
-) -> Mesh {
+fn build_arbitrary_polygon(vertices: Vec<Vec2>, colors: Option<Vec<[f32; 4]>>) -> Mesh {
     // Need at least 3 vertices for a polygon
     if vertices.len() < 3 {
         // Return an empty mesh
@@ -1905,18 +2377,9 @@ fn build_arbitrary_polygon(
             PrimitiveTopology::TriangleList,
             RenderAssetUsages::default(),
         );
-        mesh.insert_attribute(
-            Mesh::ATTRIBUTE_POSITION,
-            Vec::<Vec3>::new(),
-        );
-        mesh.insert_attribute(
-            Mesh::ATTRIBUTE_NORMAL,
-            Vec::<Vec3>::new(),
-        );
-        mesh.insert_attribute(
-            Mesh::ATTRIBUTE_UV_0,
-            Vec::<Vec2>::new(),
-        );
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, Vec::<Vec3>::new());
+        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, Vec::<Vec3>::new());
+        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, Vec::<Vec2>::new());
         return mesh;
     }
 
@@ -1936,10 +2399,18 @@ fn build_arbitrary_polygon(
     let mut max_x = f32::NEG_INFINITY;
     let mut max_y = f32::NEG_INFINITY;
     for v in &vertices {
-        if v.x < min_x { min_x = v.x; }
-        if v.y < min_y { min_y = v.y; }
-        if v.x > max_x { max_x = v.x; }
-        if v.y > max_y { max_y = v.y; }
+        if v.x < min_x {
+            min_x = v.x;
+        }
+        if v.y < min_y {
+            min_y = v.y;
+        }
+        if v.x > max_x {
+            max_x = v.x;
+        }
+        if v.y > max_y {
+            max_y = v.y;
+        }
     }
     let width = (max_x - min_x).max(0.001);
     let height = (max_y - min_y).max(0.001);
@@ -1947,10 +2418,7 @@ fn build_arbitrary_polygon(
     for v in &vertices {
         positions.push(Vec3::new(v.x, v.y, 0.0));
         normals.push(Vec3::Z);
-        uvs.push(Vec2::new(
-            (v.x - min_x) / width,
-            (v.y - min_y) / height,
-        ));
+        uvs.push(Vec2::new((v.x - min_x) / width, (v.y - min_y) / height));
     }
 
     let mut mesh = Mesh::new(
@@ -2035,13 +2503,7 @@ fn ear_clip_triangulate(vertices: &[Vec2]) -> Vec<u32> {
 }
 
 /// Check if vertex `curr` forms an "ear" in the polygon.
-fn is_ear(
-    vertices: &[Vec2],
-    prev: usize,
-    curr: usize,
-    next: usize,
-    all_indices: &[usize],
-) -> bool {
+fn is_ear(vertices: &[Vec2], prev: usize, curr: usize, next: usize, all_indices: &[usize]) -> bool {
     let p = vertices[prev];
     let q = vertices[curr];
     let r = vertices[next];
@@ -2087,12 +2549,7 @@ fn sign(p1: Vec2, p2: Vec2, p3: Vec2) -> f32 {
     (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y)
 }
 
-fn build_mesh(
-    vertices: Vec<Vec3>,
-    normals: Vec<Vec3>,
-    uvs: Vec<Vec2>,
-    indices: Vec<u32>,
-) -> Mesh {
+fn build_mesh(vertices: Vec<Vec3>, normals: Vec<Vec3>, uvs: Vec<Vec2>, indices: Vec<u32>) -> Mesh {
     let mut mesh = Mesh::new(
         PrimitiveTopology::TriangleList,
         RenderAssetUsages::default(),
@@ -2124,7 +2581,10 @@ fn build_polyline3d(points: Vec<Vec3>, thickness: f32, closed: bool, segments: u
 /// Tessellates the curve into points, then builds cylinder segments between them.
 fn build_bezier_curve(control_points: Vec<Vec3>, thickness: f32, segments: u32) -> Mesh {
     if control_points.len() < 2 {
-        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+        let mut mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        );
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, Vec::<Vec3>::new());
         return mesh;
     }
@@ -2134,7 +2594,10 @@ fn build_bezier_curve(control_points: Vec<Vec3>, thickness: f32, segments: u32) 
 
     // Build cylinder segments between consecutive points
     if tessellated.len() < 2 {
-        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+        let mut mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        );
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, Vec::<Vec3>::new());
         return mesh;
     }
@@ -2169,7 +2632,10 @@ fn build_bezier_curve(control_points: Vec<Vec3>, thickness: f32, segments: u32) 
             let sin_a = angle.sin();
 
             let radial = up * cos_a + right * sin_a;
-            let uv = bevy::math::Vec2::new(j as f32 / seg as f32, i as f32 / (tessellated.len() - 2) as f32);
+            let uv = bevy::math::Vec2::new(
+                j as f32 / seg as f32,
+                i as f32 / (tessellated.len() - 2) as f32,
+            );
 
             // Start cap vertex
             positions.push(start + radial * thickness);
@@ -2179,7 +2645,10 @@ fn build_bezier_curve(control_points: Vec<Vec3>, thickness: f32, segments: u32) 
             // End cap vertex
             positions.push(end + radial * thickness);
             normals.push(radial);
-            uvs.push(bevy::math::Vec2::new(j as f32 / seg as f32, (i + 1) as f32 / (tessellated.len() - 2) as f32));
+            uvs.push(bevy::math::Vec2::new(
+                j as f32 / seg as f32,
+                (i + 1) as f32 / (tessellated.len() - 2) as f32,
+            ));
         }
 
         // Generate indices for this segment
@@ -2194,7 +2663,10 @@ fn build_bezier_curve(control_points: Vec<Vec3>, thickness: f32, segments: u32) 
         }
     }
 
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    );
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
@@ -2204,11 +2676,7 @@ fn build_bezier_curve(control_points: Vec<Vec3>, thickness: f32, segments: u32) 
 
 /// Find two perpendicular axes for a given direction vector.
 fn perpendicular_axes(dir: &Vec3) -> (Vec3, Vec3) {
-    let up = if dir.abs().y < 0.9 {
-        Vec3::Y
-    } else {
-        Vec3::Z
-    };
+    let up = if dir.abs().y < 0.9 { Vec3::Y } else { Vec3::Z };
     let right = dir.cross(up).normalize();
     let up = right.cross(*dir).normalize();
     (up, right)
@@ -2289,7 +2757,10 @@ fn build_star(points: u32, outer_radius: f32, inner_radius: f32, _detail: ShapeD
         let idx = (i + 1) as u32;
         vertices.push(Vec3::new(v.x, v.y, 0.0));
         normals.push(Vec3::new(0.0, 0.0, 1.0));
-        uvs.push(Vec2::new(v.x / outer_radius * 0.5 + 0.5, v.y / outer_radius * 0.5 + 0.5));
+        uvs.push(Vec2::new(
+            v.x / outer_radius * 0.5 + 0.5,
+            v.y / outer_radius * 0.5 + 0.5,
+        ));
         // Each triangle: center, outer, inner (or center, inner, next outer)
         if i + 1 < outer_verts.len() {
             indices.extend_from_slice(&[center_idx, idx, idx + 1]);
@@ -2306,7 +2777,10 @@ fn build_star(points: u32, outer_radius: f32, inner_radius: f32, _detail: ShapeD
 /// Build a ring/annulus as a 2D flat quad with a hole.
 fn build_ring(outer_radius: f32, inner_radius: f32, detail: ShapeDetail) -> Mesh {
     if inner_radius >= outer_radius || outer_radius <= 0.0 {
-        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+        let mut mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        );
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, Vec::<Vec3>::new());
         return mesh;
     }
@@ -2330,7 +2804,10 @@ fn build_ring(outer_radius: f32, inner_radius: f32, detail: ShapeDetail) -> Mesh
         // Inner vertex
         vertices.push(Vec3::new(cos_a * inner_radius, sin_a * inner_radius, 0.0));
         normals.push(Vec3::new(0.0, 0.0, 1.0));
-        uvs.push(Vec2::new(cos_a * (inner_radius / outer_radius) * 0.5 + 0.5, sin_a * (inner_radius / outer_radius) * 0.5 + 0.5));
+        uvs.push(Vec2::new(
+            cos_a * (inner_radius / outer_radius) * 0.5 + 0.5,
+            sin_a * (inner_radius / outer_radius) * 0.5 + 0.5,
+        ));
     }
 
     // Generate quad indices between outer and inner rings
@@ -2350,7 +2827,10 @@ fn build_ring(outer_radius: f32, inner_radius: f32, detail: ShapeDetail) -> Mesh
 /// Build a wedge/pie-slice as a 2D flat quad.
 fn build_wedge(radius: f32, angle: f32, detail: ShapeDetail) -> Mesh {
     if angle <= 0.0 || radius <= 0.0 {
-        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+        let mut mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        );
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, Vec::<Vec3>::new());
         return mesh;
     }
@@ -2374,7 +2854,10 @@ fn build_wedge(radius: f32, angle: f32, detail: ShapeDetail) -> Mesh {
         let idx = (i + 1) as u32;
         vertices.push(Vec3::new(x, y, 0.0));
         normals.push(Vec3::new(0.0, 0.0, 1.0));
-        uvs.push(Vec2::new(t * 0.5 + 0.5 * (a.cos() * 0.5 + 0.5), t * 0.5 + 0.5 * (a.sin() * 0.5 + 0.5)));
+        uvs.push(Vec2::new(
+            t * 0.5 + 0.5 * (a.cos() * 0.5 + 0.5),
+            t * 0.5 + 0.5 * (a.sin() * 0.5 + 0.5),
+        ));
         if i < segments {
             indices.extend_from_slice(&[0, idx, idx + 1]);
         }
@@ -2406,7 +2889,11 @@ fn build_tapered_cylinder(
         let u = i as f32 / segments as f32;
 
         // Bottom ring
-        vertices.push(Vec3::new(cos_a * bottom_radius, -half_h, sin_a * bottom_radius));
+        vertices.push(Vec3::new(
+            cos_a * bottom_radius,
+            -half_h,
+            sin_a * bottom_radius,
+        ));
         let bn = Vec3::new(cos_a, 0.0, sin_a).normalize();
         normals.push(bn);
         uvs.push(Vec2::new(u, 0.0));
@@ -2475,14 +2962,20 @@ mod tests {
     #[test]
     fn sphere_has_valid_topology() {
         let mesh = Shape::sphere(1.0, ShapeDetail::Medium).build();
-        assert!(mesh.get_vertex_buffer_size() > 0, "Sphere must have vertices");
+        assert!(
+            mesh.get_vertex_buffer_size() > 0,
+            "Sphere must have vertices"
+        );
         assert!(mesh.indices().is_some(), "Sphere must have indices");
     }
 
     #[test]
     fn capsule_generates_mesh() {
         let mesh = Shape::capsule(0.5, 2.0, ShapeDetail::Medium).build();
-        assert!(mesh.get_vertex_buffer_size() > 0, "Capsule must have vertices");
+        assert!(
+            mesh.get_vertex_buffer_size() > 0,
+            "Capsule must have vertices"
+        );
     }
 
     #[test]
@@ -2551,7 +3044,9 @@ mod tests {
     #[test]
     fn rounded_cuboid_has_smooth_normals() {
         let mesh = Shape::cuboid(Vec3::ONE, 0.8, ShapeDetail::High).build();
-        let normals_data = mesh.attribute(Mesh::ATTRIBUTE_NORMAL).expect("Missing normals");
+        let normals_data = mesh
+            .attribute(Mesh::ATTRIBUTE_NORMAL)
+            .expect("Missing normals");
         let normals: Vec<[f32; 3]> = match normals_data {
             bevy::render::mesh::VertexAttributeValues::Float32x3(v) => v.clone(),
             _ => panic!("Expected Float32x3 normals"),
@@ -2561,14 +3056,17 @@ mod tests {
         // fillet curves. Flat face centers retain axis-aligned normals. We check that
         // a significant fraction of normals have at least two nonzero components,
         // indicating the fillet regions are generating smooth normals.
-        let non_axis_aligned = normals.iter().filter(|n| {
-            let abs = [n[0].abs(), n[1].abs(), n[2].abs()];
-            // Count how many components are significant (> 0.1)
-            let significant = abs.iter().filter(|&&a| a > 0.1).count();
-            // Non-axis-aligned normals have at least 2 significant components
-            // and are not dominated by a single component
-            significant >= 2 && abs[0].max(abs[1]).max(abs[2]) < 0.99
-        }).count();
+        let non_axis_aligned = normals
+            .iter()
+            .filter(|n| {
+                let abs = [n[0].abs(), n[1].abs(), n[2].abs()];
+                // Count how many components are significant (> 0.1)
+                let significant = abs.iter().filter(|&&a| a > 0.1).count();
+                // Non-axis-aligned normals have at least 2 significant components
+                // and are not dominated by a single component
+                significant >= 2 && abs[0].max(abs[1]).max(abs[2]) < 0.99
+            })
+            .count();
         assert!(
             non_axis_aligned > normals.len() / 8,
             "Rounded cuboid should have non-axis-aligned normals in fillet regions, got {} of {}",
@@ -2618,10 +3116,7 @@ mod tests {
         ];
         for shape in shapes {
             let mesh = shape.build();
-            assert!(
-                mesh.count_vertices() > 0,
-                "2D shape must generate vertices"
-            );
+            assert!(mesh.count_vertices() > 0, "2D shape must generate vertices");
         }
     }
 
@@ -2630,18 +3125,32 @@ mod tests {
         let low_round = Shape::cuboid(Vec3::ONE, 0.1, ShapeDetail::Medium).build();
         let high_round = Shape::cuboid(Vec3::ONE, 0.9, ShapeDetail::Medium).build();
 
-        let low_verts: Vec<[f32; 3]> = match low_round.attribute(Mesh::ATTRIBUTE_POSITION).expect("Missing positions") {
+        let low_verts: Vec<[f32; 3]> = match low_round
+            .attribute(Mesh::ATTRIBUTE_POSITION)
+            .expect("Missing positions")
+        {
             bevy::render::mesh::VertexAttributeValues::Float32x3(v) => v.clone(),
             _ => panic!("Expected Float32x3 positions"),
         };
-        let high_verts: Vec<[f32; 3]> = match high_round.attribute(Mesh::ATTRIBUTE_POSITION).expect("Missing positions") {
+        let high_verts: Vec<[f32; 3]> = match high_round
+            .attribute(Mesh::ATTRIBUTE_POSITION)
+            .expect("Missing positions")
+        {
             bevy::render::mesh::VertexAttributeValues::Float32x3(v) => v.clone(),
             _ => panic!("Expected Float32x3 positions"),
         };
 
         // Higher roundness should pull vertices more toward the center
-        let low_avg_dist: f32 = low_verts.iter().map(|v| (v[0]*v[0] + v[1]*v[1] + v[2]*v[2]).sqrt()).sum::<f32>() / low_verts.len() as f32;
-        let high_avg_dist: f32 = high_verts.iter().map(|v| (v[0]*v[0] + v[1]*v[1] + v[2]*v[2]).sqrt()).sum::<f32>() / high_verts.len() as f32;
+        let low_avg_dist: f32 = low_verts
+            .iter()
+            .map(|v| (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt())
+            .sum::<f32>()
+            / low_verts.len() as f32;
+        let high_avg_dist: f32 = high_verts
+            .iter()
+            .map(|v| (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt())
+            .sum::<f32>()
+            / high_verts.len() as f32;
         assert!(
             high_avg_dist < low_avg_dist,
             "Higher roundness should pull vertices closer to center: low={:.3}, high={:.3}",
@@ -2684,7 +3193,9 @@ mod tests {
     fn pyramid_faces_have_uniform_normals() {
         // Each face should have 3 vertices with identical normals (no bleeding)
         let mesh = Shape::pyramid(3, 1.0, 1.0, ShapeDetail::Medium).build();
-        let normals_data = mesh.attribute(Mesh::ATTRIBUTE_NORMAL).expect("Missing normals");
+        let normals_data = mesh
+            .attribute(Mesh::ATTRIBUTE_NORMAL)
+            .expect("Missing normals");
         let normals: Vec<[f32; 3]> = match normals_data {
             bevy::render::mesh::VertexAttributeValues::Float32x3(v) => v.clone(),
             _ => panic!("Expected Float32x3 normals"),
@@ -2707,7 +3218,9 @@ mod tests {
             let n1 = &normals[i1];
             let n2 = &normals[i2];
             let same = |a: &[f32; 3], b: &[f32; 3]| {
-                (a[0] - b[0]).abs() < 1e-6 && (a[1] - b[1]).abs() < 1e-6 && (a[2] - b[2]).abs() < 1e-6
+                (a[0] - b[0]).abs() < 1e-6
+                    && (a[1] - b[1]).abs() < 1e-6
+                    && (a[2] - b[2]).abs() < 1e-6
             };
             if same(n0, n1) && same(n1, n2) {
                 uniform_triangles += 1;
@@ -2743,8 +3256,9 @@ mod tests {
         // a "folded" visual artifact due to backface culling or incorrect lighting.
         for roundness in [0.0, 0.25, 0.5, 0.8, 1.0] {
             let mesh = Shape::cuboid(Vec3::ONE, roundness, ShapeDetail::High).build();
-            let positions_data =
-                mesh.attribute(Mesh::ATTRIBUTE_POSITION).expect("Missing positions");
+            let positions_data = mesh
+                .attribute(Mesh::ATTRIBUTE_POSITION)
+                .expect("Missing positions");
             let positions: Vec<[f32; 3]> = match positions_data {
                 bevy::render::mesh::VertexAttributeValues::Float32x3(v) => v.clone(),
                 _ => panic!("Expected Float32x3 positions"),
@@ -2817,8 +3331,9 @@ mod tests {
         // Check that no triangles are degenerate (near-zero area)
         for roundness in [0.0, 0.5, 1.0] {
             let mesh = Shape::cuboid(Vec3::ONE, roundness, ShapeDetail::High).build();
-            let positions_data =
-                mesh.attribute(Mesh::ATTRIBUTE_POSITION).expect("Missing positions");
+            let positions_data = mesh
+                .attribute(Mesh::ATTRIBUTE_POSITION)
+                .expect("Missing positions");
             let positions: Vec<[f32; 3]> = match positions_data {
                 bevy::render::mesh::VertexAttributeValues::Float32x3(v) => v.clone(),
                 _ => panic!("Expected Float32x3 positions"),
@@ -2923,7 +3438,10 @@ mod tests {
         ];
         let mesh = Shape::arbitrary_polygon_colored(vertices, colors, ShapeDetail::Medium).build();
         assert_eq!(mesh.count_vertices(), 3);
-        assert!(mesh.attribute(Mesh::ATTRIBUTE_COLOR).is_some(), "Should have color attribute");
+        assert!(
+            mesh.attribute(Mesh::ATTRIBUTE_COLOR).is_some(),
+            "Should have color attribute"
+        );
     }
 
     #[test]
@@ -2945,7 +3463,11 @@ mod tests {
             _ => panic!("Expected U32 indices"),
         };
         // 6 vertices → 4 triangles → 12 indices
-        assert_eq!(idx.len(), 12, "Concave polygon should have 12 indices (4 triangles)");
+        assert_eq!(
+            idx.len(),
+            12,
+            "Concave polygon should have 12 indices (4 triangles)"
+        );
     }
 
     #[test]
@@ -2958,7 +3480,11 @@ mod tests {
             Vec2::new(0.0, 1.0),
         ];
         let indices = ear_clip_triangulate(&vertices);
-        assert_eq!(indices.len(), 6, "Square should produce 2 triangles (6 indices)");
+        assert_eq!(
+            indices.len(),
+            6,
+            "Square should produce 2 triangles (6 indices)"
+        );
     }
 
     #[test]
@@ -2969,7 +3495,11 @@ mod tests {
             Vec2::new(0.5, 1.0),
         ];
         let indices = ear_clip_triangulate(&vertices);
-        assert_eq!(indices.len(), 3, "Triangle should produce 1 triangle (3 indices)");
+        assert_eq!(
+            indices.len(),
+            3,
+            "Triangle should produce 1 triangle (3 indices)"
+        );
     }
 
     #[test]
@@ -3010,7 +3540,10 @@ mod tests {
             Vec3::new(0.0, 1.0, 0.0),
         ];
         let mesh = Shape::polyline3d(points, 0.05, true, 8, ShapeDetail::Medium).build();
-        assert!(mesh.count_vertices() > 0, "Closed polyline must have vertices");
+        assert!(
+            mesh.count_vertices() > 0,
+            "Closed polyline must have vertices"
+        );
     }
 
     #[test]
@@ -3024,14 +3557,8 @@ mod tests {
 
     #[test]
     fn polyline3d_hash_stability() {
-        let points1 = vec![
-            Vec3::new(0.0, 0.0, 0.0),
-            Vec3::new(1.0, 0.0, 0.0),
-        ];
-        let points2 = vec![
-            Vec3::new(0.001, 0.0, 0.0),
-            Vec3::new(1.001, 0.0, 0.0),
-        ];
+        let points1 = vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(1.0, 0.0, 0.0)];
+        let points2 = vec![Vec3::new(0.001, 0.0, 0.0), Vec3::new(1.001, 0.0, 0.0)];
         let shape1 = Shape::polyline3d(points1, 0.1, false, 8, ShapeDetail::Medium);
         let shape2 = Shape::polyline3d(points2, 0.1, false, 8, ShapeDetail::Medium);
         // Quantized to 2 decimal places, these should be equal
@@ -3041,10 +3568,7 @@ mod tests {
     #[test]
     fn bezier_curve_basic() {
         // Linear curve (2 control points)
-        let control_points = vec![
-            Vec3::new(0.0, 0.0, 0.0),
-            Vec3::new(2.0, 0.0, 0.0),
-        ];
+        let control_points = vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(2.0, 0.0, 0.0)];
         let mesh = Shape::bezier_curve(control_points, 0.1, 8, ShapeDetail::Medium).build();
         assert!(mesh.count_vertices() > 0, "Bézier curve must have vertices");
         assert!(mesh.indices().is_some(), "Bézier curve must have indices");
@@ -3068,7 +3592,11 @@ mod tests {
         // Single control point should produce an empty mesh
         let control_points = vec![Vec3::new(0.0, 0.0, 0.0)];
         let mesh = Shape::bezier_curve(control_points, 0.1, 8, ShapeDetail::Medium).build();
-        assert_eq!(mesh.count_vertices(), 0, "Single point Bézier should be empty");
+        assert_eq!(
+            mesh.count_vertices(),
+            0,
+            "Single point Bézier should be empty"
+        );
     }
 
     #[test]
@@ -3093,7 +3621,11 @@ mod tests {
     fn tessellate_bezier_linear() {
         let cp = vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(2.0, 0.0, 0.0)];
         let points = tessellate_bezier(&cp, 4);
-        assert_eq!(points.len(), 5, "Linear Bézier with 4 segments produces 5 points");
+        assert_eq!(
+            points.len(),
+            5,
+            "Linear Bézier with 4 segments produces 5 points"
+        );
         assert!((points[0].x - 0.0).abs() < 1e-6);
         assert!((points[4].x - 2.0).abs() < 1e-6);
     }
@@ -3148,7 +3680,11 @@ mod tests {
     fn ring_equal_radii_empty() {
         // Ring with equal radii should produce empty mesh
         let mesh = Shape::ring(1.0, 1.0, ShapeDetail::Medium).build();
-        assert_eq!(mesh.count_vertices(), 0, "Equal radius ring should be empty");
+        assert_eq!(
+            mesh.count_vertices(),
+            0,
+            "Equal radius ring should be empty"
+        );
     }
 
     #[test]
@@ -3188,15 +3724,24 @@ mod tests {
     #[test]
     fn tapered_cylinder_generates_mesh() {
         let mesh = Shape::tapered_cylinder(0.5, 1.0, 2.0, ShapeDetail::Medium).build();
-        assert!(mesh.count_vertices() > 0, "Tapered cylinder must have vertices");
-        assert!(mesh.indices().is_some(), "Tapered cylinder must have indices");
+        assert!(
+            mesh.count_vertices() > 0,
+            "Tapered cylinder must have vertices"
+        );
+        assert!(
+            mesh.indices().is_some(),
+            "Tapered cylinder must have indices"
+        );
     }
 
     #[test]
     fn tapered_cylinder_equal_radii_like_cylinder() {
         // Equal radii should produce a regular cylinder
         let mesh = Shape::tapered_cylinder(1.0, 1.0, 2.0, ShapeDetail::Medium).build();
-        assert!(mesh.count_vertices() > 0, "Equal radius tapered cylinder must have vertices");
+        assert!(
+            mesh.count_vertices() > 0,
+            "Equal radius tapered cylinder must have vertices"
+        );
     }
 
     #[test]

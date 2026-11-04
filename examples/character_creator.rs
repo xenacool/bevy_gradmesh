@@ -17,29 +17,33 @@ use bevy::camera::visibility::InheritedVisibility;
 use bevy::prelude::*;
 use bevy::render::RenderPlugin;
 use bevy_gradmesh::{
-    dual_directional, dual_radial, opaque, Shape, ShapeDetail,
-    GradMeshMaterial, GradMeshPlugin, transparent,
+    GradMeshMaterial, GradMeshPlugin, Shape, ShapeDetail, dual_directional, dual_radial, opaque,
+    transparent,
 };
 use common::screenshot::AutoScreenshotPlugin;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "BevyGradmesh Character Creator".into(),
-                resolution: (1600, 900).into(),
-                ..default()
-            }),
-            ..default()
-        }).set(RenderPlugin {
-            synchronous_pipeline_compilation: true,
-            ..default()
-        }))
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "BevyGradmesh Character Creator".into(),
+                        resolution: (1600, 900).into(),
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .set(RenderPlugin {
+                    synchronous_pipeline_compilation: true,
+                    ..default()
+                }),
+        )
         .add_plugins(GradMeshPlugin)
         .add_plugins(
             AutoScreenshotPlugin::new("screenshot_character_creator.png")
                 .with_title("Character Creator")
-                .with_description("7 characters with varied facial features and accessories")
+                .with_description("7 characters with varied facial features and accessories"),
         )
         .add_systems(Startup, setup)
         .add_systems(Update, rotate_characters)
@@ -80,11 +84,13 @@ fn setup(
     });
 
     // Ground plane — large enough for all 7 characters
-    let ground_mesh = meshes.add(Shape::rectangle(Vec2::new(20.0, 12.0), ShapeDetail::Minimal).build());
+    let ground_mesh =
+        meshes.add(Shape::rectangle(Vec2::new(20.0, 12.0), ShapeDetail::Minimal).build());
     commands.spawn((
         Mesh3d(ground_mesh),
         MeshMaterial3d(materials.add(opaque(0.15, 0.15, 0.18))),
-        Transform::from_xyz(0.0, -0.5, -3.0).with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0)),
+        Transform::from_xyz(0.0, -0.5, -3.0)
+            .with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0)),
     ));
 
     // Character 1: Classic — classic eyes, arch eyebrows, button nose, smile, no blush, short parted hair, no facial hair, no glasses
@@ -233,7 +239,6 @@ fn setup(
         label: "Bearded",
     };
     char7.build(&mut commands, &mut meshes, &mut materials);
-
 }
 
 // ─── Character data enums ───
@@ -368,19 +373,28 @@ impl CharacterConfig {
         // ─── Body ───
         // Torso
         self.add_part(
-            commands, meshes, &skin_mat, root,
+            commands,
+            meshes,
+            &skin_mat,
+            root,
             Shape::cuboid(Vec3::new(0.48, 0.34, 0.34), 0.35, ShapeDetail::High),
             Transform::from_xyz(0.0, 0.5, 0.0),
         );
         // Spine
         self.add_part(
-            commands, meshes, &skin_mat, root,
+            commands,
+            meshes,
+            &skin_mat,
+            root,
             Shape::cuboid(Vec3::new(0.44, 0.21, 0.30), 0.35, ShapeDetail::High),
             Transform::from_xyz(0.0, 0.25, 0.0),
         );
         // Hips
         self.add_part(
-            commands, meshes, &skin_mat, root,
+            commands,
+            meshes,
+            &skin_mat,
+            root,
             Shape::cuboid(Vec3::new(0.44, 0.19, 0.32), 0.35, ShapeDetail::High),
             Transform::from_xyz(0.0, 0.07, 0.0),
         );
@@ -390,25 +404,37 @@ impl CharacterConfig {
             let x = side as f32 * 0.34;
             // Upper arm
             self.add_part(
-                commands, meshes, &skin_mat, root,
+                commands,
+                meshes,
+                &skin_mat,
+                root,
                 Shape::cylinder(0.10, 0.24, ShapeDetail::Medium),
                 Transform::from_xyz(x, 0.62, 0.0),
             );
             // Lower arm
             self.add_part(
-                commands, meshes, &skin_mat, root,
+                commands,
+                meshes,
+                &skin_mat,
+                root,
                 Shape::cylinder(0.09, 0.20, ShapeDetail::Medium),
                 Transform::from_xyz(x, 0.38, 0.0),
             );
             // Hand
             self.add_part(
-                commands, meshes, &skin_mat, root,
+                commands,
+                meshes,
+                &skin_mat,
+                root,
                 Shape::sphere(0.12, ShapeDetail::Medium),
                 Transform::from_xyz(x, 0.24, 0.0),
             );
             // Thumb
             self.add_part(
-                commands, meshes, &skin_mat, root,
+                commands,
+                meshes,
+                &skin_mat,
+                root,
                 Shape::sphere(0.05, ShapeDetail::Low),
                 Transform::from_xyz(x + side as f32 * 0.08, 0.26, 0.04),
             );
@@ -419,39 +445,62 @@ impl CharacterConfig {
             let x = side as f32 * 0.15;
             // Upper leg
             self.add_part(
-                commands, meshes, &skin_mat, root,
+                commands,
+                meshes,
+                &skin_mat,
+                root,
                 Shape::cylinder(0.10, 0.24, ShapeDetail::Medium),
                 Transform::from_xyz(x, 0.12, 0.0),
             );
             // Lower leg
             self.add_part(
-                commands, meshes, &skin_mat, root,
+                commands,
+                meshes,
+                &skin_mat,
+                root,
                 Shape::cylinder(0.09, 0.16, ShapeDetail::Medium),
                 Transform::from_xyz(x, -0.12, 0.0),
             );
             // Foot
             self.add_part(
-                commands, meshes, &skin_mat, root,
+                commands,
+                meshes,
+                &skin_mat,
+                root,
                 Shape::cuboid(Vec3::new(0.17, 0.11, 0.25), 0.45, ShapeDetail::High),
-                Transform::from_xyz(x, -0.22, -0.012)
-                    .with_rotation(Quat::from_euler(EulerRot::XZY, -136.04_f32.to_radians(), 0.0, 0.0)),
+                Transform::from_xyz(x, -0.22, -0.012).with_rotation(Quat::from_euler(
+                    EulerRot::XZY,
+                    -136.04_f32.to_radians(),
+                    0.0,
+                    0.0,
+                )),
             );
         }
 
         // ─── Head ───
         // Head base (sphere)
         self.add_part(
-            commands, meshes, &skin_mat, root,
+            commands,
+            meshes,
+            &skin_mat,
+            root,
             Shape::sphere(0.42, ShapeDetail::High),
             Transform::from_xyz(0.0, 1.0, 0.0),
         );
         // Ears
         for side in [-1, 1] {
             self.add_part(
-                commands, meshes, &skin_flat, root,
+                commands,
+                meshes,
+                &skin_flat,
+                root,
                 Shape::ellipsoid(Vec3::new(0.12, 0.18, 0.14), ShapeDetail::Medium),
-                Transform::from_xyz(side as f32 * 0.41, 1.0, 0.0)
-                    .with_rotation(Quat::from_euler(EulerRot::ZXY, side as f32 * 12.0_f32.to_radians(), 0.0, 0.0)),
+                Transform::from_xyz(side as f32 * 0.41, 1.0, 0.0).with_rotation(Quat::from_euler(
+                    EulerRot::ZXY,
+                    side as f32 * 12.0_f32.to_radians(),
+                    0.0,
+                    0.0,
+                )),
             );
         }
 
@@ -493,56 +542,88 @@ impl CharacterConfig {
             EyeShape::CuteOval => {
                 // Spheres for cute oval eyes
                 self.add_part(
-                    commands, meshes,
-                    &materials.add(opaque(0.98, 0.98, 0.98)), root,
+                    commands,
+                    meshes,
+                    &materials.add(opaque(0.98, 0.98, 0.98)),
+                    root,
                     Shape::sphere(0.11, ShapeDetail::Medium),
                     Transform::from_xyz(-0.22, 1.05, 0.38),
                 );
                 self.add_part(
-                    commands, meshes,
+                    commands,
+                    meshes,
                     &materials.add(dual_radial(
-                        [self.eye_color[0] * 1.2, self.eye_color[1] * 1.2, self.eye_color[2] * 1.2],
-                        [self.eye_color[0] * 0.7, self.eye_color[1] * 0.7, self.eye_color[2] * 0.7],
-                    )), root,
+                        [
+                            self.eye_color[0] * 1.2,
+                            self.eye_color[1] * 1.2,
+                            self.eye_color[2] * 1.2,
+                        ],
+                        [
+                            self.eye_color[0] * 0.7,
+                            self.eye_color[1] * 0.7,
+                            self.eye_color[2] * 0.7,
+                        ],
+                    )),
+                    root,
                     Shape::sphere(0.07, ShapeDetail::Medium),
                     Transform::from_xyz(-0.22, 1.05, 0.40),
                 );
                 self.add_part(
-                    commands, meshes,
-                    &materials.add(opaque(0.06, 0.06, 0.08)), root,
+                    commands,
+                    meshes,
+                    &materials.add(opaque(0.06, 0.06, 0.08)),
+                    root,
                     Shape::sphere(0.035, ShapeDetail::Low),
                     Transform::from_xyz(-0.22, 1.05, 0.42),
                 );
                 self.add_part(
-                    commands, meshes,
-                    &materials.add(opaque(1.0, 1.0, 1.0)), root,
+                    commands,
+                    meshes,
+                    &materials.add(opaque(1.0, 1.0, 1.0)),
+                    root,
                     Shape::sphere(0.016, ShapeDetail::Low),
                     Transform::from_xyz(-0.195, 1.08, 0.43),
                 );
                 self.add_part(
-                    commands, meshes,
-                    &materials.add(opaque(0.98, 0.98, 0.98)), root,
+                    commands,
+                    meshes,
+                    &materials.add(opaque(0.98, 0.98, 0.98)),
+                    root,
                     Shape::sphere(0.11, ShapeDetail::Medium),
                     Transform::from_xyz(0.22, 1.05, 0.38),
                 );
                 self.add_part(
-                    commands, meshes,
+                    commands,
+                    meshes,
                     &materials.add(dual_radial(
-                        [self.eye_color[0] * 1.2, self.eye_color[1] * 1.2, self.eye_color[2] * 1.2],
-                        [self.eye_color[0] * 0.7, self.eye_color[1] * 0.7, self.eye_color[2] * 0.7],
-                    )), root,
+                        [
+                            self.eye_color[0] * 1.2,
+                            self.eye_color[1] * 1.2,
+                            self.eye_color[2] * 1.2,
+                        ],
+                        [
+                            self.eye_color[0] * 0.7,
+                            self.eye_color[1] * 0.7,
+                            self.eye_color[2] * 0.7,
+                        ],
+                    )),
+                    root,
                     Shape::sphere(0.07, ShapeDetail::Medium),
                     Transform::from_xyz(0.22, 1.05, 0.40),
                 );
                 self.add_part(
-                    commands, meshes,
-                    &materials.add(opaque(0.06, 0.06, 0.08)), root,
+                    commands,
+                    meshes,
+                    &materials.add(opaque(0.06, 0.06, 0.08)),
+                    root,
                     Shape::sphere(0.035, ShapeDetail::Low),
                     Transform::from_xyz(0.22, 1.05, 0.42),
                 );
                 self.add_part(
-                    commands, meshes,
-                    &materials.add(opaque(1.0, 1.0, 1.0)), root,
+                    commands,
+                    meshes,
+                    &materials.add(opaque(1.0, 1.0, 1.0)),
+                    root,
                     Shape::sphere(0.016, ShapeDetail::Low),
                     Transform::from_xyz(0.245, 1.08, 0.43),
                 );
@@ -552,8 +633,16 @@ impl CharacterConfig {
 
         let sclera_mat = materials.add(opaque(0.98, 0.98, 0.98));
         let iris_mat = materials.add(dual_radial(
-            [self.eye_color[0] * 1.2, self.eye_color[1] * 1.2, self.eye_color[2] * 1.2],
-            [self.eye_color[0] * 0.7, self.eye_color[1] * 0.7, self.eye_color[2] * 0.7],
+            [
+                self.eye_color[0] * 1.2,
+                self.eye_color[1] * 1.2,
+                self.eye_color[2] * 1.2,
+            ],
+            [
+                self.eye_color[0] * 0.7,
+                self.eye_color[1] * 0.7,
+                self.eye_color[2] * 0.7,
+            ],
         ));
         let pupil_mat = materials.add(opaque(0.06, 0.06, 0.08));
         let shine_mat = materials.add(opaque(1.0, 1.0, 1.0));
@@ -564,25 +653,37 @@ impl CharacterConfig {
 
             // Sclera
             self.add_part(
-                commands, meshes, &sclera_mat, root,
+                commands,
+                meshes,
+                &sclera_mat,
+                root,
                 Shape::ellipsoid(sclera_scale, ShapeDetail::Medium),
                 Transform::from_xyz(x, 1.05, z_fwd),
             );
             // Iris
             self.add_part(
-                commands, meshes, &iris_mat, root,
+                commands,
+                meshes,
+                &iris_mat,
+                root,
                 Shape::ellipsoid(iris_scale, ShapeDetail::Medium),
                 Transform::from_xyz(x, 1.05, z_fwd + 0.02),
             );
             // Pupil
             self.add_part(
-                commands, meshes, &pupil_mat, root,
+                commands,
+                meshes,
+                &pupil_mat,
+                root,
                 Shape::sphere(0.035, ShapeDetail::Low),
                 Transform::from_xyz(x, 1.05, z_fwd + 0.035),
             );
             // Shine highlight
             self.add_part(
-                commands, meshes, &shine_mat, root,
+                commands,
+                meshes,
+                &shine_mat,
+                root,
                 Shape::sphere(0.016, ShapeDetail::Low),
                 Transform::from_xyz(x + side as f32 * 0.025, 1.08, z_fwd + 0.045),
             );
@@ -615,15 +716,11 @@ impl CharacterConfig {
             EyebrowShape::SharpAngled => {
                 Shape::cuboid(Vec3::new(0.20, 0.05, 0.04), 0.2, ShapeDetail::Medium)
             }
-            EyebrowShape::CuteRounded => {
-                Shape::capsule(0.025, 0.18, ShapeDetail::Medium)
-            }
+            EyebrowShape::CuteRounded => Shape::capsule(0.025, 0.18, ShapeDetail::Medium),
             EyebrowShape::ThickBushy => {
                 Shape::ellipsoid(Vec3::new(0.22, 0.08, 0.06), ShapeDetail::Medium)
             }
-            EyebrowShape::ShortDots => {
-                Shape::sphere(0.04, ShapeDetail::Low)
-            }
+            EyebrowShape::ShortDots => Shape::sphere(0.04, ShapeDetail::Low),
         };
 
         for side in [-1, 1] {
@@ -635,7 +732,10 @@ impl CharacterConfig {
                 _ => Quat::from_euler(EulerRot::ZXY, side as f32 * 5.0_f32.to_radians(), 0.0, 0.0),
             };
             self.add_part(
-                commands, meshes, &brow_mat, root,
+                commands,
+                meshes,
+                &brow_mat,
+                root,
                 brow_shape.clone(),
                 Transform::from_xyz(x, 1.18, z_fwd).with_rotation(rot),
             );
@@ -661,13 +761,22 @@ impl CharacterConfig {
         let nose_shape = match self.nose_shape {
             NoseShape::Button => Shape::sphere(0.045, ShapeDetail::Medium),
             NoseShape::TrianglePoint => Shape::cone(0.045, 0.08, ShapeDetail::Medium),
-            NoseShape::SoftRound => Shape::ellipsoid(Vec3::new(0.06, 0.05, 0.05), ShapeDetail::Medium),
-            NoseShape::BridgeLine => Shape::cuboid(Vec3::new(0.03, 0.12, 0.05), 0.4, ShapeDetail::Medium),
-            NoseShape::Straight => Shape::cuboid(Vec3::new(0.04, 0.10, 0.06), 0.3, ShapeDetail::Medium),
+            NoseShape::SoftRound => {
+                Shape::ellipsoid(Vec3::new(0.06, 0.05, 0.05), ShapeDetail::Medium)
+            }
+            NoseShape::BridgeLine => {
+                Shape::cuboid(Vec3::new(0.03, 0.12, 0.05), 0.4, ShapeDetail::Medium)
+            }
+            NoseShape::Straight => {
+                Shape::cuboid(Vec3::new(0.04, 0.10, 0.06), 0.3, ShapeDetail::Medium)
+            }
         };
 
         self.add_part(
-            commands, meshes, &nose_mat, root,
+            commands,
+            meshes,
+            &nose_mat,
+            root,
             nose_shape,
             Transform::from_xyz(0.0, 0.96, z_fwd),
         );
@@ -694,50 +803,105 @@ impl CharacterConfig {
         match self.mouth_shape {
             MouthShape::Smile => {
                 self.add_part(
-                    commands, meshes, &mouth_mat, root,
-                    Shape::torus(0.08, 0.016, std::f32::consts::PI * 1.1, std::f32::consts::PI * 0.8),
-                    Transform::from_xyz(0.0, 0.85, z_fwd)
-                        .with_rotation(Quat::from_euler(EulerRot::XZY, std::f32::consts::PI / 2.0, 0.0, 0.0)),
+                    commands,
+                    meshes,
+                    &mouth_mat,
+                    root,
+                    Shape::torus(
+                        0.08,
+                        0.016,
+                        std::f32::consts::PI * 1.1,
+                        std::f32::consts::PI * 0.8,
+                    ),
+                    Transform::from_xyz(0.0, 0.85, z_fwd).with_rotation(Quat::from_euler(
+                        EulerRot::XZY,
+                        std::f32::consts::PI / 2.0,
+                        0.0,
+                        0.0,
+                    )),
                 );
             }
             MouthShape::WideGrin => {
                 self.add_part(
-                    commands, meshes, &mouth_mat, root,
-                    Shape::torus(0.12, 0.02, std::f32::consts::PI * 1.05, std::f32::consts::PI * 0.95),
-                    Transform::from_xyz(0.0, 0.86, z_fwd)
-                        .with_rotation(Quat::from_euler(EulerRot::XZY, std::f32::consts::PI / 2.0, 0.0, 0.0)),
+                    commands,
+                    meshes,
+                    &mouth_mat,
+                    root,
+                    Shape::torus(
+                        0.12,
+                        0.02,
+                        std::f32::consts::PI * 1.05,
+                        std::f32::consts::PI * 0.95,
+                    ),
+                    Transform::from_xyz(0.0, 0.86, z_fwd).with_rotation(Quat::from_euler(
+                        EulerRot::XZY,
+                        std::f32::consts::PI / 2.0,
+                        0.0,
+                        0.0,
+                    )),
                 );
             }
             MouthShape::NeutralLine => {
                 self.add_part(
-                    commands, meshes, &mouth_mat, root,
+                    commands,
+                    meshes,
+                    &mouth_mat,
+                    root,
                     Shape::cuboid(Vec3::new(0.14, 0.022, 0.03), 0.5, ShapeDetail::Medium),
                     Transform::from_xyz(0.0, 0.82, z_fwd),
                 );
             }
             MouthShape::Smirk => {
                 self.add_part(
-                    commands, meshes, &mouth_mat, root,
-                    Shape::torus(0.09, 0.018, std::f32::consts::PI * 1.22, std::f32::consts::PI * 0.8),
-                    Transform::from_xyz(0.02, 0.84, z_fwd)
-                        .with_rotation(Quat::from_euler(EulerRot::XYZ, std::f32::consts::PI / 2.0, 10.0_f32.to_radians(), 0.0)),
+                    commands,
+                    meshes,
+                    &mouth_mat,
+                    root,
+                    Shape::torus(
+                        0.09,
+                        0.018,
+                        std::f32::consts::PI * 1.22,
+                        std::f32::consts::PI * 0.8,
+                    ),
+                    Transform::from_xyz(0.02, 0.84, z_fwd).with_rotation(Quat::from_euler(
+                        EulerRot::XYZ,
+                        std::f32::consts::PI / 2.0,
+                        10.0_f32.to_radians(),
+                        0.0,
+                    )),
                 );
             }
             MouthShape::SmallO => {
                 self.add_part(
-                    commands, meshes, &mouth_mat, root,
+                    commands,
+                    meshes,
+                    &mouth_mat,
+                    root,
                     Shape::torus(0.035, 0.016, 0.0, 2.0 * std::f32::consts::PI),
-                    Transform::from_xyz(0.0, 0.82, z_fwd)
-                        .with_rotation(Quat::from_euler(EulerRot::XZY, std::f32::consts::PI / 2.0, 0.0, 0.0)),
+                    Transform::from_xyz(0.0, 0.82, z_fwd).with_rotation(Quat::from_euler(
+                        EulerRot::XZY,
+                        std::f32::consts::PI / 2.0,
+                        0.0,
+                        0.0,
+                    )),
                 );
             }
             MouthShape::CatMouth => {
                 for side in [-1, 1] {
                     self.add_part(
-                        commands, meshes, &mouth_mat, root,
-                        Shape::torus(0.045, 0.014, std::f32::consts::PI * 1.05, std::f32::consts::PI * 0.95),
-                        Transform::from_xyz(side as f32 * 0.05, 0.82, z_fwd)
-                            .with_rotation(Quat::from_euler(EulerRot::XZY, std::f32::consts::PI / 2.0, 0.0, 0.0)),
+                        commands,
+                        meshes,
+                        &mouth_mat,
+                        root,
+                        Shape::torus(
+                            0.045,
+                            0.014,
+                            std::f32::consts::PI * 1.05,
+                            std::f32::consts::PI * 0.95,
+                        ),
+                        Transform::from_xyz(side as f32 * 0.05, 0.82, z_fwd).with_rotation(
+                            Quat::from_euler(EulerRot::XZY, std::f32::consts::PI / 2.0, 0.0, 0.0),
+                        ),
                     );
                 }
             }
@@ -759,7 +923,10 @@ impl CharacterConfig {
                 let blush_mat = materials.add(transparent(0.95, 0.45, 0.50, 0.55));
                 for side in [-1, 1] {
                     self.add_part(
-                        commands, meshes, &blush_mat, root,
+                        commands,
+                        meshes,
+                        &blush_mat,
+                        root,
                         Shape::ellipsoid(Vec3::new(0.12, 0.06, 0.04), ShapeDetail::Medium),
                         Transform::from_xyz(side as f32 * 0.28, 0.93, 0.38),
                     );
@@ -769,7 +936,10 @@ impl CharacterConfig {
                 let blush_mat = materials.add(transparent(0.95, 0.45, 0.50, 0.55));
                 for side in [-1, 1] {
                     self.add_part(
-                        commands, meshes, &blush_mat, root,
+                        commands,
+                        meshes,
+                        &blush_mat,
+                        root,
                         Shape::sphere(0.07, ShapeDetail::Medium),
                         Transform::from_xyz(side as f32 * 0.28, 0.93, 0.38),
                     );
@@ -780,7 +950,10 @@ impl CharacterConfig {
                 for side in [-1, 1] {
                     for i in 0..3 {
                         self.add_part(
-                            commands, meshes, &freckle_mat, root,
+                            commands,
+                            meshes,
+                            &freckle_mat,
+                            root,
                             Shape::sphere(0.012, ShapeDetail::Low),
                             Transform::from_xyz(
                                 side as f32 * (0.26 + i as f32 * 0.03),
@@ -820,32 +993,50 @@ impl CharacterConfig {
                     0.3,
                 ));
                 self.add_part(
-                    commands, meshes, &stubble_mat, root,
+                    commands,
+                    meshes,
+                    &stubble_mat,
+                    root,
                     Shape::hemisphere(0.422, true, ShapeDetail::High),
-                    Transform::from_xyz(0.0, head_y + 0.10, -0.04)
-                        .with_rotation(Quat::from_euler(EulerRot::XZY, -20.0_f32.to_radians(), 0.0, 0.0)),
+                    Transform::from_xyz(0.0, head_y + 0.10, -0.04).with_rotation(Quat::from_euler(
+                        EulerRot::XZY,
+                        -20.0_f32.to_radians(),
+                        0.0,
+                        0.0,
+                    )),
                 );
             }
             _ => {
                 // Base hair cap
                 let vol = 1.0;
                 self.add_part(
-                    commands, meshes, &hair_mat, root,
+                    commands,
+                    meshes,
+                    &hair_mat,
+                    root,
                     Shape::hemisphere(0.435 * vol, true, ShapeDetail::High),
-                    Transform::from_xyz(0.0, head_y + 0.10 * vol, -0.04 * vol)
-                        .with_rotation(Quat::from_euler(EulerRot::XZY, -20.0_f32.to_radians(), 0.0, 0.0)),
+                    Transform::from_xyz(0.0, head_y + 0.10 * vol, -0.04 * vol).with_rotation(
+                        Quat::from_euler(EulerRot::XZY, -20.0_f32.to_radians(), 0.0, 0.0),
+                    ),
                 );
                 // Back cap
                 self.add_part(
-                    commands, meshes, &hair_mat, root,
+                    commands,
+                    meshes,
+                    &hair_mat,
+                    root,
                     Shape::hemisphere(0.425 * vol, true, ShapeDetail::High),
-                    Transform::from_xyz(0.0, head_y + 0.12 * vol, -0.04 * vol)
-                        .with_rotation(Quat::from_euler(EulerRot::XZY, -90.0_f32.to_radians(), 0.0, 0.0)),
+                    Transform::from_xyz(0.0, head_y + 0.12 * vol, -0.04 * vol).with_rotation(
+                        Quat::from_euler(EulerRot::XZY, -90.0_f32.to_radians(), 0.0, 0.0),
+                    ),
                 );
                 // Side hair
                 for side in [-1, 1] {
                     self.add_part(
-                        commands, meshes, &hair_mat, root,
+                        commands,
+                        meshes,
+                        &hair_mat,
+                        root,
                         Shape::cuboid(Vec3::new(0.06, 0.18, 0.22) * vol, 0.35, ShapeDetail::Medium),
                         Transform::from_xyz(side as f32 * 0.415 * vol, head_y + 0.16, -0.02 * vol),
                     );
@@ -856,16 +1047,32 @@ impl CharacterConfig {
                     HairStyle::ShortParted => {
                         // Bangs
                         self.add_part(
-                            commands, meshes, &hair_mat, root,
+                            commands,
+                            meshes,
+                            &hair_mat,
+                            root,
                             Shape::cuboid(Vec3::new(0.40, 0.14, 0.20), 0.35, ShapeDetail::Medium),
-                            Transform::from_xyz(0.10, head_y + 0.34, 0.28)
-                                .with_rotation(Quat::from_euler(EulerRot::XYZ, 6.0_f32.to_radians(), 0.0, -14.0_f32.to_radians())),
+                            Transform::from_xyz(0.10, head_y + 0.34, 0.28).with_rotation(
+                                Quat::from_euler(
+                                    EulerRot::XYZ,
+                                    6.0_f32.to_radians(),
+                                    0.0,
+                                    -14.0_f32.to_radians(),
+                                ),
+                            ),
                         );
                         // Sideburns
                         for side in [-1, 1] {
                             self.add_part(
-                                commands, meshes, &hair_mat, root,
-                                Shape::cuboid(Vec3::new(0.06, 0.20, 0.16), 0.35, ShapeDetail::Medium),
+                                commands,
+                                meshes,
+                                &hair_mat,
+                                root,
+                                Shape::cuboid(
+                                    Vec3::new(0.06, 0.20, 0.16),
+                                    0.35,
+                                    ShapeDetail::Medium,
+                                ),
                                 Transform::from_xyz(side as f32 * 0.415, head_y + 0.12, 0.04),
                             );
                         }
@@ -876,10 +1083,19 @@ impl CharacterConfig {
                             let x = (i as f32 - 2.0) * 0.12;
                             let z_rot = (i as f32 - 2.0) * 18.0_f32.to_radians();
                             self.add_part(
-                                commands, meshes, &hair_mat, root,
+                                commands,
+                                meshes,
+                                &hair_mat,
+                                root,
                                 Shape::cone(0.11, 0.34, ShapeDetail::Medium),
-                                Transform::from_xyz(x, head_y + 0.44, 0.02)
-                                    .with_rotation(Quat::from_euler(EulerRot::XZY, -15.0_f32.to_radians(), 0.0, z_rot)),
+                                Transform::from_xyz(x, head_y + 0.44, 0.02).with_rotation(
+                                    Quat::from_euler(
+                                        EulerRot::XZY,
+                                        -15.0_f32.to_radians(),
+                                        0.0,
+                                        z_rot,
+                                    ),
+                                ),
                             );
                         }
                         // Front spikes
@@ -887,66 +1103,108 @@ impl CharacterConfig {
                             let x = (i as f32 - 1.0) * 0.14;
                             let z_rot = (i as f32 - 1.0) * 20.0_f32.to_radians();
                             self.add_part(
-                                commands, meshes, &hair_mat, root,
+                                commands,
+                                meshes,
+                                &hair_mat,
+                                root,
                                 Shape::cone(0.09, 0.24, ShapeDetail::Medium),
-                                Transform::from_xyz(x, head_y + 0.34, 0.26)
-                                    .with_rotation(Quat::from_euler(EulerRot::XZY, 45.0_f32.to_radians(), 0.0, z_rot)),
+                                Transform::from_xyz(x, head_y + 0.34, 0.26).with_rotation(
+                                    Quat::from_euler(
+                                        EulerRot::XZY,
+                                        45.0_f32.to_radians(),
+                                        0.0,
+                                        z_rot,
+                                    ),
+                                ),
                             );
                         }
                         // Side spikes
                         for side in [-1, 1] {
                             self.add_part(
-                                commands, meshes, &hair_mat, root,
+                                commands,
+                                meshes,
+                                &hair_mat,
+                                root,
                                 Shape::cone(0.09, 0.24, ShapeDetail::Medium),
                                 Transform::from_xyz(side as f32 * 0.40, head_y + 0.28, 0.02)
-                                    .with_rotation(Quat::from_euler(EulerRot::XZY, 0.0, 0.0, side as f32 * 45.0_f32.to_radians())),
+                                    .with_rotation(Quat::from_euler(
+                                        EulerRot::XZY,
+                                        0.0,
+                                        0.0,
+                                        side as f32 * 45.0_f32.to_radians(),
+                                    )),
                             );
                         }
                     }
                     HairStyle::BobFringe => {
                         // Fringe
                         self.add_part(
-                            commands, meshes, &hair_mat, root,
+                            commands,
+                            meshes,
+                            &hair_mat,
+                            root,
                             Shape::cuboid(Vec3::new(0.58, 0.14, 0.18), 0.35, ShapeDetail::Medium),
                             Transform::from_xyz(0.0, head_y + 0.32, 0.28),
                         );
                         // Side locks
                         for side in [-1, 1] {
                             self.add_part(
-                                commands, meshes, &hair_mat, root,
+                                commands,
+                                meshes,
+                                &hair_mat,
+                                root,
                                 Shape::capsule(0.12, 0.46, ShapeDetail::Medium),
                                 Transform::from_xyz(side as f32 * 0.43, head_y + 0.06, 0.04)
-                                    .with_rotation(Quat::from_euler(EulerRot::ZXY, side as f32 * 5.0_f32.to_radians(), 0.0, 0.0)),
+                                    .with_rotation(Quat::from_euler(
+                                        EulerRot::ZXY,
+                                        side as f32 * 5.0_f32.to_radians(),
+                                        0.0,
+                                        0.0,
+                                    )),
                             );
                         }
                     }
                     HairStyle::Ponytail => {
                         // Bangs
                         self.add_part(
-                            commands, meshes, &hair_mat, root,
+                            commands,
+                            meshes,
+                            &hair_mat,
+                            root,
                             Shape::cuboid(Vec3::new(0.50, 0.12, 0.16), 0.35, ShapeDetail::Medium),
                             Transform::from_xyz(0.0, head_y + 0.34, 0.26),
                         );
                         // Ponytail tie (torus)
                         let tie_mat = materials.add(opaque(0.85, 0.2, 0.2));
                         self.add_part(
-                            commands, meshes, &tie_mat, root,
+                            commands,
+                            meshes,
+                            &tie_mat,
+                            root,
                             Shape::torus(0.08, 0.03, 0.0, 2.0 * std::f32::consts::PI),
-                            Transform::from_xyz(0.0, head_y + 0.34, -0.44)
-                                .with_rotation(Quat::from_euler(EulerRot::XZY, 65.0_f32.to_radians(), 0.0, 0.0)),
+                            Transform::from_xyz(0.0, head_y + 0.34, -0.44).with_rotation(
+                                Quat::from_euler(EulerRot::XZY, 65.0_f32.to_radians(), 0.0, 0.0),
+                            ),
                         );
                         // Ponytail
                         self.add_part(
-                            commands, meshes, &hair_mat, root,
+                            commands,
+                            meshes,
+                            &hair_mat,
+                            root,
                             Shape::capsule(0.14, 0.54, ShapeDetail::Medium),
-                            Transform::from_xyz(0.0, head_y + 0.14, -0.58)
-                                .with_rotation(Quat::from_euler(EulerRot::XZY, -35.0_f32.to_radians(), 0.0, 0.0)),
+                            Transform::from_xyz(0.0, head_y + 0.14, -0.58).with_rotation(
+                                Quat::from_euler(EulerRot::XZY, -35.0_f32.to_radians(), 0.0, 0.0),
+                            ),
                         );
                     }
                     HairStyle::TwinBuns => {
                         for side in [-1, 1] {
                             self.add_part(
-                                commands, meshes, &hair_mat, root,
+                                commands,
+                                meshes,
+                                &hair_mat,
+                                root,
                                 Shape::sphere(0.16, ShapeDetail::High),
                                 Transform::from_xyz(side as f32 * 0.36, head_y + 0.42, -0.06),
                             );
@@ -977,38 +1235,60 @@ impl CharacterConfig {
                     0.4,
                 ));
                 self.add_part(
-                    commands, meshes, &stubble_mat, root,
+                    commands,
+                    meshes,
+                    &stubble_mat,
+                    root,
                     Shape::cuboid(Vec3::new(0.34, 0.18, 0.06), 0.5, ShapeDetail::Medium),
                     Transform::from_xyz(0.0, 0.80, 0.39),
                 );
             }
             FacialHairStyle::ClassicMustache => {
                 let f_mat = materials.add(opaque(
-                    self.hair_dark[0], self.hair_dark[1], self.hair_dark[2],
+                    self.hair_dark[0],
+                    self.hair_dark[1],
+                    self.hair_dark[2],
                 ));
                 self.add_part(
-                    commands, meshes, &f_mat, root,
+                    commands,
+                    meshes,
+                    &f_mat,
+                    root,
                     Shape::ellipsoid(Vec3::new(0.20, 0.05, 0.05), ShapeDetail::Medium),
                     Transform::from_xyz(0.0, 0.88, 0.41),
                 );
             }
             FacialHairStyle::Goatee => {
                 let f_mat = materials.add(opaque(
-                    self.hair_dark[0], self.hair_dark[1], self.hair_dark[2],
+                    self.hair_dark[0],
+                    self.hair_dark[1],
+                    self.hair_dark[2],
                 ));
                 self.add_part(
-                    commands, meshes, &f_mat, root,
+                    commands,
+                    meshes,
+                    &f_mat,
+                    root,
                     Shape::cone(0.08, 0.16, ShapeDetail::Medium),
-                    Transform::from_xyz(0.0, 0.74, 0.41)
-                        .with_rotation(Quat::from_euler(EulerRot::XZY, 15.0_f32.to_radians(), 0.0, 0.0)),
+                    Transform::from_xyz(0.0, 0.74, 0.41).with_rotation(Quat::from_euler(
+                        EulerRot::XZY,
+                        15.0_f32.to_radians(),
+                        0.0,
+                        0.0,
+                    )),
                 );
             }
             FacialHairStyle::FullBeard => {
                 let f_mat = materials.add(opaque(
-                    self.hair_dark[0], self.hair_dark[1], self.hair_dark[2],
+                    self.hair_dark[0],
+                    self.hair_dark[1],
+                    self.hair_dark[2],
                 ));
                 self.add_part(
-                    commands, meshes, &f_mat, root,
+                    commands,
+                    meshes,
+                    &f_mat,
+                    root,
                     Shape::cuboid(Vec3::new(0.38, 0.24, 0.20), 0.4, ShapeDetail::High),
                     Transform::from_xyz(0.0, 0.78, 0.37),
                 );
@@ -1036,23 +1316,41 @@ impl CharacterConfig {
             GlassesStyle::RoundFrames => {
                 for side in [-1, 1] {
                     self.add_part(
-                        commands, meshes, &frame_mat, root,
+                        commands,
+                        meshes,
+                        &frame_mat,
+                        root,
                         Shape::torus(0.11, 0.02, 0.0, 2.0 * std::f32::consts::PI),
                         Transform::from_xyz(side as f32 * eye_spacing, eye_height, z_fwd)
-                            .with_rotation(Quat::from_euler(EulerRot::XZY, std::f32::consts::PI / 2.0, 0.0, 0.0)),
+                            .with_rotation(Quat::from_euler(
+                                EulerRot::XZY,
+                                std::f32::consts::PI / 2.0,
+                                0.0,
+                                0.0,
+                            )),
                     );
                 }
                 // Bridge
                 self.add_part(
-                    commands, meshes, &frame_mat, root,
-                    Shape::cuboid(Vec3::new(eye_spacing * 1.2, 0.02, 0.02), 0.5, ShapeDetail::Medium),
+                    commands,
+                    meshes,
+                    &frame_mat,
+                    root,
+                    Shape::cuboid(
+                        Vec3::new(eye_spacing * 1.2, 0.02, 0.02),
+                        0.5,
+                        ShapeDetail::Medium,
+                    ),
                     Transform::from_xyz(0.0, eye_height, z_fwd),
                 );
             }
             GlassesStyle::SquareFrames => {
                 for side in [-1, 1] {
                     self.add_part(
-                        commands, meshes, &frame_mat, root,
+                        commands,
+                        meshes,
+                        &frame_mat,
+                        root,
                         Shape::cuboid(Vec3::new(0.24, 0.18, 0.03), 0.2, ShapeDetail::Medium),
                         Transform::from_xyz(side as f32 * eye_spacing, eye_height, z_fwd),
                     );
@@ -1062,7 +1360,10 @@ impl CharacterConfig {
                 let lens_mat = materials.add(transparent(0.1, 0.1, 0.12, 0.92));
                 for side in [-1, 1] {
                     self.add_part(
-                        commands, meshes, &lens_mat, root,
+                        commands,
+                        meshes,
+                        &lens_mat,
+                        root,
                         Shape::cuboid(Vec3::new(0.28, 0.18, 0.04), 0.3, ShapeDetail::Medium),
                         Transform::from_xyz(side as f32 * eye_spacing, eye_height, z_fwd),
                     );
@@ -1070,10 +1371,14 @@ impl CharacterConfig {
             }
             GlassesStyle::Headband => {
                 self.add_part(
-                    commands, meshes, &frame_mat, root,
+                    commands,
+                    meshes,
+                    &frame_mat,
+                    root,
                     Shape::torus(0.44, 0.06, 0.0, 2.0 * std::f32::consts::PI),
-                    Transform::from_xyz(0.0, eye_height + 0.22, 0.0)
-                        .with_rotation(Quat::from_euler(EulerRot::XZY, 80.0_f32.to_radians(), 0.0, 0.0)),
+                    Transform::from_xyz(0.0, eye_height + 0.22, 0.0).with_rotation(
+                        Quat::from_euler(EulerRot::XZY, 80.0_f32.to_radians(), 0.0, 0.0),
+                    ),
                 );
             }
         }

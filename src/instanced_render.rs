@@ -16,7 +16,7 @@
 use std::mem::size_of;
 
 use bevy::core_pipeline::core_3d::{Opaque3d, Opaque3dBatchSetKey, Opaque3dBinKey};
-use bevy::ecs::system::{lifetimeless::*, SystemParamItem};
+use bevy::ecs::system::{SystemParamItem, lifetimeless::*};
 use bevy::mesh::{MeshVertexBufferLayoutRef, VertexBufferLayout};
 use bevy::pbr::{
     MeshPipeline, MeshPipelineKey, RenderMeshInstances, SetMeshBindGroup, SetMeshViewBindGroup,
@@ -25,12 +25,11 @@ use bevy::pbr::{
 use bevy::prelude::*;
 use bevy::render::extract_component::{ExtractComponent, ExtractComponentPlugin};
 use bevy::render::mesh::allocator::MeshSlabs;
-use bevy::render::mesh::{allocator::MeshAllocator, RenderMesh, RenderMeshBufferInfo};
+use bevy::render::mesh::{RenderMesh, RenderMeshBufferInfo, allocator::MeshAllocator};
 use bevy::render::render_asset::RenderAssets;
 use bevy::render::render_phase::{
     AddRenderCommand, BinnedRenderPhaseType, DrawFunctions, InputUniformIndex, PhaseItem,
-    RenderCommand, RenderCommandResult, SetItemPipeline, TrackedRenderPass,
-    ViewBinnedRenderPhases,
+    RenderCommand, RenderCommandResult, SetItemPipeline, TrackedRenderPass, ViewBinnedRenderPhases,
 };
 use bevy::render::render_resource::*;
 use bevy::render::renderer::RenderDevice;
@@ -44,7 +43,6 @@ use crate::batch::{InstanceProperties, InstanceTransform};
 use crate::culling::{self, AABB};
 use crate::lod::LodConfig;
 use crate::render_pipeline::InstancedStats;
-
 
 // ─── Extracted Batch Data ───
 
@@ -97,7 +95,10 @@ pub struct InstancedPipeline {
 
 impl InstancedPipeline {
     pub fn new(mesh_pipeline: MeshPipeline, shader: Handle<Shader>) -> Self {
-        Self { mesh_pipeline, shader }
+        Self {
+            mesh_pipeline,
+            shader,
+        }
     }
 }
 
@@ -140,7 +141,9 @@ impl<P: PhaseItem> RenderCommand<P> for DrawInstancedBatchImpl {
             return RenderCommandResult::Skip;
         };
 
-        let Some(mesh_instance) = render_mesh_instances.into_inner().render_mesh_queue_data(item.main_entity())
+        let Some(mesh_instance) = render_mesh_instances
+            .into_inner()
+            .render_mesh_queue_data(item.main_entity())
         else {
             return RenderCommandResult::Skip;
         };
@@ -162,17 +165,17 @@ impl<P: PhaseItem> RenderCommand<P> for DrawInstancedBatchImpl {
         pass.set_vertex_buffer(1, gpu_buffers.buffer.slice(..));
 
         match &gpu_mesh.buffer_info {
-            RenderMeshBufferInfo::Indexed { index_format, count } => {
+            RenderMeshBufferInfo::Indexed {
+                index_format,
+                count,
+            } => {
                 let Some(index_buffer_slice) =
                     mesh_allocator.mesh_index_slice(&mesh_instance.mesh_asset_id())
                 else {
                     return RenderCommandResult::Skip;
                 };
 
-                pass.set_index_buffer(
-                    index_buffer_slice.buffer.slice(..),
-                    *index_format,
-                );
+                pass.set_index_buffer(index_buffer_slice.buffer.slice(..), *index_format);
 
                 // Issue the instanced draw call
                 pass.draw_indexed(
@@ -182,10 +185,7 @@ impl<P: PhaseItem> RenderCommand<P> for DrawInstancedBatchImpl {
                 );
             }
             RenderMeshBufferInfo::NonIndexed => {
-                pass.draw(
-                    vertex_buffer_slice.range,
-                    0..gpu_buffers.instance_count,
-                );
+                pass.draw(vertex_buffer_slice.range, 0..gpu_buffers.instance_count);
             }
         }
 
@@ -247,14 +247,10 @@ fn build_combined_buffer(batch_data: &InstancedBatchData) -> Vec<u8> {
         let p_start = i * property_stride;
 
         if t_start + transform_stride <= batch_data.transforms.len() {
-            combined.extend_from_slice(
-                &batch_data.transforms[t_start..t_start + transform_stride],
-            );
+            combined.extend_from_slice(&batch_data.transforms[t_start..t_start + transform_stride]);
         }
         if p_start + property_stride <= batch_data.properties.len() {
-            combined.extend_from_slice(
-                &batch_data.properties[p_start..p_start + property_stride],
-            );
+            combined.extend_from_slice(&batch_data.properties[p_start..p_start + property_stride]);
         }
     }
 
@@ -301,7 +297,9 @@ fn queue_instanced_batches(
         };
 
         // Extract frustum planes from the view-projection matrix for culling
-        let clip_from_world = view.clip_from_world.unwrap_or(view.clip_from_view * bevy::math::Affine3A::from(view.world_from_view.affine()));
+        let clip_from_world = view.clip_from_world.unwrap_or(
+            view.clip_from_view * bevy::math::Affine3A::from(view.world_from_view.affine()),
+        );
         let frustum = culling::FrustumPlanes::from_view_projection(&clip_from_world);
 
         // Camera world position for LOD distance computation
@@ -341,8 +339,9 @@ fn queue_instanced_batches(
                 };
 
                 let distance = LodConfig::distance_from_camera(&camera_world_pos, &avg_pos);
-                let (computed_lod, transition_weight) = lod_cfg.compute_lod(distance, Some(batch_data.lod_level));
-                
+                let (computed_lod, transition_weight) =
+                    lod_cfg.compute_lod(distance, Some(batch_data.lod_level));
+
                 // Update LOD level and transition weight
                 batch_data.lod_level = computed_lod;
                 batch_data.lod_transition_weight = transition_weight;
@@ -355,12 +354,9 @@ fn queue_instanced_batches(
                     mesh.index_format(),
                 );
 
-            let Ok(pipeline) = pipelines.specialize(
-                &pipeline_cache,
-                &instanced_pipeline,
-                key,
-                &mesh.layout,
-            ) else {
+            let Ok(pipeline) =
+                pipelines.specialize(&pipeline_cache, &instanced_pipeline, key, &mesh.layout)
+            else {
                 continue;
             };
 
@@ -428,7 +424,8 @@ fn parse_transforms(batch_data: &InstancedBatchData) -> Vec<culling::InstanceTra
 
         // Read 4 Vec4 columns (16 f32 values) from the transform data
         let bytes = &batch_data.transforms[start..start + transform_stride];
-        let values: [f32; 16] = bytemuck::pod_read_unaligned(&bytes[..std::mem::size_of::<[f32; 16]>()]);
+        let values: [f32; 16] =
+            bytemuck::pod_read_unaligned(&bytes[..std::mem::size_of::<[f32; 16]>()]);
 
         transforms.push(culling::InstanceTransform {
             col0: [values[0], values[1], values[2], values[3]],
@@ -512,17 +509,53 @@ impl SpecializedMeshPipeline for InstancedPipeline {
             attributes: [
                 // InstanceTransform: 4×vec4 at locations 3-6
                 (3u32, 0u64, VertexFormat::Float32x4),
-                (4u32, VertexFormat::Float32x4.size(), VertexFormat::Float32x4),
-                (5u32, VertexFormat::Float32x4.size() * 2, VertexFormat::Float32x4),
-                (6u32, VertexFormat::Float32x4.size() * 3, VertexFormat::Float32x4),
+                (
+                    4u32,
+                    VertexFormat::Float32x4.size(),
+                    VertexFormat::Float32x4,
+                ),
+                (
+                    5u32,
+                    VertexFormat::Float32x4.size() * 2,
+                    VertexFormat::Float32x4,
+                ),
+                (
+                    6u32,
+                    VertexFormat::Float32x4.size() * 3,
+                    VertexFormat::Float32x4,
+                ),
                 // InstanceProperties: 7×vec4 at locations 7-13 (color, secondary, direction, flags, dash, deformation, appearance)
                 (7u32, transform_stride, VertexFormat::Float32x4),
-                (8u32, transform_stride + VertexFormat::Float32x4.size(), VertexFormat::Float32x4),
-                (9u32, transform_stride + VertexFormat::Float32x4.size() * 2, VertexFormat::Float32x4),
-                (10u32, transform_stride + VertexFormat::Float32x4.size() * 3, VertexFormat::Float32x4),
-                (11u32, transform_stride + VertexFormat::Float32x4.size() * 4, VertexFormat::Float32x4),
-                (12u32, transform_stride + VertexFormat::Float32x4.size() * 5, VertexFormat::Float32x4),
-                (13u32, transform_stride + VertexFormat::Float32x4.size() * 6, VertexFormat::Float32x4),
+                (
+                    8u32,
+                    transform_stride + VertexFormat::Float32x4.size(),
+                    VertexFormat::Float32x4,
+                ),
+                (
+                    9u32,
+                    transform_stride + VertexFormat::Float32x4.size() * 2,
+                    VertexFormat::Float32x4,
+                ),
+                (
+                    10u32,
+                    transform_stride + VertexFormat::Float32x4.size() * 3,
+                    VertexFormat::Float32x4,
+                ),
+                (
+                    11u32,
+                    transform_stride + VertexFormat::Float32x4.size() * 4,
+                    VertexFormat::Float32x4,
+                ),
+                (
+                    12u32,
+                    transform_stride + VertexFormat::Float32x4.size() * 5,
+                    VertexFormat::Float32x4,
+                ),
+                (
+                    13u32,
+                    transform_stride + VertexFormat::Float32x4.size() * 6,
+                    VertexFormat::Float32x4,
+                ),
             ]
             .map(|(loc, offset, fmt)| VertexAttribute {
                 shader_location: loc,

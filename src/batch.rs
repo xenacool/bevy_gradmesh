@@ -21,12 +21,12 @@ use bevy::render::render_resource::ShaderType;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
+use crate::RenderState;
 use crate::appearance::AppearanceSnapshot;
 use crate::culling::AABB;
 use crate::material::{GradMeshUniformBuffer, Vec4};
 use crate::shape::{Shape, ShapeDetail};
 use crate::style::{BlendMode, ColorMode, Dash, DashType};
-use crate::RenderState;
 
 // ─── Per-instance GPU data ───
 
@@ -249,13 +249,18 @@ impl Batch {
         }
         self.transforms.push(transform);
         self.properties.push(properties);
-        self.deformations.push(crate::deformation::DeformationParams::none());
+        self.deformations
+            .push(crate::deformation::DeformationParams::none());
         self.count += 1;
         self.mark_dirty();
     }
 
     /// Set deformation for an instance at the given index.
-    pub fn set_deformation(&mut self, index: usize, deformation: crate::deformation::DeformationParams) {
+    pub fn set_deformation(
+        &mut self,
+        index: usize,
+        deformation: crate::deformation::DeformationParams,
+    ) {
         if index < self.count {
             self.deformations[index] = deformation;
             if !self.property_pending {
@@ -401,7 +406,8 @@ impl BatchRecorder {
     // ─── State management ───
 
     pub fn push_state(&mut self) {
-        self.state_stack.push((self.position, self.rotation, self.scale));
+        self.state_stack
+            .push((self.position, self.rotation, self.scale));
     }
 
     pub fn pop_state(&mut self) {
@@ -453,11 +459,7 @@ impl BatchRecorder {
 
     /// Add an instance with the given shape and properties to the current batch.
     /// Used internally by `RetainedWorld` to replay retained slots.
-    pub fn add_instance(
-        &mut self,
-        shape: &Shape,
-        mut properties: InstanceProperties,
-    ) {
+    pub fn add_instance(&mut self, shape: &Shape, mut properties: InstanceProperties) {
         let mesh_id = hash_shape(shape);
         let mesh = self.get_or_build_mesh(shape).clone();
 
@@ -506,24 +508,28 @@ impl BatchRecorder {
     pub fn sphere(&mut self, radius: f32, detail: ShapeDetail, color: [f32; 4]) {
         let shape = Shape::sphere(radius, detail);
         let props = InstanceProperties::from_style(
-            color, color, [0.0, 1.0, 0.0, 0.0],
-            ColorMode::Single, BlendMode::Opaque, false, None,
+            color,
+            color,
+            [0.0, 1.0, 0.0, 0.0],
+            ColorMode::Single,
+            BlendMode::Opaque,
+            false,
+            None,
         );
         self.add_instance(&shape, props);
     }
 
     /// Draw a cuboid.
-    pub fn cuboid(
-        &mut self,
-        size: Vec3,
-        roundness: f32,
-        detail: ShapeDetail,
-        color: [f32; 4],
-    ) {
+    pub fn cuboid(&mut self, size: Vec3, roundness: f32, detail: ShapeDetail, color: [f32; 4]) {
         let shape = Shape::cuboid(size, roundness, detail);
         let props = InstanceProperties::from_style(
-            color, color, [0.0, 1.0, 0.0, 0.0],
-            ColorMode::Single, BlendMode::Opaque, false, None,
+            color,
+            color,
+            [0.0, 1.0, 0.0, 0.0],
+            ColorMode::Single,
+            BlendMode::Opaque,
+            false,
+            None,
         );
         self.add_instance(&shape, props);
     }
@@ -532,8 +538,13 @@ impl BatchRecorder {
     pub fn cylinder(&mut self, radius: f32, height: f32, detail: ShapeDetail, color: [f32; 4]) {
         let shape = Shape::cylinder(radius, height, detail);
         let props = InstanceProperties::from_style(
-            color, color, [0.0, 1.0, 0.0, 0.0],
-            ColorMode::Single, BlendMode::Opaque, false, None,
+            color,
+            color,
+            [0.0, 1.0, 0.0, 0.0],
+            ColorMode::Single,
+            BlendMode::Opaque,
+            false,
+            None,
         );
         self.add_instance(&shape, props);
     }
@@ -542,8 +553,13 @@ impl BatchRecorder {
     pub fn cone(&mut self, radius: f32, height: f32, detail: ShapeDetail, color: [f32; 4]) {
         let shape = Shape::cone(radius, height, detail);
         let props = InstanceProperties::from_style(
-            color, color, [0.0, 1.0, 0.0, 0.0],
-            ColorMode::Single, BlendMode::Opaque, false, None,
+            color,
+            color,
+            [0.0, 1.0, 0.0, 0.0],
+            ColorMode::Single,
+            BlendMode::Opaque,
+            false,
+            None,
         );
         self.add_instance(&shape, props);
     }
@@ -552,8 +568,13 @@ impl BatchRecorder {
     pub fn capsule(&mut self, radius: f32, height: f32, detail: ShapeDetail, color: [f32; 4]) {
         let shape = Shape::capsule(radius, height, detail);
         let props = InstanceProperties::from_style(
-            color, color, [0.0, 1.0, 0.0, 0.0],
-            ColorMode::Single, BlendMode::Opaque, false, None,
+            color,
+            color,
+            [0.0, 1.0, 0.0, 0.0],
+            ColorMode::Single,
+            BlendMode::Opaque,
+            false,
+            None,
         );
         self.add_instance(&shape, props);
     }
@@ -570,8 +591,13 @@ impl BatchRecorder {
     ) {
         let shape = Shape::torus(radius, thickness, start_angle, span);
         let props = InstanceProperties::from_style(
-            color, color, [0.0, 1.0, 0.0, 0.0],
-            ColorMode::Single, BlendMode::Opaque, false, None,
+            color,
+            color,
+            [0.0, 1.0, 0.0, 0.0],
+            ColorMode::Single,
+            BlendMode::Opaque,
+            false,
+            None,
         );
         self.add_instance(&shape, props);
     }
@@ -587,24 +613,28 @@ impl BatchRecorder {
     ) {
         let shape = Shape::pyramid(sides, radius, height, detail);
         let props = InstanceProperties::from_style(
-            color, color, [0.0, 1.0, 0.0, 0.0],
-            ColorMode::Single, BlendMode::Opaque, false, None,
+            color,
+            color,
+            [0.0, 1.0, 0.0, 0.0],
+            ColorMode::Single,
+            BlendMode::Opaque,
+            false,
+            None,
         );
         self.add_instance(&shape, props);
     }
 
     /// Draw a hemisphere.
-    pub fn hemisphere(
-        &mut self,
-        radius: f32,
-        capped: bool,
-        detail: ShapeDetail,
-        color: [f32; 4],
-    ) {
+    pub fn hemisphere(&mut self, radius: f32, capped: bool, detail: ShapeDetail, color: [f32; 4]) {
         let shape = Shape::hemisphere(radius, capped, detail);
         let props = InstanceProperties::from_style(
-            color, color, [0.0, 1.0, 0.0, 0.0],
-            ColorMode::Single, BlendMode::Opaque, false, None,
+            color,
+            color,
+            [0.0, 1.0, 0.0, 0.0],
+            ColorMode::Single,
+            BlendMode::Opaque,
+            false,
+            None,
         );
         self.add_instance(&shape, props);
     }
@@ -613,8 +643,13 @@ impl BatchRecorder {
     pub fn ellipsoid(&mut self, size: Vec3, detail: ShapeDetail, color: [f32; 4]) {
         let shape = Shape::ellipsoid(size, detail);
         let props = InstanceProperties::from_style(
-            color, color, [0.0, 1.0, 0.0, 0.0],
-            ColorMode::Single, BlendMode::Opaque, false, None,
+            color,
+            color,
+            [0.0, 1.0, 0.0, 0.0],
+            ColorMode::Single,
+            BlendMode::Opaque,
+            false,
+            None,
         );
         self.add_instance(&shape, props);
     }
@@ -631,8 +666,13 @@ impl BatchRecorder {
     ) {
         let shape = Shape::regular_prism(sides, radius, height, roundness, detail);
         let props = InstanceProperties::from_style(
-            color, color, [0.0, 1.0, 0.0, 0.0],
-            ColorMode::Single, BlendMode::Opaque, false, None,
+            color,
+            color,
+            [0.0, 1.0, 0.0, 0.0],
+            ColorMode::Single,
+            BlendMode::Opaque,
+            false,
+            None,
         );
         self.add_instance(&shape, props);
     }
@@ -691,33 +731,31 @@ impl BatchRecorder {
     // ─── Transparent variants ───
 
     /// Draw a sphere with transparency.
-    pub fn sphere_transparent(
-        &mut self,
-        radius: f32,
-        detail: ShapeDetail,
-        color: [f32; 4],
-    ) {
+    pub fn sphere_transparent(&mut self, radius: f32, detail: ShapeDetail, color: [f32; 4]) {
         let shape = Shape::sphere(radius, detail);
         let props = InstanceProperties::from_style(
-            color, color, [0.0, 1.0, 0.0, 0.0],
-            ColorMode::Single, BlendMode::Transparent, false, None,
+            color,
+            color,
+            [0.0, 1.0, 0.0, 0.0],
+            ColorMode::Single,
+            BlendMode::Transparent,
+            false,
+            None,
         );
         self.add_instance(&shape, props);
     }
 
     /// Draw a sphere with additive blending.
-    pub fn sphere_additive(
-        &mut self,
-        radius: f32,
-        detail: ShapeDetail,
-        color: [f32; 3],
-    ) {
+    pub fn sphere_additive(&mut self, radius: f32, detail: ShapeDetail, color: [f32; 3]) {
         let shape = Shape::sphere(radius, detail);
         let props = InstanceProperties::from_style(
             [color[0], color[1], color[2], 1.0],
             [color[0], color[1], color[2], 1.0],
             [0.0, 1.0, 0.0, 0.0],
-            ColorMode::Single, BlendMode::Additive, false, None,
+            ColorMode::Single,
+            BlendMode::Additive,
+            false,
+            None,
         );
         self.add_instance(&shape, props);
     }
@@ -735,8 +773,8 @@ impl BatchRecorder {
         mut meshes: bevy::ecs::system::ResMut<bevy::asset::Assets<Mesh>>,
         parent: Option<bevy::prelude::Entity>,
     ) -> Vec<bevy::prelude::Entity> {
-        use bevy::prelude::*;
         use crate::render_pipeline::InstancedBufferData;
+        use bevy::prelude::*;
 
         let mut spawned = Vec::new();
 
@@ -765,28 +803,44 @@ impl BatchRecorder {
             let mesh_aabb = AABB::from_mesh(&batch.mesh);
             // Determine LOD level from the shape detail encoded in the mesh
             let vertex_count = batch.mesh.count_vertices();
-            let lod_level = if vertex_count < 50 { 0 } // Minimal
-            else if vertex_count < 100 { 1 } // Low
-            else if vertex_count < 200 { 2 } // Medium
-            else if vertex_count < 400 { 3 } // High
-            else { 4 }; // Extreme
-            let entity_id = commands.spawn((
-                Mesh3d(mesh_handle.clone()),
-                crate::instanced_render::InstancedBatchData {
-                    mesh_id,
-                    instance_count: buffer_data.instance_count,
-                    transforms: buffer_data.transforms,
-                    properties: buffer_data.properties,
-                    dirty: batch.is_dirty(),
-                    render_state: key.render_state,
-                    mesh_aabb,
-                    lod_level,
-                    lod_transition_weight: 0.0,
-                    custom_shader,
-                },
-                Transform::default(),
-                GlobalTransform::default(),
-            )).id();
+            let lod_level = if vertex_count < 50 {
+                0
+            }
+            // Minimal
+            else if vertex_count < 100 {
+                1
+            }
+            // Low
+            else if vertex_count < 200 {
+                2
+            }
+            // Medium
+            else if vertex_count < 400 {
+                3
+            }
+            // High
+            else {
+                4
+            }; // Extreme
+            let entity_id = commands
+                .spawn((
+                    Mesh3d(mesh_handle.clone()),
+                    crate::instanced_render::InstancedBatchData {
+                        mesh_id,
+                        instance_count: buffer_data.instance_count,
+                        transforms: buffer_data.transforms,
+                        properties: buffer_data.properties,
+                        dirty: batch.is_dirty(),
+                        render_state: key.render_state,
+                        mesh_aabb,
+                        lod_level,
+                        lod_transition_weight: 0.0,
+                        custom_shader,
+                    },
+                    Transform::default(),
+                    GlobalTransform::default(),
+                ))
+                .id();
 
             if let Some(p) = parent {
                 commands.entity(p).add_child(entity_id);

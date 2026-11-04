@@ -87,7 +87,10 @@ impl InstancedBufferData {
         properties: &[InstanceProperties],
         deformations: &[DeformationParams],
     ) -> Self {
-        let instance_count = transforms.len().min(properties.len()).min(deformations.len());
+        let instance_count = transforms
+            .len()
+            .min(properties.len())
+            .min(deformations.len());
 
         // Flatten transforms
         let transforms_bytes = if instance_count > 0 {
@@ -105,7 +108,8 @@ impl InstancedBufferData {
 
         // Build properties with deformation encoded in the deformation field
         let properties_bytes = if instance_count > 0 {
-            let mut buf = Vec::with_capacity(instance_count * std::mem::size_of::<InstanceProperties>());
+            let mut buf =
+                Vec::with_capacity(instance_count * std::mem::size_of::<InstanceProperties>());
             for i in 0..instance_count {
                 let mut prop = properties[i];
                 prop.deformation = deformations[i].to_vec4();

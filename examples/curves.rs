@@ -8,30 +8,31 @@ mod common;
 
 use bevy::prelude::*;
 use bevy::render::RenderPlugin;
-use bevy_gradmesh::{
-    dual_directional, Shape, ShapeDetail,
-    GradMeshMaterial, GradMeshPlugin,
-};
+use bevy_gradmesh::{GradMeshMaterial, GradMeshPlugin, Shape, ShapeDetail, dual_directional};
 use common::screenshot::AutoScreenshotPlugin;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "BevyGradmesh Curves".into(),
-                resolution: (1280, 720).into(),
-                ..default()
-            }),
-            ..default()
-        }).set(RenderPlugin {
-            synchronous_pipeline_compilation: true,
-            ..default()
-        }))
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "BevyGradmesh Curves".into(),
+                        resolution: (1280, 720).into(),
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .set(RenderPlugin {
+                    synchronous_pipeline_compilation: true,
+                    ..default()
+                }),
+        )
         .add_plugins(GradMeshPlugin)
         .add_plugins(
             AutoScreenshotPlugin::new("screenshot_curves.png")
                 .with_title("Curves")
-                .with_description("Bézier curve primitives rendered as tubes")
+                .with_description("Bézier curve primitives rendered as tubes"),
         )
         .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.12)))
         .add_systems(Startup, setup)
@@ -88,10 +89,7 @@ fn setup(
     };
 
     // ─── Row 1: Linear curve (straight line tube) ───
-    let linear = vec![
-        Vec3::new(-3.0, 0.0, 0.0),
-        Vec3::new(3.0, 0.0, 0.0),
-    ];
+    let linear = vec![Vec3::new(-3.0, 0.0, 0.0), Vec3::new(3.0, 0.0, 0.0)];
     let linear_mesh = meshes.add(Shape::bezier_curve(linear, 0.08, 8, ShapeDetail::Medium).build());
     commands.spawn((
         Mesh3d(linear_mesh),
@@ -106,7 +104,8 @@ fn setup(
         Vec3::new(0.0, 2.5, 0.0),
         Vec3::new(3.0, 0.0, 0.0),
     ];
-    let quad_mesh = meshes.add(Shape::bezier_curve(quadratic, 0.08, 8, ShapeDetail::Medium).build());
+    let quad_mesh =
+        meshes.add(Shape::bezier_curve(quadratic, 0.08, 8, ShapeDetail::Medium).build());
     commands.spawn((
         Mesh3d(quad_mesh),
         MeshMaterial3d(mat(0.3, 0.85, 0.4)),
@@ -136,7 +135,8 @@ fn setup(
         Vec3::new(2.5, -2.0, 0.0),
         Vec3::new(0.0, 0.0, 0.0),
     ];
-    let loop_mesh = meshes.add(Shape::bezier_curve(loop_curve, 0.08, 8, ShapeDetail::Medium).build());
+    let loop_mesh =
+        meshes.add(Shape::bezier_curve(loop_curve, 0.08, 8, ShapeDetail::Medium).build());
     commands.spawn((
         Mesh3d(loop_mesh),
         MeshMaterial3d(mat(0.95, 0.45, 0.6)),
@@ -163,7 +163,10 @@ fn setup(
 fn spawn_label(commands: &mut Commands, text: &str, position: Vec3) {
     commands.spawn((
         Text::new(text.to_string()),
-        TextFont { font_size: FontSize::Px(15.0), ..default() },
+        TextFont {
+            font_size: FontSize::Px(15.0),
+            ..default()
+        },
         TextColor(Color::srgb(0.88, 0.91, 0.98)),
         Node {
             position_type: PositionType::Absolute,
@@ -183,7 +186,9 @@ fn position_labels(
     camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     mut labels: Query<(&WorldLabel, &mut Node)>,
 ) {
-    let Ok((camera, camera_transform)) = camera.single() else { return; };
+    let Ok((camera, camera_transform)) = camera.single() else {
+        return;
+    };
     for (label, mut node) in &mut labels {
         if let Ok(viewport) = camera.world_to_viewport(camera_transform, label.0) {
             node.left = Val::Px(viewport.x - 75.0);

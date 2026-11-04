@@ -46,7 +46,10 @@ impl PolylineConfig {
     /// polylines — only point positions need updating via buffer writes.
     pub fn build_gpu_mesh(&self) -> Mesh {
         if self.points.is_empty() {
-            let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+            let mut mesh = Mesh::new(
+                PrimitiveTopology::TriangleList,
+                RenderAssetUsages::default(),
+            );
             mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, Vec::<Vec3>::new());
             return mesh;
         }
@@ -63,7 +66,11 @@ impl PolylineConfig {
         let mut indices: Vec<u32> = Vec::new();
 
         let points = &self.points;
-        let total_segments = if self.closed { points.len() } else { points.len() - 1 };
+        let total_segments = if self.closed {
+            points.len()
+        } else {
+            points.len() - 1
+        };
 
         // Precompute blended frames at each vertex for smooth joints.
         // At intermediate vertices, the blended direction is the normalized average
@@ -110,7 +117,11 @@ impl PolylineConfig {
         // Build cylinder segments between consecutive points
         for i in 0..total_segments {
             let start = points[i];
-            let end_idx = if self.closed && i == total_segments - 1 { 0 } else { i + 1 };
+            let end_idx = if self.closed && i == total_segments - 1 {
+                0
+            } else {
+                i + 1
+            };
             let end = points[end_idx];
             let dir = end - start;
             let seg_len = dir.length();
@@ -134,7 +145,8 @@ impl PolylineConfig {
 
                 let radial_start = start_up * cos_a + start_right * sin_a;
                 let radial_end = end_up * cos_a + end_right * sin_a;
-                let uv = bevy::math::Vec2::new(j as f32 / seg as f32, i as f32 / total_segments as f32);
+                let uv =
+                    bevy::math::Vec2::new(j as f32 / seg as f32, i as f32 / total_segments as f32);
 
                 // Start ring vertex
                 positions.push(start + radial_start * self.thickness);
@@ -144,7 +156,10 @@ impl PolylineConfig {
                 // End ring vertex
                 positions.push(end + radial_end * self.thickness);
                 normals.push(radial_end);
-                uvs.push(bevy::math::Vec2::new(j as f32 / seg as f32, (i + 1) as f32 / total_segments as f32));
+                uvs.push(bevy::math::Vec2::new(
+                    j as f32 / seg as f32,
+                    (i + 1) as f32 / total_segments as f32,
+                ));
             }
 
             // Generate indices for this cylinder segment
@@ -165,20 +180,41 @@ impl PolylineConfig {
             let first_dir = (points[1] - points[0]).normalize();
             let (up, right) = perpendicular_axes(&first_dir);
             add_hemisphere_cap(
-                &mut positions, &mut normals, &mut uvs, &mut indices,
-                points[0], self.thickness, seg, &first_dir, &up, &right, false,
+                &mut positions,
+                &mut normals,
+                &mut uvs,
+                &mut indices,
+                points[0],
+                self.thickness,
+                seg,
+                &first_dir,
+                &up,
+                &right,
+                false,
             );
 
             // End cap (hemisphere)
             let last_dir = (points[points.len() - 1] - points[points.len() - 2]).normalize();
             let (up, right) = perpendicular_axes(&last_dir);
             add_hemisphere_cap(
-                &mut positions, &mut normals, &mut uvs, &mut indices,
-                points[points.len() - 1], self.thickness, seg, &last_dir, &up, &right, true,
+                &mut positions,
+                &mut normals,
+                &mut uvs,
+                &mut indices,
+                points[points.len() - 1],
+                self.thickness,
+                seg,
+                &last_dir,
+                &up,
+                &right,
+                true,
             );
         }
 
-        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+        let mut mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        );
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
         mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
@@ -195,7 +231,6 @@ impl PolylineConfig {
     pub fn build_mesh(&self) -> Mesh {
         self.build_gpu_mesh()
     }
-
 }
 
 /// Pre-computed polyline mesh cache.
@@ -216,11 +251,7 @@ impl PolylineCache {
 
     /// Get or build a polyline mesh for the given configuration.
     pub fn get_or_build(&mut self, config: &PolylineConfig) -> &Mesh {
-        let key = (
-            config.thickness.to_bits(),
-            config.segments,
-            config.closed,
-        );
+        let key = (config.thickness.to_bits(), config.segments, config.closed);
         if !self.inner.contains_key(&key) {
             self.inner.insert(key, config.build_mesh());
         }
@@ -236,11 +267,7 @@ impl Default for PolylineCache {
 
 /// Find two perpendicular axes for a given direction vector.
 fn perpendicular_axes(dir: &Vec3) -> (Vec3, Vec3) {
-    let up = if dir.abs().y < 0.9 {
-        Vec3::Y
-    } else {
-        Vec3::Z
-    };
+    let up = if dir.abs().y < 0.9 { Vec3::Y } else { Vec3::Z };
     let right = dir.cross(up).normalize();
     let up = right.cross(*dir).normalize();
     (up, right)
@@ -250,7 +277,7 @@ fn perpendicular_axes(dir: &Vec3) -> (Vec3, Vec3) {
 fn build_sphere_mesh(center: Vec3, thickness: f32, segments: u32) -> Mesh {
     let seg = segments.max(3);
     let rings = (seg / 2).max(2);
-    
+
     let mut positions = Vec::new();
     let mut normals = Vec::new();
     let mut uvs = Vec::new();
@@ -266,7 +293,10 @@ fn build_sphere_mesh(center: Vec3, thickness: f32, segments: u32) -> Mesh {
             let n = Vec3::new(x, y, z);
             positions.push(center + n * thickness);
             normals.push(n);
-            uvs.push(bevy::math::Vec2::new(i as f32 / seg as f32, ring as f32 / rings as f32));
+            uvs.push(bevy::math::Vec2::new(
+                i as f32 / seg as f32,
+                ring as f32 / rings as f32,
+            ));
         }
     }
 
@@ -282,7 +312,10 @@ fn build_sphere_mesh(center: Vec3, thickness: f32, segments: u32) -> Mesh {
         }
     }
 
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    );
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
@@ -324,7 +357,10 @@ fn add_hemisphere_cap(
 
             positions.push(center + normal * thickness);
             normals.push(normal);
-            uvs.push(bevy::math::Vec2::new(i as f32 / seg as f32, ring as f32 / rings as f32));
+            uvs.push(bevy::math::Vec2::new(
+                i as f32 / seg as f32,
+                ring as f32 / rings as f32,
+            ));
         }
     }
 

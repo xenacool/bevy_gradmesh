@@ -36,50 +36,46 @@
 //! - **Batched**: Use `BatchRecorder` for manual per-frame batch accumulation.
 //!   Call `render_batches()` to spawn entities from batches.
 
-pub mod shape;
-pub mod style;
+pub mod appearance;
+pub mod batch;
+pub mod culling;
+pub mod deformation;
+pub mod immediate;
+pub mod instanced_render;
+pub mod lod;
 pub mod material;
 pub mod material_interning;
-pub mod immediate;
-pub mod batch;
 pub mod plugin;
-pub mod retained;
-pub mod render_pipeline;
-pub mod instanced_render;
-pub mod standalone_pipeline;
-pub mod culling;
 pub mod polyline_gpu;
-pub mod lod;
-pub mod deformation;
-pub mod appearance;
+pub mod render_pipeline;
+pub mod retained;
+pub mod shape;
+pub mod standalone_pipeline;
+pub mod style;
 
-pub use shape::{Shape, ShapeDetail};
-pub use style::{Style, BlendMode, ColorMode, DashType, Dash, ShapeType};
-pub use material::{
-    GradMeshMaterial, GradMeshExtension, GradMeshUniform, GradMeshUniformBuffer, Vec4, gradmesh_to_standard,
-    opaque, transparent, additive, dual_directional, dual_directional_oklab, dual_radial, dual_radial_oklab,
-    multiplicative, screen, dither, dashed,
-};
+pub use appearance::{AppearanceSnapshot, AppearanceType};
+pub use batch::{Batch, BatchKey, BatchRecorder, InstanceProperties, InstanceTransform};
+pub use deformation::{Deformation, DeformationParams, DeformationType};
 pub use immediate::{
-    ImmediateRecorder, RenderState, DepthTest, DepthWrite, BillboardMode,
-    imm_opaque, imm_transparent, imm_additive, imm_dual_directional,
-};
-pub use batch::{
-    BatchRecorder, Batch, BatchKey, InstanceTransform, InstanceProperties,
-};
-pub use plugin::{GradMeshPlugin, MeshCache};
-pub use retained::{GradMeshHandle, RetainedWorld};
-pub use render_pipeline::{
-    InstancedBufferData, GradMeshBatchItem, InstancedBatch, InstancedStats,
+    BillboardMode, DepthTest, DepthWrite, ImmediateRecorder, RenderState, imm_additive,
+    imm_dual_directional, imm_opaque, imm_transparent,
 };
 pub use instanced_render::{InstancedBatchData, InstancedRenderPlugin};
-pub use lod::{LodConfig, LodResult, LOD_MINIMAL, LOD_LOW, LOD_MEDIUM, LOD_HIGH, LOD_EXTREME};
-pub use deformation::{DeformationType, DeformationParams, Deformation};
-pub use appearance::{AppearanceSnapshot, AppearanceType};
+pub use lod::{LOD_EXTREME, LOD_HIGH, LOD_LOW, LOD_MEDIUM, LOD_MINIMAL, LodConfig, LodResult};
+pub use material::{
+    GradMeshExtension, GradMeshMaterial, GradMeshUniform, GradMeshUniformBuffer, Vec4, additive,
+    dashed, dither, dual_directional, dual_directional_oklab, dual_radial, dual_radial_oklab,
+    gradmesh_to_standard, multiplicative, opaque, screen, transparent,
+};
 pub use material_interning::{
     GradMeshMaterialKey, GradMeshMaterialPool, MATERIAL_WARNING_THRESHOLD, warn_excessive_materials,
 };
+pub use plugin::{GradMeshPlugin, MeshCache};
+pub use render_pipeline::{GradMeshBatchItem, InstancedBatch, InstancedBufferData, InstancedStats};
+pub use retained::{GradMeshHandle, RetainedWorld};
+pub use shape::{Shape, ShapeDetail};
 pub use standalone_pipeline::{
-    StandaloneRenderPlugin, StandalonePipeline, StandalonePipelineKey,
-    StandaloneBatchData, render_standalone_batches,
+    StandaloneBatchData, StandalonePipeline, StandalonePipelineKey, StandaloneRenderPlugin,
+    render_standalone_batches,
 };
+pub use style::{BlendMode, ColorMode, Dash, DashType, ShapeType, Style};

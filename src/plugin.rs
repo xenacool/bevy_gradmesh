@@ -19,17 +19,17 @@
 
 use std::collections::HashMap;
 
+use crate::deformation::Deformation;
+use crate::material::GradMeshExtension;
+use crate::material_interning::{GradMeshMaterialPool, warn_excessive_materials};
+use crate::render_pipeline::InstancedStats;
+use crate::shape::Shape;
+use crate::standalone_pipeline::StandaloneRenderPlugin;
 use bevy::app::Plugin;
 use bevy::asset::Assets;
 use bevy::ecs::prelude::*;
 use bevy::pbr::{ExtendedMaterial, MaterialPlugin, StandardMaterial};
 use bevy::render::mesh::Mesh;
-use crate::deformation::Deformation;
-use crate::material::GradMeshExtension;
-use crate::material_interning::{GradMeshMaterialPool, warn_excessive_materials};
-use crate::render_pipeline::InstancedStats;
-use crate::standalone_pipeline::StandaloneRenderPlugin;
-use crate::shape::Shape;
 
 /// Shared mesh cache keyed by `Shape`.
 ///
@@ -50,7 +50,8 @@ impl MeshCache {
     /// on a miss. Increments hit/miss counters.
     pub fn get_or_build(&mut self, shape: &Shape) -> &Mesh {
         let is_new = !self.inner.contains_key(shape);
-        let mesh = self.inner
+        let mesh = self
+            .inner
             .entry(shape.clone())
             .or_insert_with(|| shape.build());
         if is_new {
@@ -217,7 +218,9 @@ impl Plugin for GradMeshPlugin {
         bevy::asset::embedded_asset!(app, "shader/instanced.wesl");
         bevy::asset::embedded_asset!(app, "shader/standalone.wgsl");
 
-        app.add_plugins(MaterialPlugin::<ExtendedMaterial<StandardMaterial, GradMeshExtension>>::default())
+        app.add_plugins(MaterialPlugin::<
+            ExtendedMaterial<StandardMaterial, GradMeshExtension>,
+        >::default())
             .add_plugins(crate::instanced_render::InstancedRenderPlugin)
             .add_plugins(StandaloneRenderPlugin)
             .init_resource::<MeshCache>()

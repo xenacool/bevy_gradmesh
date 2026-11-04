@@ -46,7 +46,7 @@
 
 use bevy::diagnostic::FrameCount;
 use bevy::prelude::*;
-use bevy::render::view::screenshot::{save_to_disk, Screenshot, ScreenshotCaptured};
+use bevy::render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk};
 
 /// Plugin that adds automatic screenshot capture when `DSD_SCREENSHOT` is set.
 ///
@@ -136,7 +136,11 @@ struct ScreenshotTitle {
 struct TitleOverlay;
 
 /// Spawn a semi-transparent banner at the top of the window showing the title and description.
-fn spawn_title_overlay(mut commands: Commands, title: Res<ScreenshotTitle>, window: Query<&Window, With<Window>>) {
+fn spawn_title_overlay(
+    mut commands: Commands,
+    title: Res<ScreenshotTitle>,
+    window: Query<&Window, With<Window>>,
+) {
     let window = window.single().expect("no window found");
     let width = window.resolution.width() as f32;
     let height = window.resolution.height() as f32;
@@ -151,7 +155,11 @@ fn spawn_title_overlay(mut commands: Commands, title: Res<ScreenshotTitle>, wind
                 font_size: FontSize::Px(18.0),
                 ..default()
             },
-            Transform::from_xyz(width / 2.0 - 100.0, height / 2.0 - banner_height / 2.0 - 10.0, 1000.0),
+            Transform::from_xyz(
+                width / 2.0 - 100.0,
+                height / 2.0 - banner_height / 2.0 - 10.0,
+                1000.0,
+            ),
             TitleOverlay,
             Name::new("Title Overlay Text"),
         ));
@@ -165,7 +173,11 @@ fn spawn_title_overlay(mut commands: Commands, title: Res<ScreenshotTitle>, wind
                 font_size: FontSize::Px(14.0),
                 ..default()
             },
-            Transform::from_xyz(width / 2.0 - 100.0, height / 2.0 - banner_height / 2.0 + 10.0, 1000.0),
+            Transform::from_xyz(
+                width / 2.0 - 100.0,
+                height / 2.0 - banner_height / 2.0 + 10.0,
+                1000.0,
+            ),
             TitleOverlay,
             Name::new("Title Overlay Description"),
         ));

@@ -216,10 +216,24 @@ impl RetainedWorld {
     ) -> GradMeshHandle {
         let shape = Shape::sphere(radius, detail);
         let props = InstanceProperties::from_style(
-            color, color, [0.0, 1.0, 0.0, 0.0],
-            crate::style::ColorMode::Single, crate::style::BlendMode::Opaque, false, None,
+            color,
+            color,
+            [0.0, 1.0, 0.0, 0.0],
+            crate::style::ColorMode::Single,
+            crate::style::BlendMode::Opaque,
+            false,
+            None,
         );
-        self.add_shape(_commands, _meshes, shape, position, Quat::IDENTITY, Vec3::ONE, props, crate::RenderState::default())
+        self.add_shape(
+            _commands,
+            _meshes,
+            shape,
+            position,
+            Quat::IDENTITY,
+            Vec3::ONE,
+            props,
+            crate::RenderState::default(),
+        )
     }
 
     /// Add a cuboid and return a handle for updating it.
@@ -235,10 +249,24 @@ impl RetainedWorld {
     ) -> GradMeshHandle {
         let shape = Shape::cuboid(size, roundness, detail);
         let props = InstanceProperties::from_style(
-            color, color, [0.0, 1.0, 0.0, 0.0],
-            crate::style::ColorMode::Single, crate::style::BlendMode::Opaque, false, None,
+            color,
+            color,
+            [0.0, 1.0, 0.0, 0.0],
+            crate::style::ColorMode::Single,
+            crate::style::BlendMode::Opaque,
+            false,
+            None,
         );
-        self.add_shape(_commands, _meshes, shape, position, Quat::IDENTITY, Vec3::ONE, props, crate::RenderState::default())
+        self.add_shape(
+            _commands,
+            _meshes,
+            shape,
+            position,
+            Quat::IDENTITY,
+            Vec3::ONE,
+            props,
+            crate::RenderState::default(),
+        )
     }
 
     /// Add a cylinder and return a handle for updating it.
@@ -254,10 +282,24 @@ impl RetainedWorld {
     ) -> GradMeshHandle {
         let shape = Shape::cylinder(radius, height, detail);
         let props = InstanceProperties::from_style(
-            color, color, [0.0, 1.0, 0.0, 0.0],
-            crate::style::ColorMode::Single, crate::style::BlendMode::Opaque, false, None,
+            color,
+            color,
+            [0.0, 1.0, 0.0, 0.0],
+            crate::style::ColorMode::Single,
+            crate::style::BlendMode::Opaque,
+            false,
+            None,
         );
-        self.add_shape(_commands, _meshes, shape, position, Quat::IDENTITY, Vec3::ONE, props, crate::RenderState::default())
+        self.add_shape(
+            _commands,
+            _meshes,
+            shape,
+            position,
+            Quat::IDENTITY,
+            Vec3::ONE,
+            props,
+            crate::RenderState::default(),
+        )
     }
 
     /// Add a capsule and return a handle for updating it.
@@ -273,10 +315,24 @@ impl RetainedWorld {
     ) -> GradMeshHandle {
         let shape = Shape::capsule(radius, height, detail);
         let props = InstanceProperties::from_style(
-            color, color, [0.0, 1.0, 0.0, 0.0],
-            crate::style::ColorMode::Single, crate::style::BlendMode::Opaque, false, None,
+            color,
+            color,
+            [0.0, 1.0, 0.0, 0.0],
+            crate::style::ColorMode::Single,
+            crate::style::BlendMode::Opaque,
+            false,
+            None,
         );
-        self.add_shape(_commands, _meshes, shape, position, Quat::IDENTITY, Vec3::ONE, props, crate::RenderState::default())
+        self.add_shape(
+            _commands,
+            _meshes,
+            shape,
+            position,
+            Quat::IDENTITY,
+            Vec3::ONE,
+            props,
+            crate::RenderState::default(),
+        )
     }
 
     /// Add a cone and return a handle for updating it.
@@ -292,10 +348,24 @@ impl RetainedWorld {
     ) -> GradMeshHandle {
         let shape = Shape::cone(radius, height, detail);
         let props = InstanceProperties::from_style(
-            color, color, [0.0, 1.0, 0.0, 0.0],
-            crate::style::ColorMode::Single, crate::style::BlendMode::Opaque, false, None,
+            color,
+            color,
+            [0.0, 1.0, 0.0, 0.0],
+            crate::style::ColorMode::Single,
+            crate::style::BlendMode::Opaque,
+            false,
+            None,
         );
-        self.add_shape(_commands, _meshes, shape, position, Quat::IDENTITY, Vec3::ONE, props, crate::RenderState::default())
+        self.add_shape(
+            _commands,
+            _meshes,
+            shape,
+            position,
+            Quat::IDENTITY,
+            Vec3::ONE,
+            props,
+            crate::RenderState::default(),
+        )
     }
 
     /// Add a torus and return a handle for updating it.
@@ -312,10 +382,24 @@ impl RetainedWorld {
     ) -> GradMeshHandle {
         let shape = Shape::torus(radius, thickness, start_angle, span);
         let props = InstanceProperties::from_style(
-            color, color, [0.0, 1.0, 0.0, 0.0],
-            crate::style::ColorMode::Single, crate::style::BlendMode::Opaque, false, None,
+            color,
+            color,
+            [0.0, 1.0, 0.0, 0.0],
+            crate::style::ColorMode::Single,
+            crate::style::BlendMode::Opaque,
+            false,
+            None,
         );
-        self.add_shape(_commands, _meshes, shape, position, Quat::IDENTITY, Vec3::ONE, props, crate::RenderState::default())
+        self.add_shape(
+            _commands,
+            _meshes,
+            shape,
+            position,
+            Quat::IDENTITY,
+            Vec3::ONE,
+            props,
+            crate::RenderState::default(),
+        )
     }
 
     /// Add a generic shape with full control over properties.
@@ -330,7 +414,16 @@ impl RetainedWorld {
         properties: InstanceProperties,
         render_state: crate::RenderState,
     ) -> GradMeshHandle {
-        self.add_shape(_commands, _meshes, shape, position, rotation, scale, properties, render_state)
+        self.add_shape(
+            _commands,
+            _meshes,
+            shape,
+            position,
+            rotation,
+            scale,
+            properties,
+            render_state,
+        )
     }
 
     // ─── Handle updates ───
@@ -378,7 +471,8 @@ impl RetainedWorld {
     /// Update the color of a retained shape.
     pub fn set_color(&mut self, handle: GradMeshHandle, color: [f32; 4]) {
         if let Some(slot) = self.validate_handle(handle) {
-            self.properties[slot].color = crate::material::Vec4::new(color[0], color[1], color[2], color[3]);
+            self.properties[slot].color =
+                crate::material::Vec4::new(color[0], color[1], color[2], color[3]);
             self.dirty = true;
         }
     }
@@ -468,9 +562,21 @@ mod tests {
     #[test]
     fn handle_equality() {
         let world = RetainedWorld::new();
-        let h1 = GradMeshHandle { world_id: world.world_id, slot: 0, generation: 1 };
-        let h2 = GradMeshHandle { world_id: world.world_id, slot: 0, generation: 1 };
-        let h3 = GradMeshHandle { world_id: world.world_id, slot: 1, generation: 1 };
+        let h1 = GradMeshHandle {
+            world_id: world.world_id,
+            slot: 0,
+            generation: 1,
+        };
+        let h2 = GradMeshHandle {
+            world_id: world.world_id,
+            slot: 0,
+            generation: 1,
+        };
+        let h3 = GradMeshHandle {
+            world_id: world.world_id,
+            slot: 1,
+            generation: 1,
+        };
         assert_eq!(h1, h2);
         assert_ne!(h1, h3);
     }

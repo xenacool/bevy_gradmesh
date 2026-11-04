@@ -8,30 +8,31 @@ mod common;
 
 use bevy::prelude::*;
 use bevy::render::RenderPlugin;
-use bevy_gradmesh::{
-    dual_directional, Shape, ShapeDetail,
-    GradMeshMaterial, GradMeshPlugin,
-};
+use bevy_gradmesh::{GradMeshMaterial, GradMeshPlugin, Shape, ShapeDetail, dual_directional};
 use common::screenshot::AutoScreenshotPlugin;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "BevyGradmesh Polyline".into(),
-                resolution: (1280, 720).into(),
-                ..default()
-            }),
-            ..default()
-        }).set(RenderPlugin {
-            synchronous_pipeline_compilation: true,
-            ..default()
-        }))
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "BevyGradmesh Polyline".into(),
+                        resolution: (1280, 720).into(),
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .set(RenderPlugin {
+                    synchronous_pipeline_compilation: true,
+                    ..default()
+                }),
+        )
         .add_plugins(GradMeshPlugin)
         .add_plugins(
             AutoScreenshotPlugin::new("screenshot_polyline.png")
                 .with_title("Polyline")
-                .with_description("3D polyline primitives with tube geometry")
+                .with_description("3D polyline primitives with tube geometry"),
         )
         .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.12)))
         .add_systems(Startup, setup)
@@ -89,7 +90,8 @@ fn setup(
 
     // ─── Row 1: Open zigzag polyline ───
     let pts = zigzag_points(-3.0, 3.0, 6, 0.8);
-    let polyline_mesh = meshes.add(Shape::polyline3d(pts.clone(), 0.1, false, 8, ShapeDetail::Medium).build());
+    let polyline_mesh =
+        meshes.add(Shape::polyline3d(pts.clone(), 0.1, false, 8, ShapeDetail::Medium).build());
     let miter_mat = mat(0.9, 0.3, 0.3);
     commands.spawn((
         Mesh3d(polyline_mesh),
@@ -100,7 +102,8 @@ fn setup(
 
     // ─── Row 2: Closed hexagon loop ───
     let pts = hexagon_points(1.5);
-    let closed_mesh = meshes.add(Shape::polyline3d(pts.clone(), 0.1, true, 8, ShapeDetail::Medium).build());
+    let closed_mesh =
+        meshes.add(Shape::polyline3d(pts.clone(), 0.1, true, 8, ShapeDetail::Medium).build());
     let closed_mat = mat(0.95, 0.45, 0.6);
     commands.spawn((
         Mesh3d(closed_mesh),
@@ -111,7 +114,8 @@ fn setup(
 
     // ─── Row 3: Thick polyline ───
     let pts = zigzag_points(-3.0, 3.0, 4, 1.0);
-    let thick_mesh = meshes.add(Shape::polyline3d(pts.clone(), 0.2, false, 12, ShapeDetail::Medium).build());
+    let thick_mesh =
+        meshes.add(Shape::polyline3d(pts.clone(), 0.2, false, 12, ShapeDetail::Medium).build());
     let thick_mat = mat(0.3, 0.85, 0.4);
     commands.spawn((
         Mesh3d(thick_mesh),
@@ -122,7 +126,8 @@ fn setup(
 
     // ─── Row 4: Thin detailed polyline ───
     let pts = zigzag_points(-3.0, 3.0, 8, 0.5);
-    let thin_mesh = meshes.add(Shape::polyline3d(pts.clone(), 0.04, false, 6, ShapeDetail::Medium).build());
+    let thin_mesh =
+        meshes.add(Shape::polyline3d(pts.clone(), 0.04, false, 6, ShapeDetail::Medium).build());
     let thin_mat = mat(0.3, 0.4, 0.95);
     commands.spawn((
         Mesh3d(thin_mesh),
@@ -133,7 +138,8 @@ fn setup(
 
     // ─── 3D spiral polyline ───
     let pts = spiral_points(10, 2.0, 3.0);
-    let spiral_mesh = meshes.add(Shape::polyline3d(pts.clone(), 0.06, false, 8, ShapeDetail::Medium).build());
+    let spiral_mesh =
+        meshes.add(Shape::polyline3d(pts.clone(), 0.06, false, 8, ShapeDetail::Medium).build());
     let spiral_mat = mat(1.0, 0.85, 0.1);
     commands.spawn((
         Mesh3d(spiral_mesh),
@@ -184,7 +190,10 @@ fn spiral_points(turns: u32, radius: f32, height: f32) -> Vec<Vec3> {
 fn spawn_label(commands: &mut Commands, text: &str, position: Vec3) {
     commands.spawn((
         Text::new(text.to_string()),
-        TextFont { font_size: FontSize::Px(15.0), ..default() },
+        TextFont {
+            font_size: FontSize::Px(15.0),
+            ..default()
+        },
         TextColor(Color::srgb(0.88, 0.91, 0.98)),
         Node {
             position_type: PositionType::Absolute,
@@ -204,7 +213,9 @@ fn position_labels(
     camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     mut labels: Query<(&WorldLabel, &mut Node)>,
 ) {
-    let Ok((camera, camera_transform)) = camera.single() else { return; };
+    let Ok((camera, camera_transform)) = camera.single() else {
+        return;
+    };
     for (label, mut node) in &mut labels {
         if let Ok(viewport) = camera.world_to_viewport(camera_transform, label.0) {
             node.left = Val::Px(viewport.x - 75.0);
