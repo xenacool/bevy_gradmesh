@@ -140,6 +140,24 @@ Playable racing demo with a Bézier-curve track, PBR kart, collectible coins, an
 
 ![Kart Racer](screenshots/screenshot_kart_racer.png)
 
+### Deformation
+
+Vertex shader animations: wobble, pulse, and morph effects compared against static originals:
+
+![Deformation](screenshots/screenshot_deformation.png)
+
+### Retained World
+
+Persistent shapes updated each frame via handles without recreating entities:
+
+![Retained World](screenshots/screenshot_retained.png)
+
+### Arbitrary Shapes
+
+Custom polygons with per-vertex colors, star shapes, annular rings, pie-slice wedges, and tapered cylinders:
+
+![Arbitrary Shapes](screenshots/screenshot_arbitrary_shapes.png)
+
 ### Capturing Screenshots
 
 To automatically capture screenshots of all examples, run:

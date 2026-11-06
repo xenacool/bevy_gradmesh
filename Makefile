@@ -1,5 +1,5 @@
 
-EXAMPLES = shapes styles character_creator immediate curves polyline pbr_effects kart_racer
+EXAMPLES = shapes styles character_creator immediate curves polyline pbr_effects kart_racer deformation retained arbitrary_shapes
 
 .PHONY: $(EXAMPLES) all-examples screenshots clean
 
@@ -29,7 +29,16 @@ pbr_effects:
 kart_racer:
 	cargo run --example kart_racer
 
-SCREENSHOTS = screenshot_shapes.png screenshot_styles.png screenshot_character_creator.png screenshot_immediate.png screenshot_curves.png screenshot_polyline.png screenshot_pbr_effects.png screenshot_kart_racer.png
+deformation:
+	cargo run --example deformation
+
+retained:
+	cargo run --example retained
+
+arbitrary_shapes:
+	cargo run --example arbitrary_shapes
+
+SCREENSHOTS = screenshot_shapes.png screenshot_styles.png screenshot_character_creator.png screenshot_immediate.png screenshot_curves.png screenshot_polyline.png screenshot_pbr_effects.png screenshot_kart_racer.png screenshot_deformation.png screenshot_retained.png screenshot_arbitrary_shapes.png
 
 # Detect whether we need a virtual display for screenshot capture
 # XVFB_RUN is set to "xvfb-run --auto-servernum --server-args='-screen 0 1280x720x24'" when no display is found
@@ -67,6 +76,12 @@ screenshots:
 	$(call capture_screenshot,pbr_effects)
 	@echo ""
 	$(call capture_screenshot,kart_racer)
+	@echo ""
+	$(call capture_screenshot,deformation)
+	@echo ""
+	$(call capture_screenshot,retained)
+	@echo ""
+	$(call capture_screenshot,arbitrary_shapes)
 	@echo ""
 	@echo "=== Screenshots saved to screenshots/ ==="
 	@ls -la screenshots/
