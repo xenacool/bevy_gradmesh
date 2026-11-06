@@ -126,26 +126,27 @@ impl FrustumPlane {
         let center = aabb.center;
         let half = aabb.half_extents;
 
-        // The most negative point along the plane normal
-        let negative_point = Vec3::new(
+        // The positive vertex: the AABB corner furthest along the plane normal.
+        // If even this corner is behind the plane, the whole box is outside.
+        let positive_point = Vec3::new(
             if self.abc.x >= 0.0 {
-                center.x - half.x
-            } else {
                 center.x + half.x
+            } else {
+                center.x - half.x
             },
             if self.abc.y >= 0.0 {
-                center.y - half.y
-            } else {
                 center.y + half.y
+            } else {
+                center.y - half.y
             },
             if self.abc.z >= 0.0 {
-                center.z - half.z
-            } else {
                 center.z + half.z
+            } else {
+                center.z - half.z
             },
         );
 
-        self.contains_point(&negative_point)
+        self.contains_point(&positive_point)
     }
 }
 
@@ -178,12 +179,14 @@ impl FrustumPlanes {
         // Orient each plane toward a point inside the clip volume.
 
         let center_clip = m.inverse().project_point3(Vec3::new(0.0, 0.0, 0.5));
-        let right = Self::extract_plane_inward(m.w_axis - m.x_axis, center_clip);
-        let left = Self::extract_plane_inward(m.w_axis + m.x_axis, center_clip);
-        let top = Self::extract_plane_inward(m.w_axis - m.y_axis, center_clip);
-        let bottom = Self::extract_plane_inward(m.w_axis + m.y_axis, center_clip);
-        let far = Self::extract_plane_inward(m.w_axis - m.z_axis, center_clip);
-        let near = Self::extract_plane_inward(m.z_axis, center_clip);
+        // Gribb/Hartmann extraction needs the matrix *rows*; glam stores columns.
+        let (r0, r1, r2, r3) = (m.row(0), m.row(1), m.row(2), m.row(3));
+        let right = Self::extract_plane_inward(r3 - r0, center_clip);
+        let left = Self::extract_plane_inward(r3 + r0, center_clip);
+        let top = Self::extract_plane_inward(r3 - r1, center_clip);
+        let bottom = Self::extract_plane_inward(r3 + r1, center_clip);
+        let far = Self::extract_plane_inward(r3 - r2, center_clip);
+        let near = Self::extract_plane_inward(r2, center_clip);
 
         Self {
             planes: [right, left, top, bottom, far, near],
@@ -201,9 +204,10 @@ impl FrustumPlanes {
             }
             FrustumPlane { abc, d }
         } else {
+            // Degenerate plane (e.g. infinite far plane): accept everything.
             FrustumPlane {
                 abc: Vec3::ZERO,
-                d: 0.0,
+                d: 1.0,
             }
         }
     }

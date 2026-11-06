@@ -23,7 +23,7 @@ BevyGradmesh provides a clean API for generating procedural 3D primitives with p
 ### Materials & Shading
 
 - **Gradient materials**: Dual-directional and dual-radial shading for 3D-looking gradients
-- **OKLAB color space**: Perceptually uniform color interpolation avoiding muddy midpoints
+- **Selectable mix space**: OKLAB (default), OKLCH, linear RGB or sRGB for gradients and CPU-side `Style::lerp` / `Shape::lerp` blending
 - **Blend modes**: Opaque, transparent, additive, multiplicative, screen, dither, and dashed outlines
 - **PBR integration**: Full compatibility with Bevy's physically-based rendering (roughness, metallicity, emissive)
 - **Custom shader passthrough**: Attach any Bevy shader via `BlendMode::Custom`
@@ -52,12 +52,12 @@ BevyGradmesh provides a clean API for generating procedural 3D primitives with p
 
 Dual-directional shading is a technique that colors a surface with a smooth gradient between two colors along a given direction, instead of using a single flat color. One side of the shape takes on the "dark" color and the opposite side takes on the "light" color, with a smooth transition in between. This mimics the look of a single light source illuminating the shape, but is computed entirely in the shader — no actual lights are needed.
 
-It is commonly used in stylized games to give characters a painted, cel-shaded appearance: skin tones shift from warm highlights to cool shadows, and hair shows a bright rim where light catches it. The gradient direction can be any axis (e.g., `Vec3::UP` for top-down lighting), and the two colors can be interpolated in either standard RGB or [OKLAB](https://bottosson.github.io/posts/oklab/) (a perceptually uniform color space that avoids muddy midpoints).
+It is commonly used in stylized games to give characters a painted, cel-shaded appearance: skin tones shift from warm highlights to cool shadows, and hair shows a bright rim where light catches it. The gradient direction can be any axis (e.g., `Vec3::UP` for top-down lighting), and the two colors are interpolated in [OKLAB](https://bottosson.github.io/posts/oklab/) by default (a perceptually uniform color space that avoids muddy midpoints), or in OKLCH, linear RGB or sRGB via `MixSpace`.
 
 ### Key Terms
 
 - **Gradient direction**: A 3D vector defining which axis the gradient runs along. Vertices on one side of the shape get the dark color; vertices on the opposite side get the light color.
-- **OKLAB**: A color space designed so that equal distances correspond to equal perceived color differences. Gradients in OKLAB look smoother and more natural than linear RGB interpolation.
+- **OKLAB**: A color space designed so that equal distances correspond to equal perceived color differences. Gradients in OKLAB look smoother and more natural than linear RGB interpolation. OKLCH is the same space in polar form (lightness, chroma, hue), so blends sweep around the hue wheel.
 - **Blend mode**: How a shape's color combines with what's behind it. Common modes include *opaque* (solid, no transparency), *transparent* (alpha-blended), *additive* (colors add together, creating a glow effect), *multiplicative* (colors multiply, darkening the result), *screen* (the opposite of multiply, lightening the result), and *dither* (uses a pattern to simulate intermediate alpha levels).
 - **PBR (Physically-Based Rendering)**: A shading model that simulates how light interacts with real-world materials. Parameters include *roughness* (how smooth or rough a surface is), *metallicity* (whether a surface is metallic or dielectric), and *emissive* (light the material emits on its own, like a glowing screen).
 - **Detail level**: Controls the number of vertices and triangles in a generated mesh. Higher detail produces smoother curves but uses more GPU memory and processing.
@@ -66,7 +66,7 @@ It is commonly used in stylized games to give characters a painted, cel-shaded a
 
 | bevy_gradmesh | Bevy | Rust |
 |---------------|------|------|
-| 0.1.x         | 0.20 | 1.87+|
+| 0.2.x         | 0.20 | 1.87+|
 
 ## Quick Start
 
@@ -157,6 +157,10 @@ Persistent shapes updated each frame via handles without recreating entities:
 Custom polygons with per-vertex colors, star shapes, annular rings, pie-slice wedges, and tapered cylinders:
 
 ![Arbitrary Shapes](screenshots/screenshot_arbitrary_shapes.png)
+
+### Mix Spaces
+Mix color spaces:
+![Mix Space](screenshots/screenshot_mix_spaces.png)
 
 ### Capturing Screenshots
 

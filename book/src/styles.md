@@ -14,21 +14,38 @@ let mat = dual_directional(
 );
 ```
 
-## OKLAB Color Space
+## Color Spaces
 
-For perceptually uniform color interpolation:
+Gradients blend in OKLAB by default, which avoids the muddy midpoints that
+RGB interpolation produces. Pick another space with `with_mix_space`:
 
 ```rust
-use bevy_gradmesh::dual_directional_oklab;
+use bevy_gradmesh::{MixSpace, dual_directional, with_mix_space};
 
-let mat = dual_directional_oklab(
-    [0.6, 0.4, 0.3],
-    [0.96, 0.8, 0.69],
-    [0.0, 1.0, 0.0],
+let mat = with_mix_space(
+    dual_directional([0.6, 0.4, 0.3], [0.96, 0.8, 0.69], [0.0, 1.0, 0.0]),
+    MixSpace::Oklch,
 );
 ```
 
-OKLAB avoids muddy midpoints that occur with linear RGB interpolation.
+| `MixSpace`  | Behaviour |
+|-------------|-----------|
+| `Oklab`     | Default. Perceptually uniform; steady lightness. |
+| `Oklch`     | Sweeps hue along the shortest arc; stays vivid. |
+| `LinearRgb` | Physically correct light mixing. |
+| `Srgb`      | Mixes the picker values directly; cheapest, greyest midpoints. |
+
+`Style` takes the same setting (`Style::with_mix_space`), and
+`MixSpace::mix` / `Style::lerp` blend on the CPU in the same space, so an
+animated blend matches the shader gradient. See `examples/mix_spaces.rs`.
+
+## Blending Styles and Shapes
+
+`Style::lerp(&other, t)` mixes colors in the style's space, interpolates
+continuous values and snaps discrete ones (blend mode, dash count) to the
+nearer end. `Shape::lerp(&other, t)` interpolates the parameters of two shapes
+of the same kind and returns the nearer shape otherwise. Every distinct blended
+shape is a distinct mesh, so for smooth animation prefer scaling a fixed shape.
 
 ## Dual-Radial Shading
 

@@ -68,6 +68,60 @@ fn oklab_mix(c1: vec3<f32>, c2: vec3<f32>, t: f32) -> vec3<f32> {
     return oklab_to_linear(lab);
 }
 
+/// Convert an sRGB-encoded colour (as supplied by users / `Color::srgb`) to linear.
+/// Material and instance colours are stored as sRGB components, while the render
+/// targets and lighting expect linear values.
+fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
+    let lo = c / 12.92;
+    let hi = pow((c + vec3<f32>(0.055)) / 1.055, vec3<f32>(2.4));
+    return select(hi, lo, c <= vec3<f32>(0.04045));
+}
+
+// ─── Gradient mixing in a selectable colour space ───
+// `flags.w` carries the space: 0 = OKLAB (default), 1 = OKLCH, 2 = linear RGB, 3 = sRGB.
+// Keep in sync with `MixSpace::gpu_code` in `src/mix_space.rs`.
+
+const TAU: f32 = 6.28318530718;
+
+fn oklch_mix(c1: vec3<f32>, c2: vec3<f32>, t: f32) -> vec3<f32> {
+    let lab1 = linear_to_oklab(c1);
+    let lab2 = linear_to_oklab(c2);
+    let chroma1 = length(lab1.yz);
+    let chroma2 = length(lab2.yz);
+    var hue1 = atan2(lab1.z, lab1.y);
+    var hue2 = atan2(lab2.z, lab2.y);
+    // An achromatic end has no hue of its own; borrow the other end's hue.
+    if (chroma1 < 0.0001) {
+        hue1 = hue2;
+    } else if (chroma2 < 0.0001) {
+        hue2 = hue1;
+    }
+    // Shortest arc around the hue wheel.
+    var delta = hue2 - hue1;
+    delta = delta - TAU * round(delta / TAU);
+    let hue = hue1 + delta * t;
+    let lightness = mix(lab1.x, lab2.x, t);
+    let chroma = mix(chroma1, chroma2, t);
+    return oklab_to_linear(vec3<f32>(lightness, chroma * cos(hue), chroma * sin(hue)));
+}
+
+/// Mixes two sRGB-encoded colours in `space_code` and returns linear RGB.
+fn mix_colors(a_srgb: vec3<f32>, b_srgb: vec3<f32>, t: f32, space_code: f32) -> vec3<f32> {
+    let space = i32(round(space_code));
+    if (space == 3) {
+        return srgb_to_linear(mix(a_srgb, b_srgb, t));
+    }
+    let a = srgb_to_linear(a_srgb);
+    let b = srgb_to_linear(b_srgb);
+    if (space == 2) {
+        return mix(a, b, t);
+    }
+    if (space == 1) {
+        return oklch_mix(a, b, t);
+    }
+    return oklab_mix(a, b, t);
+}
+
 // ─── Dash pattern computation ───
 
 /// Epsilon for float comparisons — avoids precision issues with near-1.0 values.
@@ -375,19 +429,20 @@ fn compute_gradient_progress_material(in: VertexOutput) -> f32 {
 
     // Object-space position: world position minus the shape's world center.
     let object_pos = in.world_position.xyz - gradmesh.world_center.xyz;
+    // `world_center.w` optionally carries the gradient half-extent (0 = default 0.5).
+    let half_extent = select(0.5, gradmesh.world_center.w, gradmesh.world_center.w > 0.0);
 
     if (color_mode == 1) {
         // Directional gradient: project object-space position onto the gradient
         // direction, normalized by the shape's half-extent (0.5 for unit shapes).
         let normalized_dir = normalize(dir);
-        let half_extent = 0.5;
         let half_range = max(abs(dot(normalized_dir, vec3<f32>(half_extent, half_extent, half_extent))), 0.00001);
         let progress = dot(object_pos, normalized_dir) / (2.0 * half_range) + 0.5;
         return clamp(progress, 0.0, 1.0);
     } else if (color_mode == 2) {
         // Radial gradient: distance from shape center, normalized by half-extent.
         let dist = length(object_pos);
-        return clamp(dist / 0.70710678, 0.0, 1.0);
+        return clamp(dist / (half_extent * 1.41421356), 0.0, 1.0);
     }
 
     return 0.5;
@@ -402,13 +457,14 @@ fn fragment(
 
     let progress = compute_gradient_progress_material(in);
 
-    var base_color = gradmesh.color.rgb;
+    var base_color = srgb_to_linear(gradmesh.color.rgb);
     if (gradmesh.flags.x > 0.5) {
-        if (gradmesh.flags.w > 0.5) {
-            base_color = oklab_mix(gradmesh.color.rgb, gradmesh.secondary_color.rgb, progress);
-        } else {
-            base_color = mix(gradmesh.color.rgb, gradmesh.secondary_color.rgb, progress);
-        }
+        base_color = mix_colors(
+            gradmesh.color.rgb,
+            gradmesh.secondary_color.rgb,
+            progress,
+            gradmesh.flags.w,
+        );
     }
 
     // Apply dash pattern if enabled (requires UV attributes on the mesh)
@@ -420,7 +476,10 @@ fn fragment(
         let perimeter_progress = compute_perimeter_progress(uv, shape_type);
         let across = compute_across(uv, shape_type);
         let dash_mask = dash_segment_mask(perimeter_progress, across, dash);
-        base_color = mix(base_color, base_color * 0.0, 1.0 - dash_mask);
+        // Gaps are cut out rather than painted black so dashes read as real dashes.
+        if (dash_mask < 0.5) {
+            discard;
+        }
     }
 }
 

@@ -70,7 +70,7 @@ fn setup(
     // Camera — centered to see all 7 characters
     commands.spawn((
         Camera3d::default(),
-        Transform::from_xyz(0.0, 3.0, 14.0).looking_at(Vec3::new(0.0, 1.0, -2.0), Vec3::Y),
+        Transform::from_xyz(0.0, 6.0, 10.5).looking_at(Vec3::new(0.0, 0.6, -1.4), Vec3::Y),
     ));
 
     // Lighting — soft directional + ambient, tuned so characters aren't blown out
@@ -88,14 +88,14 @@ fn setup(
         meshes.add(Shape::rectangle(Vec2::new(20.0, 12.0), ShapeDetail::Minimal).build());
     commands.spawn((
         Mesh3d(ground_mesh),
-        MeshMaterial3d(materials.add(opaque(0.15, 0.15, 0.18))),
+        MeshMaterial3d(materials.add(opaque(0.55, 0.52, 0.68))),
         Transform::from_xyz(0.0, -0.5, -3.0)
             .with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0)),
     ));
 
     // Character 1: Classic — classic eyes, arch eyebrows, button nose, smile, no blush, short parted hair, no facial hair, no glasses
     let char1 = CharacterConfig {
-        position: Vec3::new(-3.0, 0.0, 0.0),
+        position: Vec3::new(-4.5, 0.0, 0.0),
         skin_dark: [0.74, 0.62, 0.53],
         skin_light: [0.96, 0.80, 0.69],
         hair_dark: [0.10, 0.07, 0.05],
@@ -116,7 +116,7 @@ fn setup(
 
     // Character 2: Anime — wide eyes, straight brows, triangle nose, grin, soft blush, spiky hair, no facial hair, round glasses
     let char2 = CharacterConfig {
-        position: Vec3::new(0.0, 0.0, 0.0),
+        position: Vec3::new(-1.5, 0.0, 0.0),
         skin_dark: [0.80, 0.68, 0.58],
         skin_light: [0.98, 0.85, 0.75],
         hair_dark: [0.55, 0.15, 0.10],
@@ -137,7 +137,7 @@ fn setup(
 
     // Character 3: Rugged — sharp eyes, angled brows, bridge nose, smirk, freckles, ponytail, goatee, sunglasses
     let char3 = CharacterConfig {
-        position: Vec3::new(3.0, 0.0, 0.0),
+        position: Vec3::new(1.5, 0.0, 0.0),
         skin_dark: [0.55, 0.40, 0.30],
         skin_light: [0.78, 0.60, 0.48],
         hair_dark: [0.15, 0.12, 0.08],
@@ -158,7 +158,7 @@ fn setup(
 
     // Character 4: Cute — oval eyes, rounded brows, soft nose, cat mouth, round cheeks, twin buns, no facial hair, headband
     let char4 = CharacterConfig {
-        position: Vec3::new(-3.0, 0.0, -3.0),
+        position: Vec3::new(4.5, 0.0, 0.0),
         skin_dark: [0.85, 0.72, 0.62],
         skin_light: [0.97, 0.88, 0.80],
         hair_dark: [0.70, 0.40, 0.30],
@@ -179,7 +179,7 @@ fn setup(
 
     // Character 5: Sleepy — sleepy eyes, bushy brows, straight nose, neutral mouth, no blush, bob fringe, stubble, square glasses
     let char5 = CharacterConfig {
-        position: Vec3::new(0.0, 0.0, -3.0),
+        position: Vec3::new(-3.0, 0.0, -3.2),
         skin_dark: [0.65, 0.52, 0.42],
         skin_light: [0.88, 0.72, 0.62],
         hair_dark: [0.30, 0.25, 0.20],
@@ -200,7 +200,7 @@ fn setup(
 
     // Character 6: Gentle — arch eyes, dot brows, button nose, O mouth, no blush, bald, mustache, no glasses
     let char6 = CharacterConfig {
-        position: Vec3::new(3.0, 0.0, -3.0),
+        position: Vec3::new(0.0, 0.0, -3.2),
         skin_dark: [0.70, 0.58, 0.48],
         skin_light: [0.92, 0.78, 0.68],
         hair_dark: [0.12, 0.10, 0.08],
@@ -221,7 +221,7 @@ fn setup(
 
     // Character 7: Full beard — gentle eyes, bold brows, triangle nose, wide grin, soft blush, short parted, full beard, round glasses
     let char7 = CharacterConfig {
-        position: Vec3::new(-3.0, 0.0, -6.0),
+        position: Vec3::new(3.0, 0.0, -3.2),
         skin_dark: [0.60, 0.48, 0.38],
         skin_light: [0.82, 0.66, 0.56],
         hair_dark: [0.18, 0.14, 0.10],

@@ -1,6 +1,7 @@
 [package]
 name = "bevy_gradmesh"
-version = "0.1.9"
+version = "0.2.0"
+authors = ["Jessica Collins (https://github.com/xenacool)"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Procedural mesh generation and gradient materials for Bevy"
@@ -44,6 +45,10 @@ path = "examples/shapes.rs"
 [[example]]
 name = "styles"
 path = "examples/styles.rs"
+
+[[example]]
+name = "mix_spaces"
+path = "examples/mix_spaces.rs"
 
 [[example]]
 name = "curves"

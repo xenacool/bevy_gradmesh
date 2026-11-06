@@ -9,9 +9,10 @@ use bevy::prelude::Shader;
 
 use crate::material::{
     GradMeshMaterial, additive, color_burn, color_dodge, darken, dashed, dither, dual_directional,
-    dual_directional_oklab, dual_radial, dual_radial_oklab, lighten, linear_burn, multiplicative,
-    opaque, screen, subtractive, transparent,
+    dual_radial, dual_radial_alpha, lighten, linear_burn, multiplicative, opaque, screen,
+    subtractive, transparent, with_mix_space,
 };
+use crate::mix_space::MixSpace;
 
 /// Blend mode for material rendering.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -151,8 +152,8 @@ pub struct Style {
     pub secondary_color: Option<Color>,
     /// Direction vector for dual_directional shading (normalized).
     pub direction: Vec3,
-    /// Whether to use OKLAB color interpolation for gradients.
-    pub oklab: bool,
+    /// Colour space gradients are blended in (OKLAB by default).
+    pub space: MixSpace,
     /// Dash pattern for outlined shapes.
     pub dash: Option<Dash>,
     /// Shape type hint for perimeter-aware dash patterns.
@@ -168,7 +169,7 @@ impl Style {
             color,
             secondary_color: None,
             direction: Vec3::Y,
-            oklab: false,
+            space: MixSpace::default(),
             dash: None,
             shape_type: ShapeType::Generic,
         }
@@ -182,7 +183,7 @@ impl Style {
             color,
             secondary_color: None,
             direction: Vec3::Y,
-            oklab: false,
+            space: MixSpace::default(),
             dash: None,
             shape_type: ShapeType::Generic,
         }
@@ -199,7 +200,7 @@ impl Style {
             color: negative,
             secondary_color: Some(positive),
             direction: direction.normalize_or(Vec3::Y),
-            oklab: false,
+            space: MixSpace::default(),
             dash: None,
             shape_type: ShapeType::Generic,
         }
@@ -210,20 +211,6 @@ impl Style {
         Self::dual_directional(negative, positive, Vec3::Y)
     }
 
-    /// Creates a dual-directional gradient style with OKLAB interpolation.
-    pub fn dual_directional_oklab(negative: Color, positive: Color, direction: Vec3) -> Self {
-        Self {
-            blend_mode: BlendMode::Opaque,
-            color_mode: ColorMode::DualDirectional,
-            color: negative,
-            secondary_color: Some(positive),
-            direction: direction.normalize_or(Vec3::Y),
-            oklab: true,
-            dash: None,
-            shape_type: ShapeType::Generic,
-        }
-    }
-
     /// Creates a dual-radial gradient style (inner/outer colors).
     pub fn dual_radial(inner: Color, outer: Color) -> Self {
         Self {
@@ -232,7 +219,7 @@ impl Style {
             color: inner,
             secondary_color: Some(outer),
             direction: Vec3::Y,
-            oklab: false,
+            space: MixSpace::default(),
             dash: None,
             shape_type: ShapeType::Generic,
         }
@@ -246,7 +233,7 @@ impl Style {
             color,
             secondary_color: None,
             direction: Vec3::Y,
-            oklab: false,
+            space: MixSpace::default(),
             dash: None,
             shape_type: ShapeType::Generic,
         }
@@ -260,7 +247,7 @@ impl Style {
             color,
             secondary_color: None,
             direction: Vec3::Y,
-            oklab: false,
+            space: MixSpace::default(),
             dash: None,
             shape_type: ShapeType::Generic,
         }
@@ -274,7 +261,7 @@ impl Style {
             color,
             secondary_color: None,
             direction: Vec3::Y,
-            oklab: false,
+            space: MixSpace::default(),
             dash: None,
             shape_type: ShapeType::Generic,
         }
@@ -288,7 +275,7 @@ impl Style {
             color,
             secondary_color: None,
             direction: Vec3::Y,
-            oklab: false,
+            space: MixSpace::default(),
             dash: None,
             shape_type: ShapeType::Generic,
         }
@@ -302,7 +289,7 @@ impl Style {
             color,
             secondary_color: None,
             direction: Vec3::Y,
-            oklab: false,
+            space: MixSpace::default(),
             dash: None,
             shape_type: ShapeType::Generic,
         }
@@ -316,7 +303,7 @@ impl Style {
             color,
             secondary_color: None,
             direction: Vec3::Y,
-            oklab: false,
+            space: MixSpace::default(),
             dash: None,
             shape_type: ShapeType::Generic,
         }
@@ -330,7 +317,7 @@ impl Style {
             color,
             secondary_color: None,
             direction: Vec3::Y,
-            oklab: false,
+            space: MixSpace::default(),
             dash: None,
             shape_type: ShapeType::Generic,
         }
@@ -344,7 +331,7 @@ impl Style {
             color,
             secondary_color: None,
             direction: Vec3::Y,
-            oklab: false,
+            space: MixSpace::default(),
             dash: None,
             shape_type: ShapeType::Generic,
         }
@@ -358,7 +345,7 @@ impl Style {
             color,
             secondary_color: None,
             direction: Vec3::Y,
-            oklab: false,
+            space: MixSpace::default(),
             dash: None,
             shape_type: ShapeType::Generic,
         }
@@ -376,7 +363,7 @@ impl Style {
             color,
             secondary_color: None,
             direction: Vec3::Y,
-            oklab: false,
+            space: MixSpace::default(),
             dash: None,
             shape_type: ShapeType::Generic,
         }
@@ -388,10 +375,65 @@ impl Style {
         self
     }
 
-    /// Enables OKLAB color interpolation.
-    pub fn with_oklab(mut self) -> Self {
-        self.oklab = true;
+    /// Sets the colour space gradients are blended in.
+    #[must_use]
+    pub fn with_mix_space(mut self, space: MixSpace) -> Self {
+        self.space = space;
         self
+    }
+
+    /// Blends this style towards `other` by `t` (clamped to `0.0..=1.0`).
+    ///
+    /// * Colours mix in `self.space`; the result keeps that space.
+    /// * Continuous values (direction, dash spacing, offset and modifier) interpolate.
+    /// * Discrete values (blend mode, colour mode, dash count and style, shape
+    ///   type) follow whichever endpoint is nearer.
+    /// * A missing secondary colour mixes as if it equalled the primary colour.
+    ///
+    /// `t == 0.0` reproduces `self` and `t == 1.0` reproduces `other`, up to
+    /// colour-space round-trip error (the blended colours are returned in
+    /// `self.space`'s colour type) and except that `space` always stays
+    /// `self.space`.
+    #[must_use]
+    pub fn lerp(&self, other: &Self, t: f32) -> Self {
+        let t = if t.is_nan() { 0.0 } else { t.clamp(0.0, 1.0) };
+        let near = if t < 0.5 { self } else { other };
+        let mix = |a: f32, b: f32| a * (1.0 - t) + b * t;
+
+        let color = self.space.mix(self.color, other.color, t);
+        let secondary_color = match (self.secondary_color, other.secondary_color) {
+            (None, None) => None,
+            (a, b) => Some(self.space.mix(
+                a.unwrap_or(self.color),
+                b.unwrap_or(other.color),
+                t,
+            )),
+        };
+        let direction = self
+            .direction
+            .lerp(other.direction, t)
+            .normalize_or(near.direction);
+        let dash = match (self.dash, other.dash) {
+            (Some(a), Some(b)) => Some(Dash {
+                count: near.dash.map_or(a.count, |d| d.count),
+                spacing: mix(a.spacing, b.spacing),
+                offset: mix(a.offset, b.offset),
+                style: near.dash.map_or(a.style, |d| d.style),
+                modifier: mix(a.modifier, b.modifier),
+            }),
+            _ => near.dash,
+        };
+
+        Self {
+            blend_mode: near.blend_mode.clone(),
+            color_mode: near.color_mode,
+            color,
+            secondary_color,
+            direction,
+            space: self.space,
+            dash,
+            shape_type: near.shape_type,
+        }
     }
 
     /// Sets the shape type for perimeter-aware dash patterns.
@@ -427,28 +469,22 @@ impl Style {
 
         // Build based on color mode and blend mode
         let base_material = match self.color_mode {
-            ColorMode::DualDirectional => {
-                if self.oklab {
-                    dual_directional_oklab(
-                        [r, g, b],
-                        [sr, sg, sb],
-                        [self.direction.x, self.direction.y, self.direction.z],
-                    )
-                } else {
-                    dual_directional(
-                        [r, g, b],
-                        [sr, sg, sb],
-                        [self.direction.x, self.direction.y, self.direction.z],
-                    )
-                }
-            }
-            ColorMode::DualRadial => {
-                if self.oklab {
-                    dual_radial_oklab([r, g, b, a], [sr, sg, sb, sa], 1.0)
+            ColorMode::DualDirectional => with_mix_space(
+                dual_directional(
+                    [r, g, b],
+                    [sr, sg, sb],
+                    [self.direction.x, self.direction.y, self.direction.z],
+                ),
+                self.space,
+            ),
+            ColorMode::DualRadial => with_mix_space(
+                if a < 1.0 || sa < 1.0 {
+                    dual_radial_alpha([r, g, b, a], [sr, sg, sb, sa])
                 } else {
                     dual_radial([r, g, b], [sr, sg, sb])
-                }
-            }
+                },
+                self.space,
+            ),
             ColorMode::Single => match &self.blend_mode {
                 BlendMode::Opaque => opaque(r, g, b),
                 BlendMode::Transparent => transparent(r, g, b, a),
@@ -534,6 +570,73 @@ mod tests {
     fn transparent_style_has_correct_blend_mode() {
         let style = Style::transparent(Color::srgba(1.0, 0.0, 0.0, 0.5));
         assert_eq!(style.blend_mode, BlendMode::Transparent);
+    }
+
+    #[test]
+    fn styles_default_to_oklab() {
+        assert_eq!(Style::opaque(Color::WHITE).space, MixSpace::Oklab);
+        let g = Style::dual_directional_up(Color::BLACK, Color::WHITE);
+        assert_eq!(g.space, MixSpace::Oklab);
+        assert_eq!(g.build().extension.uniforms.flags.w, 0.0);
+    }
+
+    #[test]
+    fn build_encodes_mix_space() {
+        for space in MixSpace::ALL {
+            let m = Style::dual_radial(Color::BLACK, Color::WHITE)
+                .with_mix_space(space)
+                .build();
+            assert_eq!(m.extension.uniforms.flags.w, space.gpu_code());
+        }
+    }
+
+    #[test]
+    fn lerp_mixes_colors_in_self_space() {
+        let a = Style::dual_directional_up(Color::srgb(1.0, 0.0, 0.0), Color::srgb(0.0, 0.0, 1.0))
+            .with_mix_space(MixSpace::Oklch);
+        let b = Style::dual_directional_up(Color::srgb(0.0, 1.0, 0.0), Color::srgb(1.0, 1.0, 0.0));
+        let mid = a.lerp(&b, 0.5);
+        assert_eq!(mid.space, MixSpace::Oklch);
+        assert_eq!(
+            mid.color,
+            MixSpace::Oklch.mix(a.color, b.color, 0.5),
+        );
+        let close = |x: Color, y: Color| {
+            let (x, y) = (x.to_srgba(), y.to_srgba());
+            (x.red - y.red).abs() + (x.green - y.green).abs() + (x.blue - y.blue).abs() < 1e-3
+        };
+        let (l0, l1) = (a.lerp(&b, 0.0), a.lerp(&b, 1.0));
+        assert!(close(l0.color, a.color));
+        assert!(close(l1.secondary_color.unwrap(), b.secondary_color.unwrap()));
+    }
+
+    #[test]
+    fn lerp_snaps_discrete_fields() {
+        let a = Style::opaque(Color::WHITE);
+        let b = Style::transparent(Color::BLACK).with_shape_type(ShapeType::Disc);
+        assert_eq!(a.lerp(&b, 0.25).blend_mode, BlendMode::Opaque);
+        assert_eq!(a.lerp(&b, 0.75).blend_mode, BlendMode::Transparent);
+        assert_eq!(a.lerp(&b, 0.75).shape_type, ShapeType::Disc);
+    }
+
+    #[test]
+    fn lerp_blends_dash_parameters() {
+        let a = Style::opaque(Color::WHITE).with_dash(Dash::fixed(8, 0.2));
+        let b = Style::opaque(Color::WHITE).with_dash(Dash::fixed(16, 0.6));
+        let mid = a.lerp(&b, 0.25).dash.unwrap();
+        assert_eq!(mid.count, 8);
+        assert!((mid.spacing - 0.3).abs() < 1e-6);
+        let none = Style::opaque(Color::WHITE);
+        assert!(a.lerp(&none, 0.25).dash.is_some());
+        assert!(a.lerp(&none, 0.75).dash.is_none());
+    }
+
+    #[test]
+    fn lerp_direction_stays_normalized() {
+        let a = Style::dual_directional(Color::BLACK, Color::WHITE, Vec3::X);
+        let b = Style::dual_directional(Color::BLACK, Color::WHITE, Vec3::NEG_X);
+        let mid = a.lerp(&b, 0.5);
+        assert!((mid.direction.length() - 1.0).abs() < 1e-5);
     }
 
     #[test]

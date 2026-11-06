@@ -36,7 +36,8 @@ fn main() {
         .add_plugins(
             AutoScreenshotPlugin::new("screenshot_deformation.png")
                 .with_title("Deformation")
-                .with_description("Wobble, pulse, and morph vertex shader animations"),
+                .with_description("Wobble, pulse, and morph vertex shader animations")
+                .wait_frames(10),
         )
         .insert_resource(ClearColor(Color::srgb(0.08, 0.08, 0.1)))
         .insert_resource(Deformation {
@@ -71,7 +72,7 @@ fn setup(
     // Camera
     commands.spawn((
         Camera3d::default(),
-        Transform::from_xyz(0.0, 4.0, 10.0).looking_at(Vec3::new(0.0, 1.5, 0.0), Vec3::Y),
+        Transform::from_xyz(0.0, 3.0, 8.0).looking_at(Vec3::new(0.0, 2.3, 0.0), Vec3::Y),
     ));
 
     // Lighting
@@ -92,20 +93,20 @@ fn setup(
     let ground = meshes.add(bevy::prelude::Plane3d::new(Vec3::Y, Vec2::splat(22.0)));
     commands.spawn((
         Mesh3d(ground),
-        MeshMaterial3d(materials.add(bevy_gradmesh::opaque(0.1, 0.1, 0.12))),
+        MeshMaterial3d(materials.add(bevy_gradmesh::opaque(0.16, 0.15, 0.2))),
         Transform::from_translation(Vec3::new(0.0, -0.01, 0.0)),
     ));
 
     // Labels
-    spawn_label(&mut commands, "Static", Vec3::new(-3.0, 1.2, 0.0));
-    spawn_label(&mut commands, "Wobble", Vec3::new(0.0, 1.2, 0.0));
-    spawn_label(&mut commands, "Strong Wobble", Vec3::new(3.0, 1.2, 0.0));
-    spawn_label(&mut commands, "Static", Vec3::new(-3.0, 2.9, 0.0));
-    spawn_label(&mut commands, "Pulse", Vec3::new(0.0, 2.9, 0.0));
-    spawn_label(&mut commands, "Slow Pulse", Vec3::new(3.0, 2.9, 0.0));
-    spawn_label(&mut commands, "Static", Vec3::new(-3.0, 4.6, 0.0));
-    spawn_label(&mut commands, "Morph", Vec3::new(0.0, 4.6, 0.0));
-    spawn_label(&mut commands, "Organic Morph", Vec3::new(3.0, 4.6, 0.0));
+    spawn_label(&mut commands, "Static", Vec3::new(-3.5, 1.6, 0.0));
+    spawn_label(&mut commands, "Wobble", Vec3::new(0.0, 1.6, 0.0));
+    spawn_label(&mut commands, "Strong Wobble", Vec3::new(3.5, 1.6, 0.0));
+    spawn_label(&mut commands, "Static", Vec3::new(-3.5, 3.3, 0.0));
+    spawn_label(&mut commands, "Pulse", Vec3::new(0.0, 3.3, 0.0));
+    spawn_label(&mut commands, "Slow Pulse", Vec3::new(3.5, 3.3, 0.0));
+    spawn_label(&mut commands, "Static", Vec3::new(-3.5, 5.0, 0.0));
+    spawn_label(&mut commands, "Morph", Vec3::new(0.0, 5.0, 0.0));
+    spawn_label(&mut commands, "Organic Morph", Vec3::new(3.5, 5.0, 0.0));
 }
 
 /// Per-frame deformation drawing via BatchRecorder.
@@ -126,62 +127,55 @@ fn draw_deformations(
 
     rec.begin();
 
-    // ─── Row 1: Wobble (y = 0.5) ───
-    // Static sphere
-    rec.set_position(Vec3::new(-3.0, 0.5, 0.0));
-    rec.set_scale(Vec3::splat(0.4));
-    rec.set_deformation(DeformationParams::none());
-    rec.sphere(0.4, ShapeDetail::High, [0.5, 0.5, 0.5, 1.0]);
+    // Pastel palette with a few deeper tones for contrast.
+    let static_grey = [0.62, 0.64, 0.72, 1.0];
+    let pink = [1.0, 0.70, 0.80, 1.0];
+    let butter = [1.0, 0.92, 0.55, 1.0];
+    let mint = [0.62, 0.92, 0.78, 1.0];
+    let sky = [0.62, 0.78, 1.0, 1.0];
+    let lilac = [0.80, 0.70, 0.98, 1.0];
+    let coral = [0.92, 0.38, 0.45, 1.0];
+    let deep_teal = [0.12, 0.52, 0.58, 1.0];
+    let _ = sky;
 
-    // Wobbling sphere
-    rec.set_position(Vec3::new(0.0, 0.5, 0.0));
-    rec.set_scale(Vec3::splat(0.4));
-    rec.set_deformation(DeformationParams::wobble(0.15, 3.0, 0.0));
-    rec.sphere(0.4, ShapeDetail::High, [0.9, 0.3, 0.3, 1.0]);
+    let xs = [-3.5_f32, 0.0, 3.5];
 
-    // Strong wobble
-    rec.set_position(Vec3::new(3.0, 0.5, 0.0));
-    rec.set_scale(Vec3::splat(0.4));
-    rec.set_deformation(DeformationParams::wobble(0.3, 2.0, 1.0));
-    rec.sphere(0.4, ShapeDetail::High, [0.9, 0.6, 0.2, 1.0]);
+    // ─── Row 1: Wobble (y = 0.7) ───
+    let rows = [0.7_f32, 2.4, 4.1];
+    let row1 = [
+        (DeformationParams::none(), static_grey),
+        (DeformationParams::wobble(0.15, 3.0, 0.0), pink),
+        (DeformationParams::wobble(0.3, 2.0, 1.0), coral),
+    ];
+    for (x, (deform, color)) in xs.iter().zip(row1) {
+        rec.set_position(Vec3::new(*x, rows[0], 0.0));
+        rec.set_deformation(deform);
+        rec.sphere(0.6, ShapeDetail::High, color);
+    }
 
-    // ─── Row 2: Pulse (y = 2.2) ───
-    // Static cuboid
-    rec.set_position(Vec3::new(-3.0, 2.2, 0.0));
-    rec.set_scale(Vec3::splat(0.6));
-    rec.set_deformation(DeformationParams::none());
-    rec.cuboid(Vec3::splat(0.6), 0.15, ShapeDetail::High, [0.5, 0.5, 0.5, 1.0]);
+    // ─── Row 2: Pulse (y = 2.4) ───
+    let row2 = [
+        (DeformationParams::none(), static_grey),
+        (DeformationParams::pulse(0.2, 2.5, 0.0), butter),
+        (DeformationParams::pulse(0.15, 1.0, 2.0), deep_teal),
+    ];
+    for (x, (deform, color)) in xs.iter().zip(row2) {
+        rec.set_position(Vec3::new(*x, rows[1], 0.0));
+        rec.set_deformation(deform);
+        rec.cuboid(Vec3::splat(0.9), 0.15, ShapeDetail::High, color);
+    }
 
-    // Pulsing cuboid
-    rec.set_position(Vec3::new(0.0, 2.2, 0.0));
-    rec.set_scale(Vec3::splat(0.6));
-    rec.set_deformation(DeformationParams::pulse(0.2, 2.5, 0.0));
-    rec.cuboid(Vec3::splat(0.6), 0.15, ShapeDetail::High, [0.3, 0.85, 0.4, 1.0]);
-
-    // Slow pulse
-    rec.set_position(Vec3::new(3.0, 2.2, 0.0));
-    rec.set_scale(Vec3::splat(0.6));
-    rec.set_deformation(DeformationParams::pulse(0.15, 1.0, 2.0));
-    rec.cuboid(Vec3::splat(0.6), 0.15, ShapeDetail::High, [0.3, 0.4, 0.95, 1.0]);
-
-    // ─── Row 3: Morph (y = 3.9) ───
-    // Static capsule
-    rec.set_position(Vec3::new(-3.0, 3.9, 0.0));
-    rec.set_scale(Vec3::ONE);
-    rec.set_deformation(DeformationParams::none());
-    rec.capsule(0.2, 0.6, ShapeDetail::High, [0.5, 0.5, 0.5, 1.0]);
-
-    // Morphing capsule
-    rec.set_position(Vec3::new(0.0, 3.9, 0.0));
-    rec.set_scale(Vec3::ONE);
-    rec.set_deformation(DeformationParams::morph(0.2, 2.0, 0.0));
-    rec.capsule(0.2, 0.6, ShapeDetail::High, [0.95, 0.45, 0.6, 1.0]);
-
-    // Organic morph
-    rec.set_position(Vec3::new(3.0, 3.9, 0.0));
-    rec.set_scale(Vec3::ONE);
-    rec.set_deformation(DeformationParams::morph(0.25, 1.5, 3.0));
-    rec.capsule(0.2, 0.6, ShapeDetail::High, [1.0, 0.85, 0.1, 1.0]);
+    // ─── Row 3: Morph (y = 4.1) ───
+    let row3 = [
+        (DeformationParams::none(), static_grey),
+        (DeformationParams::morph(0.2, 2.0, 0.0), mint),
+        (DeformationParams::morph(0.25, 1.5, 3.0), lilac),
+    ];
+    for (x, (deform, color)) in xs.iter().zip(row3) {
+        rec.set_position(Vec3::new(*x, rows[2], 0.0));
+        rec.set_deformation(deform);
+        rec.capsule(0.35, 0.8, ShapeDetail::High, color);
+    }
 
     rec.end();
 

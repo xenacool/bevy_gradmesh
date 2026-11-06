@@ -66,103 +66,62 @@ impl PolylineConfig {
         let mut indices: Vec<u32> = Vec::new();
 
         let points = &self.points;
-        let total_segments = if self.closed {
-            points.len()
-        } else {
-            points.len() - 1
+        let n = points.len();
+        let total_segments = if self.closed { n } else { n - 1 };
+
+        // Rotation-minimising frames with mitre compensation at every vertex so
+        // adjacent segments share identical rings (smooth, watertight joints).
+        let frames = compute_ring_frames(points, self.closed);
+
+        // Cumulative arc length gives a UV `v` that runs evenly along the path,
+        // which is what along-the-path gradients and dashes need.
+        let mut cumulative = Vec::with_capacity(total_segments + 1);
+        cumulative.push(0.0_f32);
+        for i in 0..total_segments {
+            let a = points[i];
+            let b = points[(i + 1) % n];
+            let last = *cumulative.last().unwrap();
+            cumulative.push(last + a.distance(b));
+        }
+        let total_length = cumulative.last().copied().unwrap_or(0.0).max(1e-6);
+
+        let ring_offset = |frame: &RingFrame, angle: f32| -> (Vec3, Vec3) {
+            let radial = frame.up * angle.cos() + frame.right * angle.sin();
+            // Stretch the ring along the bend axis so the tube keeps its
+            // thickness through the corner.
+            let offset = radial + frame.bend_axis * (radial.dot(frame.bend_axis) * frame.mitre);
+            (offset, radial)
         };
 
-        // Precompute blended frames at each vertex for smooth joints.
-        // At intermediate vertices, the blended direction is the normalized average
-        // of incoming and outgoing segment directions (the angle bisector).
-        // This ensures adjacent cylinder segments share aligned end-ring vertices.
-        let n = points.len();
-        let mut vertex_up = Vec::with_capacity(n);
-        let mut vertex_right = Vec::with_capacity(n);
-
-        for i in 0..n {
-            // Incoming direction: from previous point to this point
-            let incoming = if !self.closed && i == 0 {
-                (points[1] - points[0]).normalize()
-            } else if !self.closed && i == n - 1 {
-                (points[n - 1] - points[n - 2]).normalize()
-            } else {
-                let prev_idx = if self.closed { (i + n - 1) % n } else { i - 1 };
-                (points[i] - points[prev_idx]).normalize()
-            };
-
-            // Outgoing direction: from this point to next point
-            let outgoing = if !self.closed && i == 0 {
-                (points[1] - points[0]).normalize()
-            } else if !self.closed && i == n - 1 {
-                (points[n - 1] - points[n - 2]).normalize()
-            } else {
-                let next_idx = if self.closed { (i + 1) % n } else { i + 1 };
-                (points[next_idx] - points[i]).normalize()
-            };
-
-            // Blended direction is the angle bisector
-            let blended = incoming + outgoing;
-            let blended = if blended.length_squared() < 1e-6 {
-                incoming
-            } else {
-                blended.normalize()
-            };
-
-            let (up, right) = perpendicular_axes(&blended);
-            vertex_up.push(up);
-            vertex_right.push(right);
-        }
-
-        // Build cylinder segments between consecutive points
         for i in 0..total_segments {
+            let end_idx = (i + 1) % n;
             let start = points[i];
-            let end_idx = if self.closed && i == total_segments - 1 {
-                0
-            } else {
-                i + 1
-            };
             let end = points[end_idx];
-            let dir = end - start;
-            let seg_len = dir.length();
 
-            if seg_len < 1e-6 {
+            if start.distance(end) < 1e-6 {
                 continue;
             }
 
-            // Use the blended frame at each vertex for the cross-section
-            // This ensures adjacent segments share aligned vertices at joints
-            let (start_up, start_right) = (vertex_up[i], vertex_right[i]);
-            let (end_up, end_right) = (vertex_up[end_idx], vertex_right[end_idx]);
-
+            let (start_frame, end_frame) = (&frames[i], &frames[end_idx]);
+            let v0 = cumulative[i] / total_length;
+            let v1 = cumulative[i + 1] / total_length;
             let base_idx = positions.len() as u32;
 
-            // Generate vertices for this cylinder segment
             for j in 0..seg {
                 let angle = j as f32 * std::f32::consts::TAU / seg as f32;
-                let cos_a = angle.cos();
-                let sin_a = angle.sin();
+                let u = j as f32 / seg as f32;
 
-                let radial_start = start_up * cos_a + start_right * sin_a;
-                let radial_end = end_up * cos_a + end_right * sin_a;
-                let uv =
-                    bevy::math::Vec2::new(j as f32 / seg as f32, i as f32 / total_segments as f32);
-
-                // Start ring vertex
-                positions.push(start + radial_start * self.thickness);
+                let (offset_start, radial_start) = ring_offset(start_frame, angle);
+                positions.push(start + offset_start * self.thickness);
                 normals.push(radial_start);
-                uvs.push(uv);
+                uvs.push(bevy::math::Vec2::new(u, v0));
 
-                // End ring vertex
-                positions.push(end + radial_end * self.thickness);
+                let (offset_end, radial_end) = ring_offset(end_frame, angle);
+                positions.push(end + offset_end * self.thickness);
                 normals.push(radial_end);
-                uvs.push(bevy::math::Vec2::new(
-                    j as f32 / seg as f32,
-                    (i + 1) as f32 / total_segments as f32,
-                ));
+                uvs.push(bevy::math::Vec2::new(u, v1));
             }
 
-            // Generate indices for this cylinder segment
             for j in 0..seg {
                 let next = (j + 1) % seg;
                 let a = base_idx + j * 2;
@@ -176,9 +135,7 @@ impl PolylineConfig {
 
         // For open polylines, add hemisphere caps at the endpoints
         if !self.closed {
-            // Start cap (hemisphere)
-            let first_dir = (points[1] - points[0]).normalize();
-            let (up, right) = perpendicular_axes(&first_dir);
+            let first = &frames[0];
             add_hemisphere_cap(
                 &mut positions,
                 &mut normals,
@@ -187,26 +144,24 @@ impl PolylineConfig {
                 points[0],
                 self.thickness,
                 seg,
-                &first_dir,
-                &up,
-                &right,
+                &first.tangent,
+                &first.up,
+                &first.right,
                 false,
             );
 
-            // End cap (hemisphere)
-            let last_dir = (points[points.len() - 1] - points[points.len() - 2]).normalize();
-            let (up, right) = perpendicular_axes(&last_dir);
+            let last = &frames[n - 1];
             add_hemisphere_cap(
                 &mut positions,
                 &mut normals,
                 &mut uvs,
                 &mut indices,
-                points[points.len() - 1],
+                points[n - 1],
                 self.thickness,
                 seg,
-                &last_dir,
-                &up,
-                &right,
+                &last.tangent,
+                &last.up,
+                &last.right,
                 true,
             );
         }
@@ -263,6 +218,114 @@ impl Default for PolylineCache {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Cross-section frame of the tube at one path vertex.
+#[derive(Debug, Clone, Copy)]
+struct RingFrame {
+    /// Path tangent (bisector of incoming/outgoing directions).
+    tangent: Vec3,
+    up: Vec3,
+    right: Vec3,
+    /// Axis (in the ring plane) along which the ring is stretched at a corner.
+    bend_axis: Vec3,
+    /// Extra stretch factor along `bend_axis` (`1/cos(half_turn) - 1`).
+    mitre: f32,
+}
+
+/// Compute rotation-minimising ring frames for every vertex of a path.
+///
+/// Parallel transport keeps the rings from twisting between neighbours. For closed
+/// loops the leftover twist is distributed evenly so the seam lines up. Corners
+/// get a mitre factor so the tube keeps constant thickness through bends.
+fn compute_ring_frames(points: &[Vec3], closed: bool) -> Vec<RingFrame> {
+    let n = points.len();
+    let seg_count = if closed { n } else { n - 1 };
+
+    // Direction of each segment; zero-length segments inherit their neighbour.
+    let mut dirs: Vec<Vec3> = (0..seg_count)
+        .map(|i| (points[(i + 1) % n] - points[i]).normalize_or_zero())
+        .collect();
+    let fallback = dirs.iter().copied().find(|d| *d != Vec3::ZERO).unwrap_or(Vec3::X);
+    let mut prev = fallback;
+    for d in dirs.iter_mut() {
+        if *d == Vec3::ZERO {
+            *d = prev;
+        }
+        prev = *d;
+    }
+
+    // Per-vertex incoming/outgoing directions and bisector tangent.
+    let mut tangents = Vec::with_capacity(n);
+    let mut bend_axes = Vec::with_capacity(n);
+    let mut mitres = Vec::with_capacity(n);
+    for i in 0..n {
+        let incoming = if closed {
+            dirs[(i + seg_count - 1) % seg_count]
+        } else if i == 0 {
+            dirs[0]
+        } else {
+            dirs[i - 1]
+        };
+        let outgoing = if closed {
+            dirs[i % seg_count]
+        } else if i == n - 1 {
+            dirs[seg_count - 1]
+        } else {
+            dirs[i]
+        };
+
+        let sum = incoming + outgoing;
+        let tangent = if sum.length_squared() < 1e-6 {
+            incoming
+        } else {
+            sum.normalize()
+        };
+        let cos_half = tangent.dot(incoming).clamp(0.35, 1.0);
+        let bend = outgoing - incoming;
+        let bend_axis = if bend.length_squared() < 1e-8 {
+            Vec3::ZERO
+        } else {
+            bend.normalize()
+        };
+        tangents.push(tangent);
+        bend_axes.push(bend_axis);
+        mitres.push(1.0 / cos_half - 1.0);
+    }
+
+    // Parallel transport of the `up` vector along the tangents.
+    let (up0, _) = perpendicular_axes(&tangents[0]);
+    let transport = |up: Vec3, from: Vec3, to: Vec3| -> Vec3 {
+        let rotated = bevy::math::Quat::from_rotation_arc(from, to) * up;
+        (rotated - to * rotated.dot(to)).normalize()
+    };
+
+    let mut ups = Vec::with_capacity(n);
+    ups.push(up0);
+    for i in 1..n {
+        ups.push(transport(ups[i - 1], tangents[i - 1], tangents[i]));
+    }
+
+    // Closed loop: spread the accumulated twist over all vertices.
+    if closed {
+        let wrapped = transport(ups[n - 1], tangents[n - 1], tangents[0]);
+        let right0 = tangents[0].cross(up0);
+        let twist = wrapped.dot(right0).atan2(wrapped.dot(up0));
+        for (i, up) in ups.iter_mut().enumerate() {
+            let correction = -twist * i as f32 / n as f32;
+            *up = bevy::math::Quat::from_axis_angle(tangents[i], correction) * *up;
+        }
+    }
+
+    (0..n)
+        .map(|i| RingFrame {
+            tangent: tangents[i],
+            up: ups[i],
+            right: tangents[i].cross(ups[i]),
+            bend_axis: bend_axes[i],
+            mitre: mitres[i],
+        })
+        .collect()
 }
 
 /// Find two perpendicular axes for a given direction vector.

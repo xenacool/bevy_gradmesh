@@ -22,6 +22,8 @@ use bevy::render::render_resource::{
 use bevy::shader::ShaderRef;
 use bevy_material::AlphaMode;
 
+use crate::mix_space::MixSpace;
+
 /// 16-byte aligned vec4 for GPU uniform buffers.
 ///
 /// `encase` requires uniform struct fields to have stride ≥ 16 bytes,
@@ -237,6 +239,32 @@ impl MaterialExtension for GradMeshExtension {
 /// Type alias for the full extended material.
 pub type GradMeshMaterial = ExtendedMaterial<StandardMaterial, GradMeshExtension>;
 
+/// Sets the region a gradient material blends across.
+///
+/// By default gradients assume a roughly unit-sized shape centred at the world
+/// origin, which makes them look flat on larger shapes. `center` is the middle of
+/// the gradient and `half_extent` is the distance from the centre to where the
+/// second colour is fully reached (along the gradient direction).
+pub fn with_gradient_bounds(
+    mut material: GradMeshMaterial,
+    center: Vec3,
+    half_extent: f32,
+) -> GradMeshMaterial {
+    material.extension.uniforms.world_center =
+        Vec4::new(center.x, center.y, center.z, half_extent.max(1e-4));
+    material
+}
+
+/// Selects the colour space gradients are blended in.
+///
+/// Materials blend in [`MixSpace::Oklab`] unless told otherwise. Single-colour
+/// materials are unaffected.
+#[must_use]
+pub fn with_mix_space(mut material: GradMeshMaterial, space: MixSpace) -> GradMeshMaterial {
+    material.extension.uniforms.flags.w = space.gpu_code();
+    material
+}
+
 /// Creates a flat opaque GradMeshMaterial with a single color.
 pub fn opaque(r: f32, g: f32, b: f32) -> GradMeshMaterial {
     GradMeshMaterial {
@@ -286,7 +314,9 @@ pub fn additive(r: f32, g: f32, b: f32) -> GradMeshMaterial {
         base: StandardMaterial {
             base_color: Color::srgb(r, g, b).into(),
             perceptual_roughness: 0.3,
-            emissive: bevy::color::LinearRgba::rgb(r, g, b) * 100_000.0,
+            // Values around 2-3 stay coloured under the default tone mapper; much
+            // higher values saturate to pure white.
+            emissive: bevy::color::LinearRgba::rgb(r, g, b) * 2.5,
             cull_mode: None,
             ..StandardMaterial::default()
         },
@@ -305,7 +335,8 @@ pub fn additive(r: f32, g: f32, b: f32) -> GradMeshMaterial {
 /// Creates a dual-directional gradient GradMeshMaterial.
 ///
 /// `dark` is the shadow-side color, `light` is the highlight-side color,
-/// and `direction` defines the gradient axis in world space.
+/// and `direction` defines the gradient axis in world space. Colours blend in
+/// OKLAB; use [`with_mix_space`] to pick another space.
 pub fn dual_directional(dark: [f32; 3], light: [f32; 3], direction: [f32; 3]) -> GradMeshMaterial {
     let dir = Vec3::new(direction[0], direction[1], direction[2]);
     let dir_norm = dir.normalize();
@@ -322,36 +353,6 @@ pub fn dual_directional(dark: [f32; 3], light: [f32; 3], direction: [f32; 3]) ->
                 Vec4::new(light[0], light[1], light[2], 1.0),
                 Vec4::new(dir_norm.x, dir_norm.y, dir_norm.z, 0.0),
                 Vec4::new(1.0, 0.0, 0.0, 0.0),
-                Vec4::new(0.0, 0.0, 0.0, 0.0),
-            ),
-        },
-    }
-}
-
-/// Creates a dual-directional gradient GradMeshMaterial with OKLAB interpolation.
-///
-/// OKLAB provides perceptually uniform color gradients, avoiding the
-/// muddy midpoints that linear RGB interpolation produces.
-pub fn dual_directional_oklab(
-    dark: [f32; 3],
-    light: [f32; 3],
-    direction: [f32; 3],
-) -> GradMeshMaterial {
-    let dir = Vec3::new(direction[0], direction[1], direction[2]);
-    let dir_norm = dir.normalize();
-    GradMeshMaterial {
-        base: StandardMaterial {
-            base_color: Color::srgb(dark[0], dark[1], dark[2]).into(),
-            perceptual_roughness: 0.7,
-            cull_mode: None,
-            ..StandardMaterial::default()
-        },
-        extension: GradMeshExtension {
-            uniforms: GradMeshUniformBuffer::new(
-                Vec4::new(dark[0], dark[1], dark[2], 1.0),
-                Vec4::new(light[0], light[1], light[2], 1.0),
-                Vec4::new(dir_norm.x, dir_norm.y, dir_norm.z, 0.0),
-                Vec4::new(1.0, 0.0, 0.0, 1.0),
                 Vec4::new(0.0, 0.0, 0.0, 0.0),
             ),
         },
@@ -379,11 +380,10 @@ pub fn dual_radial(inner: [f32; 3], outer: [f32; 3]) -> GradMeshMaterial {
     }
 }
 
-/// Creates a dual-radial gradient GradMeshMaterial with OKLAB interpolation and alpha support.
+/// Creates a dual-radial gradient GradMeshMaterial with alpha on both colours.
 ///
-/// `inner` and `outer` are 4-component arrays [r, g, b, a]. The `boundary` parameter
-/// controls the gradient transition width (higher = softer edge).
-pub fn dual_radial_oklab(inner: [f32; 4], outer: [f32; 4], boundary: f32) -> GradMeshMaterial {
+/// `inner` and `outer` are `[r, g, b, a]`; the material alpha-blends.
+pub fn dual_radial_alpha(inner: [f32; 4], outer: [f32; 4]) -> GradMeshMaterial {
     GradMeshMaterial {
         base: StandardMaterial {
             base_color: Color::srgba(inner[0], inner[1], inner[2], inner[3]).into(),
@@ -397,8 +397,8 @@ pub fn dual_radial_oklab(inner: [f32; 4], outer: [f32; 4], boundary: f32) -> Gra
                 Vec4::new(inner[0], inner[1], inner[2], inner[3]),
                 Vec4::new(outer[0], outer[1], outer[2], outer[3]),
                 Vec4::new(0.0, 1.0, 0.0, 0.0),
-                Vec4::new(2.0, 0.0, 0.0, 1.0),
-                Vec4::new(boundary, 0.0, 0.0, 0.0),
+                Vec4::new(2.0, 0.0, 0.0, 0.0),
+                Vec4::new(0.0, 0.0, 0.0, 0.0),
             ),
         },
     }

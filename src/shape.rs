@@ -2590,9 +2590,8 @@ fn build_bezier_curve(control_points: Vec<Vec3>, thickness: f32, segments: u32) 
     }
 
     // Tessellate the Bézier curve into a series of points
-    let tessellated = tessellate_bezier(&control_points, 32);
+    let tessellated = tessellate_bezier(&control_points, 48);
 
-    // Build cylinder segments between consecutive points
     if tessellated.len() < 2 {
         let mut mesh = Mesh::new(
             PrimitiveTopology::TriangleList,
@@ -2602,129 +2601,31 @@ fn build_bezier_curve(control_points: Vec<Vec3>, thickness: f32, segments: u32) 
         return mesh;
     }
 
-    let seg = segments.max(3);
-    let mut positions = Vec::new();
-    let mut normals = Vec::new();
-    let mut uvs = Vec::new();
-    let mut indices: Vec<u32> = Vec::new();
-
-    for i in 0..tessellated.len() - 1 {
-        let start = tessellated[i];
-        let end = tessellated[i + 1];
-        let dir = (end - start).normalize();
-        let seg_len = start.distance(end);
-
-        if seg_len < 1e-6 {
-            continue;
-        }
-
-        // Build a cylinder segment between start and end
-
-        // Find two perpendicular axes for the tube cross-section
-        let (up, right) = perpendicular_axes(&dir);
-
-        let base_idx = positions.len() as u32;
-
-        // Generate vertices for this segment
-        for j in 0..seg {
-            let angle = j as f32 * std::f32::consts::TAU / seg as f32;
-            let cos_a = angle.cos();
-            let sin_a = angle.sin();
-
-            let radial = up * cos_a + right * sin_a;
-            let uv = bevy::math::Vec2::new(
-                j as f32 / seg as f32,
-                i as f32 / (tessellated.len() - 2) as f32,
-            );
-
-            // Start cap vertex
-            positions.push(start + radial * thickness);
-            normals.push(radial);
-            uvs.push(uv);
-
-            // End cap vertex
-            positions.push(end + radial * thickness);
-            normals.push(radial);
-            uvs.push(bevy::math::Vec2::new(
-                j as f32 / seg as f32,
-                (i + 1) as f32 / (tessellated.len() - 2) as f32,
-            ));
-        }
-
-        // Generate indices for this segment
-        for j in 0..seg {
-            let next = (j + 1) % seg;
-            let a = base_idx + j * 2;
-            let b = base_idx + j * 2 + 1;
-            let c = base_idx + next * 2;
-            let d = base_idx + next * 2 + 1;
-            indices.extend_from_slice(&[a, c, b]);
-            indices.extend_from_slice(&[b, c, d]);
-        }
-    }
-
-    let mut mesh = Mesh::new(
-        PrimitiveTopology::TriangleList,
-        RenderAssetUsages::default(),
-    );
-    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
-    mesh.insert_indices(bevy::render::mesh::Indices::U32(indices));
-    mesh
-}
-
-/// Find two perpendicular axes for a given direction vector.
-fn perpendicular_axes(dir: &Vec3) -> (Vec3, Vec3) {
-    let up = if dir.abs().y < 0.9 { Vec3::Y } else { Vec3::Z };
-    let right = dir.cross(up).normalize();
-    let up = right.cross(*dir).normalize();
-    (up, right)
+    // Share the polyline tube builder: continuous rings, smooth frames, round caps.
+    build_polyline3d(tessellated, thickness, false, segments)
 }
 
 /// Tessellate a Bézier curve into a series of points.
-/// Supports linear (2 points), quadratic (3 points), and cubic (4+ points) curves.
+/// Supports any number of control points (degree = points - 1) using De Casteljau's algorithm,
+/// so every control point influences the curve.
 fn tessellate_bezier(control_points: &[Vec3], num_segments: u32) -> Vec<Vec3> {
-    let n = num_segments.max(1) as f32;
-    let mut points = Vec::new();
-
-    match control_points.len() {
-        2 => {
-            // Linear interpolation
-            for i in 0..=num_segments {
-                let t = i as f32 / n;
-                points.push(control_points[0] * (1.0 - t) + control_points[1] * t);
-            }
-        }
-        3 => {
-            // Quadratic Bézier
-            for i in 0..=num_segments {
-                let t = i as f32 / n;
-                let u = 1.0 - t;
-                points.push(
-                    control_points[0] * u * u
-                        + control_points[1] * 2.0 * u * t
-                        + control_points[2] * t * t,
-                );
-            }
-        }
-        _ if control_points.len() >= 4 => {
-            // Cubic Bézier (use first 4 control points)
-            for i in 0..=num_segments {
-                let t = i as f32 / n;
-                let u = 1.0 - t;
-                points.push(
-                    control_points[0] * u * u * u
-                        + control_points[1] * 3.0 * u * u * t
-                        + control_points[2] * 3.0 * u * t * t
-                        + control_points[3] * t * t * t,
-                );
-            }
-        }
-        _ => {}
+    if control_points.len() < 2 {
+        return Vec::new();
     }
-
-    points
+    let n = num_segments.max(1);
+    let mut scratch = vec![Vec3::ZERO; control_points.len()];
+    (0..=n)
+        .map(|i| {
+            let t = i as f32 / n as f32;
+            scratch.copy_from_slice(control_points);
+            for level in (1..scratch.len()).rev() {
+                for k in 0..level {
+                    scratch[k] = scratch[k].lerp(scratch[k + 1], t);
+                }
+            }
+            scratch[0]
+        })
+        .collect()
 }
 
 /// Build an N-pointed star as a 2D flat quad.
@@ -2953,6 +2854,473 @@ fn build_tapered_cylinder(
     }
 
     build_mesh(vertices, normals, uvs, indices)
+}
+
+fn lerp_f32(a: f32, b: f32, t: f32) -> f32 {
+    a * (1.0 - t) + b * t
+}
+
+fn lerp_vec2(a: Vec2, b: Vec2, t: f32) -> Vec2 {
+    Vec2::new(lerp_f32(a.x, b.x, t), lerp_f32(a.y, b.y, t))
+}
+
+fn lerp_vec3(a: Vec3, b: Vec3, t: f32) -> Vec3 {
+    Vec3::new(
+        lerp_f32(a.x, b.x, t),
+        lerp_f32(a.y, b.y, t),
+        lerp_f32(a.z, b.z, t),
+    )
+}
+
+/// Counts and flags cannot be blended; they follow whichever end is nearer.
+fn pick<T>(t: f32, a: T, b: T) -> T {
+    if t < 0.5 { a } else { b }
+}
+
+/// Interpolates two equally long point lists; `None` when the lengths differ.
+fn lerp_points<P: Copy>(a: &[P], b: &[P], t: f32, f: fn(P, P, f32) -> P) -> Option<Vec<P>> {
+    (a.len() == b.len()).then(|| a.iter().zip(b).map(|(a, b)| f(*a, *b, t)).collect())
+}
+
+impl ShapeKind {
+    /// Interpolates two shapes of the same kind. Returns `None` when the kinds
+    /// differ or when point lists of different lengths cannot be paired up.
+    fn lerp(&self, other: &Self, t: f32) -> Option<Self> {
+        use ShapeKind as K;
+        let l = |a: &f32, b: &f32| lerp_f32(*a, *b, t);
+        Some(match (self, other) {
+            (K::Sphere { radius: a }, K::Sphere { radius: b }) => K::Sphere { radius: l(a, b) },
+            (K::Ellipsoid { size: a }, K::Ellipsoid { size: b }) => K::Ellipsoid {
+                size: lerp_vec3(*a, *b, t),
+            },
+            (
+                K::Cuboid {
+                    size: s1,
+                    roundness: r1,
+                },
+                K::Cuboid {
+                    size: s2,
+                    roundness: r2,
+                },
+            ) => K::Cuboid {
+                size: lerp_vec3(*s1, *s2, t),
+                roundness: l(r1, r2),
+            },
+            (
+                K::Cylinder {
+                    radius: r1,
+                    height: h1,
+                    roundness: n1,
+                },
+                K::Cylinder {
+                    radius: r2,
+                    height: h2,
+                    roundness: n2,
+                },
+            ) => K::Cylinder {
+                radius: l(r1, r2),
+                height: l(h1, h2),
+                roundness: l(n1, n2),
+            },
+            (
+                K::Cone {
+                    radius: r1,
+                    height: h1,
+                },
+                K::Cone {
+                    radius: r2,
+                    height: h2,
+                },
+            ) => K::Cone {
+                radius: l(r1, r2),
+                height: l(h1, h2),
+            },
+            (
+                K::Capsule {
+                    radius: r1,
+                    height: h1,
+                },
+                K::Capsule {
+                    radius: r2,
+                    height: h2,
+                },
+            ) => K::Capsule {
+                radius: l(r1, r2),
+                height: l(h1, h2),
+            },
+            (
+                K::Hemisphere {
+                    radius: r1,
+                    capped: c1,
+                },
+                K::Hemisphere {
+                    radius: r2,
+                    capped: c2,
+                },
+            ) => K::Hemisphere {
+                radius: l(r1, r2),
+                capped: pick(t, *c1, *c2),
+            },
+            (
+                K::Torus {
+                    radius: r1,
+                    thickness: k1,
+                    start: s1,
+                    span: p1,
+                },
+                K::Torus {
+                    radius: r2,
+                    thickness: k2,
+                    start: s2,
+                    span: p2,
+                },
+            ) => K::Torus {
+                radius: l(r1, r2),
+                thickness: l(k1, k2),
+                start: l(s1, s2),
+                span: l(p1, p2),
+            },
+            (
+                K::RegularPrism {
+                    sides: n1,
+                    radius: r1,
+                    height: h1,
+                    roundness: o1,
+                },
+                K::RegularPrism {
+                    sides: n2,
+                    radius: r2,
+                    height: h2,
+                    roundness: o2,
+                },
+            ) => K::RegularPrism {
+                sides: pick(t, *n1, *n2),
+                radius: l(r1, r2),
+                height: l(h1, h2),
+                roundness: l(o1, o2),
+            },
+            (
+                K::Pyramid {
+                    sides: n1,
+                    radius: r1,
+                    height: h1,
+                },
+                K::Pyramid {
+                    sides: n2,
+                    radius: r2,
+                    height: h2,
+                },
+            ) => K::Pyramid {
+                sides: pick(t, *n1, *n2),
+                radius: l(r1, r2),
+                height: l(h1, h2),
+            },
+            (K::Rectangle { size: a }, K::Rectangle { size: b }) => K::Rectangle {
+                size: lerp_vec2(*a, *b, t),
+            },
+            (
+                K::RectangleRim {
+                    size: s1,
+                    rim_width: w1,
+                },
+                K::RectangleRim {
+                    size: s2,
+                    rim_width: w2,
+                },
+            ) => K::RectangleRim {
+                size: lerp_vec2(*s1, *s2, t),
+                rim_width: l(w1, w2),
+            },
+            (K::Disc { radius: a }, K::Disc { radius: b }) => K::Disc { radius: l(a, b) },
+            (
+                K::DiscRim {
+                    radius: r1,
+                    rim_width: w1,
+                },
+                K::DiscRim {
+                    radius: r2,
+                    rim_width: w2,
+                },
+            ) => K::DiscRim {
+                radius: l(r1, r2),
+                rim_width: l(w1, w2),
+            },
+            (
+                K::Polygon {
+                    sides: n1,
+                    radius: r1,
+                },
+                K::Polygon {
+                    sides: n2,
+                    radius: r2,
+                },
+            ) => K::Polygon {
+                sides: pick(t, *n1, *n2),
+                radius: l(r1, r2),
+            },
+            (
+                K::PolygonRim {
+                    sides: n1,
+                    radius: r1,
+                    rim_width: w1,
+                },
+                K::PolygonRim {
+                    sides: n2,
+                    radius: r2,
+                    rim_width: w2,
+                },
+            ) => K::PolygonRim {
+                sides: pick(t, *n1, *n2),
+                radius: l(r1, r2),
+                rim_width: l(w1, w2),
+            },
+            (K::Ellipse { radius: a }, K::Ellipse { radius: b }) => K::Ellipse {
+                radius: lerp_vec2(*a, *b, t),
+            },
+            (
+                K::EllipseRim {
+                    radius: r1,
+                    rim_width: w1,
+                },
+                K::EllipseRim {
+                    radius: r2,
+                    rim_width: w2,
+                },
+            ) => K::EllipseRim {
+                radius: lerp_vec2(*r1, *r2, t),
+                rim_width: l(w1, w2),
+            },
+            (
+                K::ArbitraryPolygon {
+                    vertices: v1,
+                    colors: c1,
+                },
+                K::ArbitraryPolygon {
+                    vertices: v2,
+                    colors: c2,
+                },
+            ) => K::ArbitraryPolygon {
+                vertices: lerp_points(v1, v2, t, lerp_vec2)?,
+                colors: match (c1, c2) {
+                    (Some(a), Some(b)) if a.len() == b.len() => Some(
+                        a.iter()
+                            .zip(b)
+                            .map(|(a, b)| std::array::from_fn(|i| lerp_f32(a[i], b[i], t)))
+                            .collect(),
+                    ),
+                    _ => pick(t, c1.clone(), c2.clone()),
+                },
+            },
+            (
+                K::Polyline3D {
+                    points: p1,
+                    thickness: k1,
+                    closed: c1,
+                    segments: s1,
+                },
+                K::Polyline3D {
+                    points: p2,
+                    thickness: k2,
+                    closed: c2,
+                    segments: s2,
+                },
+            ) => K::Polyline3D {
+                points: lerp_points(p1, p2, t, lerp_vec3)?,
+                thickness: l(k1, k2),
+                closed: pick(t, *c1, *c2),
+                segments: pick(t, *s1, *s2),
+            },
+            (
+                K::BezierCurve {
+                    control_points: p1,
+                    thickness: k1,
+                    segments: s1,
+                },
+                K::BezierCurve {
+                    control_points: p2,
+                    thickness: k2,
+                    segments: s2,
+                },
+            ) => K::BezierCurve {
+                control_points: lerp_points(p1, p2, t, lerp_vec3)?,
+                thickness: l(k1, k2),
+                segments: pick(t, *s1, *s2),
+            },
+            (
+                K::Star {
+                    points: n1,
+                    outer_radius: o1,
+                    inner_radius: i1,
+                },
+                K::Star {
+                    points: n2,
+                    outer_radius: o2,
+                    inner_radius: i2,
+                },
+            ) => K::Star {
+                points: pick(t, *n1, *n2),
+                outer_radius: l(o1, o2),
+                inner_radius: l(i1, i2),
+            },
+            (
+                K::Ring {
+                    outer_radius: o1,
+                    inner_radius: i1,
+                },
+                K::Ring {
+                    outer_radius: o2,
+                    inner_radius: i2,
+                },
+            ) => K::Ring {
+                outer_radius: l(o1, o2),
+                inner_radius: l(i1, i2),
+            },
+            (
+                K::Wedge {
+                    radius: r1,
+                    angle: a1,
+                },
+                K::Wedge {
+                    radius: r2,
+                    angle: a2,
+                },
+            ) => K::Wedge {
+                radius: l(r1, r2),
+                angle: l(a1, a2),
+            },
+            (
+                K::TaperedCylinder {
+                    top_radius: t1,
+                    bottom_radius: b1,
+                    height: h1,
+                },
+                K::TaperedCylinder {
+                    top_radius: t2,
+                    bottom_radius: b2,
+                    height: h2,
+                },
+            ) => K::TaperedCylinder {
+                top_radius: l(t1, t2),
+                bottom_radius: l(b1, b2),
+                height: l(h1, h2),
+            },
+            _ => return None,
+        })
+    }
+}
+
+impl Shape {
+    /// Blends this shape towards `other` by `t` (clamped to `0.0..=1.0`).
+    ///
+    /// * Two shapes of the **same kind** interpolate every continuous parameter
+    ///   (radius, height, size, roundness, rim width, angles, point positions).
+    /// * Integer counts (`sides`, `points`, `segments`), flags (`capped`,
+    ///   `closed`) and the [`ShapeDetail`] snap to whichever endpoint is nearer.
+    /// * Shapes of **different kinds**, or point lists of different lengths,
+    ///   cannot be blended and yield the nearer endpoint.
+    ///
+    /// `t == 0.0` returns a copy of `self` and `t == 1.0` a copy of `other`.
+    ///
+    /// Every distinct blended value is a distinct mesh. To animate smoothly
+    /// without generating a new mesh per frame, prefer animating the
+    /// `Transform` scale of a fixed shape, or quantise `t` before calling this.
+    #[must_use]
+    pub fn lerp(&self, other: &Self, t: f32) -> Self {
+        let t = if t.is_nan() { 0.0 } else { t.clamp(0.0, 1.0) };
+        if t <= 0.0 {
+            return self.clone();
+        }
+        if t >= 1.0 {
+            return other.clone();
+        }
+        match self.kind.lerp(&other.kind, t) {
+            Some(kind) => Self {
+                kind,
+                detail: if t < 0.5 { self.detail } else { other.detail },
+            },
+            None if t < 0.5 => self.clone(),
+            None => other.clone(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod lerp_tests {
+    use super::*;
+
+    const D: ShapeDetail = ShapeDetail::Medium;
+
+    #[test]
+    fn endpoints_are_exact() {
+        let a = Shape::sphere(1.0, D);
+        let b = Shape::sphere(3.0, D);
+        assert_eq!(a.lerp(&b, 0.0), a);
+        assert_eq!(a.lerp(&b, 1.0), b);
+        assert_eq!(a.lerp(&b, f32::NAN), a);
+        assert_eq!(a.lerp(&b, 5.0), b);
+    }
+
+    #[test]
+    fn same_kind_interpolates_parameters() {
+        let a = Shape::cuboid(Vec3::new(1.0, 2.0, 3.0), 0.0, D);
+        let b = Shape::cuboid(Vec3::new(3.0, 6.0, 5.0), 0.5, D);
+        assert_eq!(
+            a.lerp(&b, 0.5),
+            Shape::cuboid(Vec3::new(2.0, 4.0, 4.0), 0.25, D)
+        );
+        let c = Shape::cylinder(1.0, 2.0, D);
+        let d = Shape::cylinder(3.0, 6.0, D);
+        assert_eq!(c.lerp(&d, 0.5), Shape::cylinder(2.0, 4.0, D));
+    }
+
+    #[test]
+    fn counts_and_detail_snap_to_nearer_endpoint() {
+        let a = Shape::regular_prism(4, 1.0, 1.0, 0.0, ShapeDetail::Low);
+        let b = Shape::regular_prism(8, 3.0, 1.0, 0.0, ShapeDetail::High);
+        assert_eq!(
+            a.lerp(&b, 0.25),
+            Shape::regular_prism(4, 1.5, 1.0, 0.0, ShapeDetail::Low)
+        );
+        assert_eq!(
+            a.lerp(&b, 0.75),
+            Shape::regular_prism(8, 2.5, 1.0, 0.0, ShapeDetail::High)
+        );
+    }
+
+    #[test]
+    fn different_kinds_yield_nearer_shape() {
+        let a = Shape::sphere(1.0, D);
+        let b = Shape::disc(1.0, D);
+        assert_eq!(a.lerp(&b, 0.4), a);
+        assert_eq!(a.lerp(&b, 0.6), b);
+    }
+
+    #[test]
+    fn point_lists_blend_only_when_same_length() {
+        let a = Shape::polyline3d(vec![Vec3::ZERO, Vec3::X], 0.1, false, 8, D);
+        let b = Shape::polyline3d(vec![Vec3::Y, Vec3::X + Vec3::Y], 0.3, false, 8, D);
+        let mid = a.lerp(&b, 0.5);
+        assert_eq!(
+            mid,
+            Shape::polyline3d(
+                vec![Vec3::Y * 0.5, Vec3::X + Vec3::Y * 0.5],
+                0.2,
+                false,
+                8,
+                D
+            )
+        );
+        let c = Shape::polyline3d(vec![Vec3::ZERO, Vec3::X, Vec3::Z], 0.1, false, 8, D);
+        assert_eq!(a.lerp(&c, 0.4), a);
+        assert_eq!(a.lerp(&c, 0.6), c);
+    }
+
+    #[test]
+    fn star_blend_keeps_point_count_of_nearer_end() {
+        let a = Shape::star(5, 1.0, 0.4, D);
+        let b = Shape::star(7, 2.0, 0.8, D);
+        assert_eq!(a.lerp(&b, 0.25), Shape::star(5, 1.25, 0.5, D));
+    }
 }
 
 #[cfg(test)]

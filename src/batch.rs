@@ -25,6 +25,7 @@ use crate::RenderState;
 use crate::appearance::AppearanceSnapshot;
 use crate::culling::AABB;
 use crate::material::{GradMeshUniformBuffer, Vec4};
+use crate::mix_space::MixSpace;
 use crate::shape::{Shape, ShapeDetail};
 use crate::style::{BlendMode, ColorMode, Dash, DashType};
 
@@ -85,7 +86,7 @@ impl InstanceProperties {
         direction: [f32; 4],
         color_mode: ColorMode,
         blend_mode: BlendMode,
-        oklab: bool,
+        space: MixSpace,
         dash: Option<Dash>,
     ) -> Self {
         let cm = match color_mode {
@@ -108,8 +109,6 @@ impl InstanceProperties {
             BlendMode::Darken => 11.0,
             BlendMode::Custom(_) => 12.0,
         };
-        let oklab_flag = if oklab { 1.0 } else { 0.0 };
-
         let (dash_count, dash_type, dash_spacing, dash_offset) = match dash {
             Some(d) => {
                 let type_base = match d.style {
@@ -127,7 +126,7 @@ impl InstanceProperties {
             color: Vec4::new(color[0], color[1], color[2], color[3]),
             secondary_color: Vec4::new(secondary[0], secondary[1], secondary[2], secondary[3]),
             direction: Vec4::new(direction[0], direction[1], direction[2], direction[3]),
-            flags: Vec4::new(cm, bm, 0.0, oklab_flag),
+            flags: Vec4::new(cm, bm, 0.0, space.gpu_code()),
             dash: Vec4::new(dash_count, dash_type, dash_spacing, dash_offset),
             deformation: Vec4::default(),
             appearance: Vec4::default(),
@@ -513,7 +512,7 @@ impl BatchRecorder {
             [0.0, 1.0, 0.0, 0.0],
             ColorMode::Single,
             BlendMode::Opaque,
-            false,
+            MixSpace::default(),
             None,
         );
         self.add_instance(&shape, props);
@@ -528,7 +527,7 @@ impl BatchRecorder {
             [0.0, 1.0, 0.0, 0.0],
             ColorMode::Single,
             BlendMode::Opaque,
-            false,
+            MixSpace::default(),
             None,
         );
         self.add_instance(&shape, props);
@@ -543,7 +542,7 @@ impl BatchRecorder {
             [0.0, 1.0, 0.0, 0.0],
             ColorMode::Single,
             BlendMode::Opaque,
-            false,
+            MixSpace::default(),
             None,
         );
         self.add_instance(&shape, props);
@@ -558,7 +557,7 @@ impl BatchRecorder {
             [0.0, 1.0, 0.0, 0.0],
             ColorMode::Single,
             BlendMode::Opaque,
-            false,
+            MixSpace::default(),
             None,
         );
         self.add_instance(&shape, props);
@@ -573,7 +572,7 @@ impl BatchRecorder {
             [0.0, 1.0, 0.0, 0.0],
             ColorMode::Single,
             BlendMode::Opaque,
-            false,
+            MixSpace::default(),
             None,
         );
         self.add_instance(&shape, props);
@@ -596,7 +595,7 @@ impl BatchRecorder {
             [0.0, 1.0, 0.0, 0.0],
             ColorMode::Single,
             BlendMode::Opaque,
-            false,
+            MixSpace::default(),
             None,
         );
         self.add_instance(&shape, props);
@@ -618,7 +617,7 @@ impl BatchRecorder {
             [0.0, 1.0, 0.0, 0.0],
             ColorMode::Single,
             BlendMode::Opaque,
-            false,
+            MixSpace::default(),
             None,
         );
         self.add_instance(&shape, props);
@@ -633,7 +632,7 @@ impl BatchRecorder {
             [0.0, 1.0, 0.0, 0.0],
             ColorMode::Single,
             BlendMode::Opaque,
-            false,
+            MixSpace::default(),
             None,
         );
         self.add_instance(&shape, props);
@@ -648,7 +647,7 @@ impl BatchRecorder {
             [0.0, 1.0, 0.0, 0.0],
             ColorMode::Single,
             BlendMode::Opaque,
-            false,
+            MixSpace::default(),
             None,
         );
         self.add_instance(&shape, props);
@@ -671,7 +670,7 @@ impl BatchRecorder {
             [0.0, 1.0, 0.0, 0.0],
             ColorMode::Single,
             BlendMode::Opaque,
-            false,
+            MixSpace::default(),
             None,
         );
         self.add_instance(&shape, props);
@@ -687,7 +686,7 @@ impl BatchRecorder {
         dark: [f32; 3],
         light: [f32; 3],
         direction: [f32; 3],
-        oklab: bool,
+        space: MixSpace,
     ) {
         let shape = Shape::sphere(radius, detail);
         let dir = Vec3::new(direction[0], direction[1], direction[2]).normalize();
@@ -697,7 +696,7 @@ impl BatchRecorder {
             [dir.x, dir.y, dir.z, 0.0],
             ColorMode::DualDirectional,
             BlendMode::Opaque,
-            oklab,
+            space,
             None,
         );
         self.add_instance(&shape, props);
@@ -712,7 +711,7 @@ impl BatchRecorder {
         dark: [f32; 3],
         light: [f32; 3],
         direction: [f32; 3],
-        oklab: bool,
+        space: MixSpace,
     ) {
         let shape = Shape::cuboid(size, roundness, detail);
         let dir = Vec3::new(direction[0], direction[1], direction[2]).normalize();
@@ -722,7 +721,7 @@ impl BatchRecorder {
             [dir.x, dir.y, dir.z, 0.0],
             ColorMode::DualDirectional,
             BlendMode::Opaque,
-            oklab,
+            space,
             None,
         );
         self.add_instance(&shape, props);
@@ -739,7 +738,7 @@ impl BatchRecorder {
             [0.0, 1.0, 0.0, 0.0],
             ColorMode::Single,
             BlendMode::Transparent,
-            false,
+            MixSpace::default(),
             None,
         );
         self.add_instance(&shape, props);
@@ -754,7 +753,7 @@ impl BatchRecorder {
             [0.0, 1.0, 0.0, 0.0],
             ColorMode::Single,
             BlendMode::Additive,
-            false,
+            MixSpace::default(),
             None,
         );
         self.add_instance(&shape, props);

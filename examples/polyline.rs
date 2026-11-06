@@ -8,7 +8,10 @@ mod common;
 
 use bevy::prelude::*;
 use bevy::render::RenderPlugin;
-use bevy_gradmesh::{GradMeshMaterial, GradMeshPlugin, Shape, ShapeDetail, dual_directional};
+use bevy_gradmesh::{
+    GradMeshMaterial, GradMeshPlugin, Shape, ShapeDetail, dual_directional, opaque,
+    with_gradient_bounds,
+};
 use common::screenshot::AutoScreenshotPlugin;
 
 fn main() {
@@ -43,15 +46,39 @@ fn main() {
 #[derive(Component)]
 struct WorldLabel(Vec3);
 
+/// Pastel and deep colour stops used across the scene.
+const BUTTER: [f32; 3] = [1.0, 0.93, 0.58];
+const PINK: [f32; 3] = [1.0, 0.70, 0.82];
+const MINT: [f32; 3] = [0.62, 0.93, 0.80];
+const SKY: [f32; 3] = [0.62, 0.80, 1.0];
+const LILAC: [f32; 3] = [0.82, 0.72, 0.98];
+const ROSE: [f32; 3] = [0.80, 0.25, 0.42];
+const TEAL: [f32; 3] = [0.10, 0.50, 0.56];
+const PLUM: [f32; 3] = [0.42, 0.22, 0.58];
+
+/// Gradient material that blends from `from` to `to` along `direction` across the
+/// shape centred at `center` (half the gradient length is `half_extent`).
+fn gradient(
+    from: [f32; 3],
+    to: [f32; 3],
+    direction: [f32; 3],
+    center: Vec3,
+    half_extent: f32,
+) -> GradMeshMaterial {
+    let mut mat = dual_directional(from, to, direction);
+    mat.base.perceptual_roughness = 0.45;
+    with_gradient_bounds(mat, center, half_extent)
+}
+
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<bevy::render::mesh::Mesh>>,
     mut materials: ResMut<Assets<GradMeshMaterial>>,
 ) {
-    // Camera — top-down angled view
+    // Camera — angled view that fills the frame
     commands.spawn((
         Camera3d::default(),
-        Transform::from_xyz(0.0, 10.0, 10.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
+        Transform::from_xyz(0.0, 7.5, 11.0).looking_at(Vec3::new(0.0, 1.0, 0.0), Vec3::Y),
     ));
 
     // Lighting
@@ -72,81 +99,65 @@ fn setup(
     let ground = meshes.add(Plane3d::new(Vec3::Y, Vec2::splat(20.0)));
     commands.spawn((
         Mesh3d(ground),
-        MeshMaterial3d(materials.add(dual_directional(
-            [0.07, 0.07, 0.09],
-            [0.12, 0.12, 0.15],
-            [0.0, 1.0, 0.0],
-        ))),
+        MeshMaterial3d(materials.add(opaque(0.17, 0.16, 0.22))),
         Transform::from_translation(Vec3::new(0.0, -0.01, 0.0)),
     ));
 
-    let mut mat = |r: f32, g: f32, b: f32| -> Handle<GradMeshMaterial> {
-        materials.add(dual_directional(
-            [r * 0.6, g * 0.6, b * 0.6],
-            [r, g, b],
-            [0.0, 1.0, 0.0],
-        ))
-    };
-
-    // ─── Row 1: Open zigzag polyline ───
-    let pts = zigzag_points(-3.0, 3.0, 6, 0.8);
-    let polyline_mesh =
-        meshes.add(Shape::polyline3d(pts.clone(), 0.1, false, 8, ShapeDetail::Medium).build());
-    let miter_mat = mat(0.9, 0.3, 0.3);
+    // ─── Open zigzag: butter → pink along the path (X), mitred joints ───
+    let origin = Vec3::new(-4.0, 0.9, -2.6);
+    let pts = zigzag_points(-2.6, 2.6, 6, 0.9);
+    let mesh = meshes.add(Shape::polyline3d(pts, 0.11, false, 12, ShapeDetail::Medium).build());
     commands.spawn((
-        Mesh3d(polyline_mesh),
-        MeshMaterial3d(miter_mat),
-        Transform::from_translation(Vec3::new(-4.0, 1.0, -3.0)),
+        Mesh3d(mesh),
+        MeshMaterial3d(materials.add(gradient(BUTTER, PINK, [1.0, 0.0, 0.0], origin, 2.6))),
+        Transform::from_translation(origin),
     ));
-    spawn_label(&mut commands, "Open Zigzag", Vec3::new(-4.0, 2.0, -3.0));
+    spawn_label(&mut commands, "Open Zigzag", origin + Vec3::new(0.0, 1.4, 0.0));
 
-    // ─── Row 2: Closed hexagon loop ───
-    let pts = hexagon_points(1.5);
-    let closed_mesh =
-        meshes.add(Shape::polyline3d(pts.clone(), 0.1, true, 8, ShapeDetail::Medium).build());
-    let closed_mat = mat(0.95, 0.45, 0.6);
+    // ─── Closed hexagon: lifted well clear of the ground, rose → pink vertically ───
+    let origin = Vec3::new(4.0, 1.9, -2.6);
+    let pts = hexagon_points(1.3);
+    let mesh = meshes.add(Shape::polyline3d(pts, 0.1, true, 12, ShapeDetail::Medium).build());
     commands.spawn((
-        Mesh3d(closed_mesh),
-        MeshMaterial3d(closed_mat),
-        Transform::from_translation(Vec3::new(4.0, 1.0, -3.0)),
+        Mesh3d(mesh),
+        MeshMaterial3d(materials.add(gradient(ROSE, PINK, [0.0, 1.0, 0.0], origin, 1.3))),
+        Transform::from_translation(origin),
     ));
-    spawn_label(&mut commands, "Closed Loop", Vec3::new(4.0, 2.0, -3.0));
+    spawn_label(&mut commands, "Closed Loop", origin + Vec3::new(0.0, 1.8, 0.0));
 
-    // ─── Row 3: Thick polyline ───
-    let pts = zigzag_points(-3.0, 3.0, 4, 1.0);
-    let thick_mesh =
-        meshes.add(Shape::polyline3d(pts.clone(), 0.2, false, 12, ShapeDetail::Medium).build());
-    let thick_mat = mat(0.3, 0.85, 0.4);
+    // ─── Thick zigzag: lilac → sky ───
+    let origin = Vec3::new(-4.0, 0.9, 2.4);
+    let pts = zigzag_points(-2.6, 2.6, 4, 1.0);
+    let mesh = meshes.add(Shape::polyline3d(pts, 0.22, false, 16, ShapeDetail::Medium).build());
     commands.spawn((
-        Mesh3d(thick_mesh),
-        MeshMaterial3d(thick_mat),
-        Transform::from_translation(Vec3::new(-4.0, 1.0, 3.0)),
+        Mesh3d(mesh),
+        MeshMaterial3d(materials.add(gradient(LILAC, SKY, [1.0, 0.0, 0.0], origin, 2.6))),
+        Transform::from_translation(origin),
     ));
-    spawn_label(&mut commands, "Thick Line", Vec3::new(-4.0, 2.0, 3.0));
+    spawn_label(&mut commands, "Thick Line", origin + Vec3::new(0.0, 1.5, 0.0));
 
-    // ─── Row 4: Thin detailed polyline ───
-    let pts = zigzag_points(-3.0, 3.0, 8, 0.5);
-    let thin_mesh =
-        meshes.add(Shape::polyline3d(pts.clone(), 0.04, false, 6, ShapeDetail::Medium).build());
-    let thin_mat = mat(0.3, 0.4, 0.95);
+    // ─── Thin detailed zigzag: deep plum → pink ───
+    let origin = Vec3::new(4.0, 0.9, 2.4);
+    let pts = zigzag_points(-2.6, 2.6, 8, 0.55);
+    let mesh = meshes.add(Shape::polyline3d(pts, 0.05, false, 8, ShapeDetail::Medium).build());
     commands.spawn((
-        Mesh3d(thin_mesh),
-        MeshMaterial3d(thin_mat),
-        Transform::from_translation(Vec3::new(4.0, 1.0, 3.0)),
+        Mesh3d(mesh),
+        MeshMaterial3d(materials.add(gradient(PLUM, PINK, [1.0, 0.0, 0.0], origin, 2.6))),
+        Transform::from_translation(origin),
     ));
-    spawn_label(&mut commands, "Thin Line", Vec3::new(4.0, 2.0, 3.0));
+    spawn_label(&mut commands, "Thin Line", origin + Vec3::new(0.0, 1.2, 0.0));
 
-    // ─── 3D spiral polyline ───
-    let pts = spiral_points(10, 2.0, 3.0);
-    let spiral_mesh =
-        meshes.add(Shape::polyline3d(pts.clone(), 0.06, false, 8, ShapeDetail::Medium).build());
-    let spiral_mat = mat(1.0, 0.85, 0.1);
+    // ─── 3D spiral: teal → butter bottom to top ───
+    let origin = Vec3::new(0.0, 1.8, 0.0);
+    let pts = spiral_points(4, 1.2, 3.2);
+    let mesh = meshes.add(Shape::polyline3d(pts, 0.07, false, 10, ShapeDetail::Medium).build());
     commands.spawn((
-        Mesh3d(spiral_mesh),
-        MeshMaterial3d(spiral_mat),
-        Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)),
+        Mesh3d(mesh),
+        MeshMaterial3d(materials.add(gradient(TEAL, BUTTER, [0.0, 1.0, 0.0], origin, 1.6))),
+        Transform::from_translation(origin),
     ));
-    spawn_label(&mut commands, "3D Spiral", Vec3::new(0.0, 3.5, 0.0));
+    spawn_label(&mut commands, "3D Spiral", origin + Vec3::new(0.0, 2.2, 0.0));
+    let _ = MINT;
 }
 
 /// Generate zigzag points for polyline demos.

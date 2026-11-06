@@ -45,6 +45,7 @@ pub mod instanced_render;
 pub mod lod;
 pub mod material;
 pub mod material_interning;
+pub mod mix_space;
 pub mod plugin;
 pub mod polyline_gpu;
 pub mod render_pipeline;
@@ -64,12 +65,13 @@ pub use instanced_render::{InstancedBatchData, InstancedRenderPlugin};
 pub use lod::{LOD_EXTREME, LOD_HIGH, LOD_LOW, LOD_MEDIUM, LOD_MINIMAL, LodConfig, LodResult};
 pub use material::{
     GradMeshExtension, GradMeshMaterial, GradMeshUniform, GradMeshUniformBuffer, Vec4, additive,
-    dashed, dither, dual_directional, dual_directional_oklab, dual_radial, dual_radial_oklab,
-    gradmesh_to_standard, multiplicative, opaque, screen, transparent,
+    dashed, dither, dual_directional, dual_radial, dual_radial_alpha, gradmesh_to_standard,
+    multiplicative, opaque, screen, transparent, with_gradient_bounds, with_mix_space,
 };
 pub use material_interning::{
     GradMeshMaterialKey, GradMeshMaterialPool, MATERIAL_WARNING_THRESHOLD, warn_excessive_materials,
 };
+pub use mix_space::MixSpace;
 pub use plugin::{GradMeshPlugin, MeshCache};
 pub use render_pipeline::{GradMeshBatchItem, InstancedBatch, InstancedBufferData, InstancedStats};
 pub use retained::{GradMeshHandle, RetainedWorld};

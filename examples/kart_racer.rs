@@ -16,8 +16,8 @@ use bevy::render::RenderPlugin;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
 use bevy_asset::RenderAssetUsages;
 use bevy_gradmesh::{
-    BatchRecorder, DeformationParams, GradMeshMaterial, GradMeshPlugin, LodConfig, Shape,
-    ShapeDetail, additive, dual_directional_oklab, dual_radial_oklab, opaque, transparent,
+    BatchRecorder, DeformationParams, GradMeshMaterial, GradMeshPlugin, LodConfig, MixSpace, Shape,
+    ShapeDetail, additive, dual_directional, dual_radial_alpha, opaque, transparent,
 };
 use common::screenshot::AutoScreenshotPlugin;
 
@@ -472,7 +472,8 @@ fn setup(
     mut materials: ResMut<Assets<GradMeshMaterial>>,
 ) {
     let start_pos = track_point(0.0);
-    let start_heading = track_heading(0.0).angle_between(Vec3::Z);
+    let th = track_heading(0.0);
+    let start_heading = th.x.atan2(th.z);
 
     // 3D Camera
     let cam_offset = Vec3::new(
@@ -528,7 +529,7 @@ fn setup(
     let ground = meshes.add(Plane3d::new(Vec3::Y, Vec2::splat(1000.0)));
     commands.spawn((
         Mesh3d(ground),
-        MeshMaterial3d(materials.add(dual_directional_oklab(
+        MeshMaterial3d(materials.add(dual_directional(
             [0.08, 0.15, 0.06],
             [0.12, 0.22, 0.10],
             [0.2, 0.6, 0.15],
@@ -579,7 +580,7 @@ fn setup(
 
     // Speed bar fill
     let speed_fill = meshes.add(Shape::rectangle(Vec2::new(3.9, 0.25), ShapeDetail::Low).build());
-    let speed_fill_mat = materials.add(dual_directional_oklab(
+    let speed_fill_mat = materials.add(dual_directional(
         [0.0, 0.5, 1.0],
         [0.0, 1.0, 0.5],
         [1.0, 0.0, 0.0],
@@ -597,11 +598,7 @@ fn setup(
 
     // Coin icon — star shape (top-right)
     let coin_star = meshes.add(Shape::star(5, 0.35, 0.14, ShapeDetail::Medium).build());
-    let coin_star_mat = materials.add(dual_radial_oklab(
-        [1.0, 0.85, 0.2, 1.0],
-        [0.8, 0.5, 0.1, 1.0],
-        0.7,
-    ));
+    let coin_star_mat = materials.add(dual_radial_alpha([1.0, 0.85, 0.2, 1.0], [0.8, 0.5, 0.1, 1.0]));
     commands.spawn((
         Mesh3d(coin_star),
         MeshMaterial3d(coin_star_mat),
@@ -614,7 +611,7 @@ fn setup(
 
     // Lap indicator — hexagon (top-left)
     let lap_hex = meshes.add(Shape::polygon(6, 0.3, ShapeDetail::Low).build());
-    let lap_hex_mat = materials.add(dual_directional_oklab(
+    let lap_hex_mat = materials.add(dual_directional(
         [0.1, 0.4, 0.8],
         [0.3, 0.8, 1.0],
         [0.0, 1.0, 0.0],
@@ -714,7 +711,7 @@ fn build_track(
     let track_mesh = meshes.add(build_road_mesh_from_sampler(sampler));
     let road_mat = materials.add({
         let mut mat =
-            dual_directional_oklab([0.45, 0.45, 0.47], [0.55, 0.55, 0.57], [0.0, 1.0, 0.0]);
+            dual_directional([0.45, 0.45, 0.47], [0.55, 0.55, 0.57], [0.0, 1.0, 0.0]);
         mat.base.metallic = 0.0;
         mat.base.perceptual_roughness = 0.85;
         mat.base.cull_mode = None;
@@ -731,12 +728,12 @@ fn build_track(
     let curb_count = 60;
     let curb_mesh =
         meshes.add(Shape::cuboid(Vec3::new(1.5, 0.12, 0.3), 0.02, ShapeDetail::Low).build());
-    let curb_red = materials.add(dual_directional_oklab(
+    let curb_red = materials.add(dual_directional(
         [0.7, 0.05, 0.05],
         [1.0, 0.2, 0.2],
         [0.0, 1.0, 0.0],
     ));
-    let curb_white = materials.add(dual_directional_oklab(
+    let curb_white = materials.add(dual_directional(
         [0.8, 0.8, 0.8],
         [1.0, 1.0, 1.0],
         [0.0, 1.0, 0.0],
@@ -764,7 +761,7 @@ fn build_track(
     // Guardrail posts — use sampler
     let post_mesh = meshes.add(Shape::tapered_cylinder(0.08, 0.15, 2.0, ShapeDetail::Low).build());
     let post_mat = materials.add({
-        let mut mat = dual_directional_oklab([0.4, 0.4, 0.45], [0.7, 0.7, 0.75], [0.0, 1.0, 0.0]);
+        let mut mat = dual_directional([0.4, 0.4, 0.45], [0.7, 0.7, 0.75], [0.0, 1.0, 0.0]);
         mat.base.metallic = 0.5;
         mat.base.perceptual_roughness = 0.3;
         mat
@@ -790,7 +787,7 @@ fn build_track(
     let arch_pillar =
         meshes.add(Shape::tapered_cylinder(0.15, 0.25, 4.0, ShapeDetail::Medium).build());
     let arch_mat = materials.add({
-        let mut mat = dual_directional_oklab([0.1, 0.5, 0.15], [0.3, 1.0, 0.4], [0.0, 1.0, 0.0]);
+        let mut mat = dual_directional([0.1, 0.5, 0.15], [0.3, 1.0, 0.4], [0.0, 1.0, 0.0]);
         mat.base.metallic = 0.3;
         mat.base.perceptual_roughness = 0.4;
         mat
@@ -837,7 +834,7 @@ fn build_track(
     // Light posts — use sampler
     let light_post = meshes.add(Shape::tapered_cylinder(0.06, 0.12, 4.0, ShapeDetail::Low).build());
     let light_post_mat = materials.add({
-        let mut mat = dual_directional_oklab([0.3, 0.3, 0.35], [0.6, 0.6, 0.65], [0.0, 1.0, 0.0]);
+        let mut mat = dual_directional([0.3, 0.3, 0.35], [0.6, 0.6, 0.65], [0.0, 1.0, 0.0]);
         mat.base.metallic = 0.7;
         mat.base.perceptual_roughness = 0.2;
         mat
@@ -938,7 +935,13 @@ fn build_kart(
     sampler: &TrackSampler,
 ) {
     let (start_pos, start_fwd, _, _, _, _) = sampler.sample(0.0);
-    let start_yaw = start_fwd.angle_between(Vec3::Z);
+    let start_yaw = start_fwd.x.atan2(start_fwd.z);
+    // Start the simulation on the track, facing along it.
+    commands.insert_resource(KartState {
+        position: start_pos,
+        heading: start_yaw,
+        ..default()
+    });
 
     let kart_root = commands
         .spawn((
@@ -953,7 +956,7 @@ fn build_kart(
     let body =
         meshes.add(Shape::cuboid(Vec3::new(1.0, 0.4, 2.0), 0.12, ShapeDetail::Medium).build());
     let body_mat = materials.add({
-        let mut mat = dual_directional_oklab([0.6, 0.05, 0.05], [1.0, 0.25, 0.2], [0.0, 1.0, 0.0]);
+        let mut mat = dual_directional([0.6, 0.05, 0.05], [1.0, 0.25, 0.2], [0.0, 1.0, 0.0]);
         mat.base.metallic = 0.8;
         mat.base.perceptual_roughness = 0.2;
         mat
@@ -971,7 +974,7 @@ fn build_kart(
         meshes.add(Shape::cuboid(Vec3::new(0.7, 0.35, 0.9), 0.15, ShapeDetail::Medium).build());
     let cabin_mat = materials.add({
         let mut mat =
-            dual_directional_oklab([0.15, 0.05, 0.08], [0.35, 0.12, 0.15], [0.0, 1.0, 0.0]);
+            dual_directional([0.15, 0.05, 0.08], [0.35, 0.12, 0.15], [0.0, 1.0, 0.0]);
         mat.base.metallic = 0.6;
         mat.base.perceptual_roughness = 0.15;
         mat
@@ -1011,7 +1014,7 @@ fn build_kart(
     });
     let rim = meshes.add(Shape::ring(0.18, 0.08, ShapeDetail::Medium).build());
     let rim_mat = materials.add({
-        let mut mat = dual_directional_oklab([0.5, 0.5, 0.55], [0.9, 0.9, 0.95], [0.0, 1.0, 0.0]);
+        let mut mat = dual_directional([0.5, 0.5, 0.55], [0.9, 0.9, 0.95], [0.0, 1.0, 0.0]);
         mat.base.metallic = 0.95;
         mat.base.perceptual_roughness = 0.1;
         mat
@@ -1055,7 +1058,7 @@ fn build_kart(
     let spoiler =
         meshes.add(Shape::cuboid(Vec3::new(1.2, 0.06, 0.35), 0.02, ShapeDetail::Low).build());
     let spoiler_mat = materials.add({
-        let mut mat = dual_directional_oklab([0.8, 0.25, 0.0], [1.0, 0.55, 0.1], [0.0, 1.0, 0.0]);
+        let mut mat = dual_directional([0.8, 0.25, 0.0], [1.0, 0.55, 0.1], [0.0, 1.0, 0.0]);
         mat.base.metallic = 0.7;
         mat.base.perceptual_roughness = 0.25;
         mat
@@ -1175,7 +1178,7 @@ fn populate_decorations(recorder: &mut BatchRecorder, _time: f32) {
             dark,
             light,
             [0.0, 1.0, 0.0],
-            true,
+            MixSpace::default(),
         );
     }
 
@@ -1200,7 +1203,7 @@ fn populate_decorations(recorder: &mut BatchRecorder, _time: f32) {
         recorder.set_scale(Vec3::splat(1.0));
         recorder.set_rotation(Quat::IDENTITY);
         recorder.set_deformation(DeformationParams::pulse(0.1, 1.5, i as f32 * 0.5));
-        recorder.sphere_dual_directional(0.8, ShapeDetail::Low, dark, light, [0.0, 1.0, 0.0], true);
+        recorder.sphere_dual_directional(0.8, ShapeDetail::Low, dark, light, [0.0, 1.0, 0.0], MixSpace::default());
     }
 
     recorder.end();
@@ -1233,7 +1236,7 @@ fn build_coins(
 ) {
     let coin_mesh = meshes.add(Shape::cylinder(0.3, 0.08, ShapeDetail::Medium).build());
     let coin_mat = materials.add({
-        let mut mat = dual_radial_oklab([1.0, 0.85, 0.2, 1.0], [0.8, 0.5, 0.1, 1.0], 0.7);
+        let mut mat = dual_radial_alpha([1.0, 0.85, 0.2, 1.0], [0.8, 0.5, 0.1, 1.0]);
         mat.base.metallic = 0.9;
         mat.base.perceptual_roughness = 0.1;
         mat.base.emissive = bevy::color::LinearRgba::rgb(1.0, 0.85, 0.2) * 5_000.0;
@@ -1287,7 +1290,7 @@ fn handle_input(
     if keyboard.just_pressed(KeyCode::KeyR) {
         let (pos, fwd, _, _, _, _) = sampler.sample(0.0);
         state.position = pos;
-        state.heading = fwd.angle_between(Vec3::Z);
+        state.heading = fwd.x.atan2(fwd.z);
         state.speed = 0.0;
         state.boost = 0.0;
     }

@@ -297,9 +297,9 @@ fn queue_instanced_batches(
         };
 
         // Extract frustum planes from the view-projection matrix for culling
-        let clip_from_world = view.clip_from_world.unwrap_or(
-            view.clip_from_view * bevy::math::Affine3A::from(view.world_from_view.affine()),
-        );
+        let clip_from_world = view.clip_from_world.unwrap_or_else(|| {
+            view.clip_from_view * bevy::math::Mat4::from(view.world_from_view.affine().inverse())
+        });
         let frustum = culling::FrustumPlanes::from_view_projection(&clip_from_world);
 
         // Camera world position for LOD distance computation

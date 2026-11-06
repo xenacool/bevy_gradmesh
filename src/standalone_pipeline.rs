@@ -412,9 +412,9 @@ fn queue_standalone_batches(
             continue;
         };
 
-        let clip_from_world = view.clip_from_world.unwrap_or(
-            view.clip_from_view * bevy::math::Affine3A::from(view.world_from_view.affine()),
-        );
+        let clip_from_world = view.clip_from_world.unwrap_or_else(|| {
+            view.clip_from_view * bevy::math::Mat4::from(view.world_from_view.affine().inverse())
+        });
         let frustum = culling::FrustumPlanes::from_view_projection(&clip_from_world);
         let _camera_world_pos = view.world_from_view.translation();
 

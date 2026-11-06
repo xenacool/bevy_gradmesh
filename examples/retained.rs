@@ -65,7 +65,7 @@ fn setup(
     // Camera
     commands.spawn((
         Camera3d::default(),
-        Transform::from_xyz(0.0, 8.0, 10.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
+        Transform::from_xyz(0.0, 5.5, 6.5).looking_at(Vec3::new(0.0, 0.7, 0.0), Vec3::Y),
     ));
 
     // Lighting
@@ -86,13 +86,13 @@ fn setup(
     let ground = meshes.add(Plane3d::new(Vec3::Y, Vec2::splat(22.0)));
     commands.spawn((
         Mesh3d(ground),
-        MeshMaterial3d(materials.add(bevy_gradmesh::opaque(0.1, 0.1, 0.12))),
+        MeshMaterial3d(materials.add(bevy_gradmesh::opaque(0.2, 0.19, 0.26))),
         Transform::from_translation(Vec3::new(0.0, -0.01, 0.0)),
     ));
 
     // Labels
-    spawn_label(&mut commands, "Orbiting Spheres", Vec3::new(0.0, 2.5, 0.0));
-    spawn_label(&mut commands, "Pulsing Center", Vec3::new(0.0, -0.5, 0.0));
+    spawn_label(&mut commands, "Orbiting Spheres", Vec3::new(0.0, 2.3, -2.0));
+    spawn_label(&mut commands, "Pulsing Center", Vec3::new(0.0, 0.0, 0.6));
 
     // Create retained world and add shapes
     let mut world = RetainedWorld::new();
@@ -101,10 +101,10 @@ fn setup(
     let center = world.sphere(
         &mut commands,
         &mut meshes,
-        Vec3::ZERO,
-        0.5,
+        Vec3::new(0.0, 0.9, 0.0),
+        0.7,
         ShapeDetail::High,
-        [0.9, 0.5, 0.2, 1.0],
+        [1.0, 0.82, 0.5, 1.0],
     );
 
     // Orbiting spheres
@@ -112,13 +112,13 @@ fn setup(
     let mut spheres = Vec::with_capacity(sphere_count);
     for i in 0..sphere_count {
         let hue = i as f32 / sphere_count as f32;
-        let color = hsl_to_rgb(hue, 0.8, 0.6);
+        let color = hsl_to_rgb(hue, 0.7, 0.78);
         let handle = world.sphere(
             &mut commands,
             &mut meshes,
             Vec3::ZERO,
-            0.15,
-            ShapeDetail::Low,
+            0.3,
+            ShapeDetail::Medium,
             [color[0], color[1], color[2], 1.0],
         );
         spheres.push(handle);
@@ -149,16 +149,16 @@ fn update_retained_shapes(
     // Orbiting spheres
     for (i, handle) in spheres.iter().enumerate() {
         let angle = (i as f32 / sphere_count as f32) * std::f32::consts::TAU + t * 0.8;
-        let radius = 2.0 + (t * 0.5 + i as f32 * 0.3).sin() * 0.5;
+        let radius = 3.0 + (t * 0.5 + i as f32 * 0.3).sin() * 0.5;
         let x = angle.cos() * radius;
         let z = angle.sin() * radius;
-        let y = 0.5 + (t + i as f32 * 0.5).sin() * 0.3;
+        let y = 0.9 + (t + i as f32 * 0.5).sin() * 0.4;
 
         scene.world.set_transform(
             *handle,
             Vec3::new(x, y, z),
             Quat::IDENTITY,
-            Vec3::splat(0.15),
+            Vec3::ONE,
         );
     }
 
@@ -166,9 +166,9 @@ fn update_retained_shapes(
     let scale = 1.0 + t.sin() * 0.3;
     scene.world.set_transform(
         center,
-        Vec3::ZERO,
+        Vec3::new(0.0, 0.9, 0.0),
         Quat::IDENTITY,
-        Vec3::splat(scale * 0.5),
+        Vec3::splat(scale),
     );
 
     // Flush retained world to batches

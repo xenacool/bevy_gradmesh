@@ -26,4 +26,4 @@ BevyGradmesh follows these principles:
 
 | bevy_gradmesh | Bevy | Rust |
 |---------------|------|------|
-| 0.1.x         | 0.20 | 1.87+|
+| 0.2.x         | 0.20 | 1.87+|

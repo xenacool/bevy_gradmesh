@@ -10,7 +10,7 @@ mod common;
 use bevy::prelude::*;
 use bevy::render::RenderPlugin;
 use bevy_gradmesh::{
-    Dash, GradMeshMaterial, GradMeshPlugin, Shape, ShapeDetail, ShapeType, Style, opaque,
+    Dash, GradMeshMaterial, GradMeshPlugin, MixSpace, Shape, ShapeDetail, ShapeType, Style, opaque,
 };
 use common::screenshot::AutoScreenshotPlugin;
 
@@ -54,7 +54,7 @@ fn setup(
     // Camera — angled top-down view to see all rows clearly
     commands.spawn((
         Camera3d::default(),
-        Transform::from_xyz(0.0, 13.0, 12.0).looking_at(Vec3::new(0.0, 0.6, 0.0), Vec3::Y),
+        Transform::from_xyz(0.0, 12.0, 11.5).looking_at(Vec3::new(0.0, 0.4, 0.4), Vec3::Y),
     ));
 
     // Lighting
@@ -75,22 +75,21 @@ fn setup(
     let backdrop = meshes.add(Plane3d::new(Vec3::Y, Vec2::splat(28.0)));
     commands.spawn((
         Mesh3d(backdrop),
-        MeshMaterial3d(materials.add(opaque(0.12, 0.12, 0.15))),
+        MeshMaterial3d(materials.add(opaque(0.17, 0.16, 0.22))),
         Transform::from_translation(Vec3::new(0.0, -0.01, 0.0)),
     ));
 
     // Pre-built meshes for varied shapes
-    let sphere = meshes.add(Shape::sphere(0.42, ShapeDetail::High).build());
-    let disc = meshes.add(Shape::disc(0.42, ShapeDetail::High).build());
-    let cuboid = meshes.add(Shape::cuboid(Vec3::splat(0.6), 0.0, ShapeDetail::High).build());
+    let sphere = meshes.add(Shape::sphere(0.55, ShapeDetail::High).build());
+    let disc = meshes.add(Shape::disc(0.55, ShapeDetail::High).build());
+    let cuboid = meshes.add(Shape::cuboid(Vec3::splat(0.8), 0.15, ShapeDetail::High).build());
     // Disc rims give chevrons a visible width to form their V-shape
-    let disc_rim = meshes.add(Shape::disc_rim(0.55, 0.18, ShapeDetail::High).build());
-    // Larger cuboid for rectangle dash examples
-    let big_cuboid =
-        meshes.add(Shape::cuboid(Vec3::new(1.0, 1.0, 0.6), 0.0, ShapeDetail::High).build());
+    let disc_rim = meshes.add(Shape::disc_rim(0.65, 0.2, ShapeDetail::High).build());
+    // Flat rectangle rim: dashes run along the perimeter and stay readable
+    let rect_rim = meshes.add(Shape::rectangle_rim(Vec2::new(1.5, 1.1), 0.24, ShapeDetail::High).build());
 
-    let row_spacing = 3.2;
-    let col_spacing = 2.6;
+    let row_spacing = 3.0;
+    let col_spacing = 2.9;
     let origin_y = 0.6;
 
     let z0 = -row_spacing * 1.5;
@@ -112,7 +111,7 @@ fn setup(
         &mut commands,
         &mut materials,
         &sphere,
-        Style::opaque(Color::srgb(0.9, 0.3, 0.3)),
+        Style::opaque(Color::srgb(0.98, 0.55, 0.62)),
         Vec3::new(r1_xs[0], origin_y, z0),
         "Single",
     );
@@ -123,22 +122,23 @@ fn setup(
         &mut materials,
         &sphere,
         Style::dual_directional(
-            Color::srgb(0.5, 0.2, 0.15),
-            Color::srgb(0.96, 0.8, 0.69),
+            Color::srgb(0.85, 0.35, 0.55),
+            Color::srgb(1.0, 0.94, 0.6),
             Vec3::Y,
-        ),
+        )
+        .with_mix_space(MixSpace::Srgb),
         Vec3::new(r1_xs[1], origin_y, z0),
-        "Dual Dir (RGB)",
+        "Dual Dir (sRGB)",
     );
 
-    // Dual Directional OKLAB
+    // Dual Directional (OKLAB is the default space)
     add_shape(
         &mut commands,
         &mut materials,
         &sphere,
-        Style::dual_directional_oklab(
-            Color::srgb(0.5, 0.2, 0.15),
-            Color::srgb(0.96, 0.8, 0.69),
+        Style::dual_directional(
+            Color::srgb(0.85, 0.35, 0.55),
+            Color::srgb(1.0, 0.94, 0.6),
             Vec3::Y,
         ),
         Vec3::new(r1_xs[2], origin_y, z0),
@@ -150,19 +150,19 @@ fn setup(
         &mut commands,
         &mut materials,
         &disc,
-        Style::dual_radial(Color::srgb(0.1, 0.25, 0.5), Color::srgb(0.3, 0.6, 0.9)),
+        Style::dual_radial(Color::srgb(0.45, 0.3, 0.75), Color::srgb(1.0, 0.8, 0.9)),
         Vec3::new(r1_xs[3], origin_y, z0),
-        "Dual Radial",
+        "Dual Radial (OKLAB)",
     );
 
-    // Dual Radial OKLAB
+    // Dual Radial OKLCH
     add_shape(
         &mut commands,
         &mut materials,
         &disc,
-        Style::dual_radial(Color::srgb(0.1, 0.25, 0.5), Color::srgb(0.3, 0.6, 0.9)).with_oklab(),
+        Style::dual_radial(Color::srgb(0.45, 0.3, 0.75), Color::srgb(1.0, 0.8, 0.9)).with_mix_space(MixSpace::Oklch),
         Vec3::new(r1_xs[4], origin_y, z0),
-        "Dual Radial OKLAB",
+        "Dual Radial (OKLCH)",
     );
 
     // ─── Row 2: Blend Modes ───
@@ -250,7 +250,7 @@ fn setup(
         &mut commands,
         &mut materials,
         &disc_rim,
-        Style::opaque(Color::srgb(0.9, 0.5, 0.2))
+        Style::opaque(Color::srgb(1.0, 0.8, 0.45))
             .with_shape_type(ShapeType::Disc)
             .with_dash(Dash::fixed(8, 0.35)),
         Vec3::new(r3_xs[0], origin_y, z2),
@@ -262,7 +262,7 @@ fn setup(
         &mut commands,
         &mut materials,
         &disc_rim,
-        Style::opaque(Color::srgb(0.3, 0.7, 0.9))
+        Style::opaque(Color::srgb(0.6, 0.82, 1.0))
             .with_shape_type(ShapeType::Disc)
             .with_dash(Dash::chevron(8, 0.35)),
         Vec3::new(r3_xs[1], origin_y, z2),
@@ -274,45 +274,42 @@ fn setup(
         &mut commands,
         &mut materials,
         &disc_rim,
-        Style::opaque(Color::srgb(0.8, 0.3, 0.7))
+        Style::opaque(Color::srgb(1.0, 0.65, 0.8))
             .with_shape_type(ShapeType::Disc)
             .with_dash(Dash::rounded(8, 0.35)),
         Vec3::new(r3_xs[2], origin_y, z2),
         "Dash Rounded",
     );
 
-    // Normal dash on larger rect
-    add_shape(
+    add_shape_tilted(
         &mut commands,
         &mut materials,
-        &big_cuboid,
-        Style::opaque(Color::srgb(0.4, 0.9, 0.4))
+        &rect_rim,
+        Style::opaque(Color::srgb(0.6, 0.93, 0.78))
             .with_shape_type(ShapeType::Rectangle)
-            .with_dash(Dash::fixed(8, 0.35)),
+            .with_dash(Dash::fixed(6, 0.4)),
         Vec3::new(r3_xs[3], origin_y, z2),
         "Rect Dash",
     );
 
-    // Chevron dash on larger rect
-    add_shape(
+    add_shape_tilted(
         &mut commands,
         &mut materials,
-        &big_cuboid,
-        Style::opaque(Color::srgb(0.9, 0.7, 0.3))
+        &rect_rim,
+        Style::opaque(Color::srgb(0.98, 0.9, 0.55))
             .with_shape_type(ShapeType::Rectangle)
-            .with_dash(Dash::chevron(8, 0.35)),
+            .with_dash(Dash::chevron(6, 0.4)),
         Vec3::new(r3_xs[4], origin_y, z2),
         "Rect Chevron",
     );
 
-    // Rounded dash on larger rect
-    add_shape(
+    add_shape_tilted(
         &mut commands,
         &mut materials,
-        &big_cuboid,
-        Style::opaque(Color::srgb(0.5, 0.5, 0.95))
+        &rect_rim,
+        Style::opaque(Color::srgb(0.75, 0.68, 0.98))
             .with_shape_type(ShapeType::Rectangle)
-            .with_dash(Dash::rounded(8, 0.35)),
+            .with_dash(Dash::rounded(6, 0.4)),
         Vec3::new(r3_xs[5], origin_y, z2),
         "Rect Rounded",
     );
@@ -375,7 +372,7 @@ fn setup(
         &mut commands,
         &mut materials,
         &sphere,
-        Style::dual_directional_oklab(
+        Style::dual_directional(
             Color::srgb(0.0, 0.8, 0.2),
             Color::srgb(0.3, 1.0, 0.5),
             Vec3::Y,

@@ -46,6 +46,60 @@ fn oklab_mix(c1: vec3<f32>, c2: vec3<f32>, t: f32) -> vec3<f32> {
     return oklab_to_linear(lab);
 }
 
+/// Convert an sRGB-encoded colour (as supplied by users / `Color::srgb`) to linear.
+/// Material and instance colours are stored as sRGB components, while the render
+/// targets and lighting expect linear values.
+fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
+    let lo = c / 12.92;
+    let hi = pow((c + vec3<f32>(0.055)) / 1.055, vec3<f32>(2.4));
+    return select(hi, lo, c <= vec3<f32>(0.04045));
+}
+
+// ─── Gradient mixing in a selectable colour space ───
+// `flags.w` carries the space: 0 = OKLAB (default), 1 = OKLCH, 2 = linear RGB, 3 = sRGB.
+// Keep in sync with `MixSpace::gpu_code` in `src/mix_space.rs`.
+
+const TAU: f32 = 6.28318530718;
+
+fn oklch_mix(c1: vec3<f32>, c2: vec3<f32>, t: f32) -> vec3<f32> {
+    let lab1 = linear_to_oklab(c1);
+    let lab2 = linear_to_oklab(c2);
+    let chroma1 = length(lab1.yz);
+    let chroma2 = length(lab2.yz);
+    var hue1 = atan2(lab1.z, lab1.y);
+    var hue2 = atan2(lab2.z, lab2.y);
+    // An achromatic end has no hue of its own; borrow the other end's hue.
+    if (chroma1 < 0.0001) {
+        hue1 = hue2;
+    } else if (chroma2 < 0.0001) {
+        hue2 = hue1;
+    }
+    // Shortest arc around the hue wheel.
+    var delta = hue2 - hue1;
+    delta = delta - TAU * round(delta / TAU);
+    let hue = hue1 + delta * t;
+    let lightness = mix(lab1.x, lab2.x, t);
+    let chroma = mix(chroma1, chroma2, t);
+    return oklab_to_linear(vec3<f32>(lightness, chroma * cos(hue), chroma * sin(hue)));
+}
+
+/// Mixes two sRGB-encoded colours in `space_code` and returns linear RGB.
+fn mix_colors(a_srgb: vec3<f32>, b_srgb: vec3<f32>, t: f32, space_code: f32) -> vec3<f32> {
+    let space = i32(round(space_code));
+    if (space == 3) {
+        return srgb_to_linear(mix(a_srgb, b_srgb, t));
+    }
+    let a = srgb_to_linear(a_srgb);
+    let b = srgb_to_linear(b_srgb);
+    if (space == 2) {
+        return mix(a, b, t);
+    }
+    if (space == 1) {
+        return oklch_mix(a, b, t);
+    }
+    return oklab_mix(a, b, t);
+}
+
 // ─── Dash pattern computation ───
 
 /// Epsilon for float comparisons — avoids precision issues with near-1.0 values.
@@ -412,7 +466,6 @@ fn instanced_fragment(
 ) -> @location(0) vec4<f32> {
     let color_mode = i32(in.flags.x);
     let blend_mode = i32(in.flags.y);
-    let oklab_flag = in.flags.w;
 
     // Compute gradient progress
     var progress = 0.0;
@@ -430,13 +483,9 @@ fn instanced_fragment(
     }
 
     // Interpolate colors
-    var base_color = in.color.rgb;
+    var base_color = srgb_to_linear(in.color.rgb);
     if (color_mode > 0) {
-        if (oklab_flag > 0.5) {
-            base_color = oklab_mix(in.color.rgb, in.secondary_color.rgb, progress);
-        } else {
-            base_color = mix(in.color.rgb, in.secondary_color.rgb, progress);
-        }
+        base_color = mix_colors(in.color.rgb, in.secondary_color.rgb, progress, in.flags.w);
     }
 
     // Apply dash pattern if enabled (requires UV attributes on the mesh)
@@ -446,7 +495,10 @@ fn instanced_fragment(
         let perimeter_progress = compute_perimeter_progress(in.uv, in.flags.z);
         let across = compute_across(in.uv, in.flags.z);
         let dash_mask = dash_segment_mask(perimeter_progress, across, dash);
-        base_color = mix(base_color, vec3<f32>(0.0), 1.0 - dash_mask);
+        // Gaps are cut out rather than painted black so dashes read as real dashes.
+        if (dash_mask < 0.5) {
+            discard;
+        }
     }
 }
 

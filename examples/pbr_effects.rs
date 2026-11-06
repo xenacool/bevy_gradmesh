@@ -12,7 +12,7 @@ use bevy::prelude::*;
 use bevy::render::RenderPlugin;
 use bevy_gradmesh::{
     GradMeshMaterial, GradMeshPlugin, Shape, ShapeDetail, additive, dual_directional,
-    dual_directional_oklab, dual_radial_oklab, opaque, screen, transparent,
+    dual_radial_alpha, opaque, screen, transparent,
 };
 use common::screenshot::AutoScreenshotPlugin;
 
@@ -58,7 +58,7 @@ fn setup(
     // Camera
     commands.spawn((
         Camera3d::default(),
-        Transform::from_xyz(0.0, 3.5, 11.2).looking_at(Vec3::new(0.0, 3.5, 0.0), Vec3::Y),
+        Transform::from_xyz(0.0, 3.0, 8.8).looking_at(Vec3::new(0.0, 3.05, 0.0), Vec3::Y),
     ));
 
     // Lighting — warm key light for dramatic PBR
@@ -92,7 +92,7 @@ fn setup(
     let backdrop_mesh = meshes.add(Plane3d::new(Vec3::Z, Vec2::new(24.0, 16.0)));
     commands.spawn((
         Mesh3d(backdrop_mesh),
-        MeshMaterial3d(materials.add(opaque(0.06, 0.06, 0.08))),
+        MeshMaterial3d(materials.add(opaque(0.04, 0.04, 0.06))),
         Transform::from_translation(Vec3::new(0.0, 3.5, -0.8)),
         Name::new("Backdrop"),
     ));
@@ -105,7 +105,7 @@ fn setup(
     add_shape(
         &mut commands,
         &mut meshes,
-        &materials.add(transparent(0.3, 0.7, 1.0, 0.4)),
+        &materials.add(transparent(0.6, 0.8, 1.0, 0.5)),
         Shape::sphere(0.4, ShapeDetail::High),
         Vec3::new(xs1[0], y1, 0.0),
         "Transparent\n(alpha 0.4)",
@@ -129,7 +129,7 @@ fn setup(
     add_shape(
         &mut commands,
         &mut meshes,
-        &materials.add(transparent(1.0, 0.4, 0.4, 0.5)),
+        &materials.add(transparent(1.0, 0.68, 0.8, 0.55)),
         Shape::cuboid(Vec3::new(0.55, 0.55, 0.55), 0.2, ShapeDetail::High),
         Vec3::new(xs1[2], y1, 0.0),
         "Transparent\nrounded cube",
@@ -139,11 +139,7 @@ fn setup(
     add_shape(
         &mut commands,
         &mut meshes,
-        &materials.add(dual_radial_oklab(
-            [1.0, 0.8, 0.3, 0.8],
-            [0.2, 0.1, 0.5, 0.0],
-            0.5,
-        )),
+        &materials.add(dual_radial_alpha([1.0, 0.8, 0.3, 0.8], [0.2, 0.1, 0.5, 0.0])),
         Shape::disc(0.4, ShapeDetail::High),
         Vec3::new(xs1[3], y1, 0.0),
         "Radial fade\nto transparent",
@@ -153,7 +149,7 @@ fn setup(
     add_shape(
         &mut commands,
         &mut meshes,
-        &materials.add(bevy_gradmesh::dither(0.9, 0.5, 1.0, 0.5)),
+        &materials.add(bevy_gradmesh::dither(0.85, 0.7, 1.0, 0.5)),
         Shape::disc(0.4, ShapeDetail::High),
         Vec3::new(xs1[4], y1, 0.0),
         "Dither blend\n(alpha 0.5)",
@@ -187,7 +183,7 @@ fn setup(
     add_shape(
         &mut commands,
         &mut meshes,
-        &materials.add(screen(1.0, 0.7, 0.2)),
+        &materials.add(screen(1.0, 0.88, 0.45)),
         Shape::cuboid(Vec3::new(0.5, 0.5, 0.5), 0.15, ShapeDetail::High),
         Vec3::new(xs2[2], y2, 0.0),
         "Screen blend",
@@ -209,8 +205,8 @@ fn setup(
 
     // Strong emissive torus
     {
-        let mut mat = dual_directional_oklab([0.1, 0.5, 0.2], [0.9, 1.0, 0.3], [1.0, 0.0, 0.0]);
-        mat.base.emissive = bevy::color::LinearRgba::rgb(0.3, 1.0, 0.4) * 5.0;
+        let mut mat = dual_directional([0.1, 0.5, 0.2], [0.9, 1.0, 0.3], [1.0, 0.0, 0.0]);
+        mat.base.emissive = bevy::color::LinearRgba::rgb(0.3, 1.0, 0.4) * 3.0;
         add_shape_rotated(
             &mut commands,
             &mut meshes,
@@ -243,7 +239,7 @@ fn setup(
 
     // Matte (high roughness, no metal)
     {
-        let mut mat = opaque(0.8, 0.4, 0.3);
+        let mut mat = opaque(0.97, 0.72, 0.62);
         mat.base.perceptual_roughness = 1.0;
         mat.base.metallic = 0.0;
         add_shape(
@@ -288,7 +284,7 @@ fn setup(
 
     // Gradient on matte surface
     {
-        let mut mat = dual_directional_oklab([0.1, 0.6, 0.3], [0.9, 0.8, 0.2], [0.0, 1.0, 0.0]);
+        let mut mat = dual_directional([0.1, 0.6, 0.3], [0.9, 0.8, 0.2], [0.0, 1.0, 0.0]);
         mat.base.perceptual_roughness = 0.9;
         mat.base.metallic = 0.0;
         add_shape(
@@ -309,7 +305,7 @@ fn setup(
     {
         let mut mat = transparent(0.2, 1.0, 0.5, 0.3);
         mat.base.perceptual_roughness = 0.05;
-        mat.base.emissive = bevy::color::LinearRgba::rgb(0.1, 1.0, 0.4) * 3.0;
+        mat.base.emissive = bevy::color::LinearRgba::rgb(0.1, 1.0, 0.4) * 2.0;
         add_shape(
             &mut commands,
             &mut meshes,
@@ -325,7 +321,7 @@ fn setup(
         let mut mat = opaque(0.3, 0.3, 0.5);
         mat.base.perceptual_roughness = 0.1;
         mat.base.metallic = 1.0;
-        mat.base.emissive = bevy::color::LinearRgba::rgb(0.5, 0.3, 1.0) * 1.5;
+        mat.base.emissive = bevy::color::LinearRgba::rgb(0.5, 0.3, 1.0) * 1.0;
         add_shape(
             &mut commands,
             &mut meshes,
@@ -338,9 +334,9 @@ fn setup(
 
     // Dual radial + transparent + emissive (orb)
     {
-        let mut mat = dual_radial_oklab([1.0, 0.9, 0.5, 0.9], [0.3, 0.1, 0.8, 0.1], 0.5);
+        let mut mat = dual_radial_alpha([1.0, 0.9, 0.5, 0.9], [0.3, 0.1, 0.8, 0.1]);
         mat.base.perceptual_roughness = 0.0;
-        mat.base.emissive = bevy::color::LinearRgba::rgb(1.0, 0.8, 0.3) * 2.0;
+        mat.base.emissive = bevy::color::LinearRgba::rgb(1.0, 0.8, 0.3) * 1.2;
         add_shape(
             &mut commands,
             &mut meshes,
@@ -351,15 +347,21 @@ fn setup(
         );
     }
 
-    // Dashed outline on metallic
-    add_shape(
-        &mut commands,
-        &mut meshes,
-        &materials.add(bevy_gradmesh::dashed(0.9, 0.5, 1.0, 8, 0.3, 0.0, 0, 0.0, 0)),
-        Shape::disc(0.4, ShapeDetail::High),
-        Vec3::new(xs4[3], y4, 0.0),
-        "Dashed\noutline",
-    );
+    // Dashed outline: a ring (disc rim) with disc-style perimeter dashes
+    {
+        let mut mat = bevy_gradmesh::dashed(1.0, 0.72, 0.84, 10, 0.4, 0.0, 0, 0.0, 1);
+        mat.base.perceptual_roughness = 0.3;
+        mat.base.metallic = 0.6;
+        add_shape_rotated(
+            &mut commands,
+            &mut meshes,
+            &materials.add(mat),
+            Shape::disc_rim(0.45, 0.14, ShapeDetail::High),
+            Vec3::new(xs4[3], y4, 0.0),
+            Quat::IDENTITY,
+            "Dashed\noutline",
+        );
+    }
 
     // Multiplicative blend
     add_shape(
@@ -370,6 +372,28 @@ fn setup(
         Vec3::new(xs4[4], y4, 0.0),
         "Multiplicative\nblend",
     );
+
+    // A small square pad behind every shape so transparency, additive blends
+    // and emissive colour have a nearby surface to read against.
+    let pad_mesh = meshes.add(Plane3d::new(Vec3::Z, Vec2::splat(0.62)));
+    let pad_tones = [
+        [0.20, 0.17, 0.26],
+        [0.16, 0.20, 0.26],
+        [0.24, 0.17, 0.21],
+        [0.17, 0.22, 0.22],
+    ];
+    for (row, y) in [y1, y2, y3, y4].into_iter().enumerate() {
+        let tone = pad_tones[row % pad_tones.len()];
+        let pad_material = materials.add(opaque(tone[0], tone[1], tone[2]));
+        for x in xs1 {
+            commands.spawn((
+                Mesh3d(pad_mesh.clone()),
+                MeshMaterial3d(pad_material.clone()),
+                Transform::from_translation(Vec3::new(x, y, -0.45)),
+                Name::new("Pad"),
+            ));
+        }
+    }
 }
 
 fn add_shape(

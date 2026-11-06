@@ -44,6 +44,7 @@ use bevy::math::{Quat, Vec3};
 use bevy::render::mesh::Mesh;
 
 use crate::batch::{BatchRecorder, InstanceProperties};
+use crate::mix_space::MixSpace;
 use crate::shape::{Shape, ShapeDetail};
 
 /// Opaque handle to a retained shape.
@@ -221,7 +222,7 @@ impl RetainedWorld {
             [0.0, 1.0, 0.0, 0.0],
             crate::style::ColorMode::Single,
             crate::style::BlendMode::Opaque,
-            false,
+            MixSpace::default(),
             None,
         );
         self.add_shape(
@@ -254,7 +255,7 @@ impl RetainedWorld {
             [0.0, 1.0, 0.0, 0.0],
             crate::style::ColorMode::Single,
             crate::style::BlendMode::Opaque,
-            false,
+            MixSpace::default(),
             None,
         );
         self.add_shape(
@@ -287,7 +288,7 @@ impl RetainedWorld {
             [0.0, 1.0, 0.0, 0.0],
             crate::style::ColorMode::Single,
             crate::style::BlendMode::Opaque,
-            false,
+            MixSpace::default(),
             None,
         );
         self.add_shape(
@@ -320,7 +321,7 @@ impl RetainedWorld {
             [0.0, 1.0, 0.0, 0.0],
             crate::style::ColorMode::Single,
             crate::style::BlendMode::Opaque,
-            false,
+            MixSpace::default(),
             None,
         );
         self.add_shape(
@@ -353,7 +354,7 @@ impl RetainedWorld {
             [0.0, 1.0, 0.0, 0.0],
             crate::style::ColorMode::Single,
             crate::style::BlendMode::Opaque,
-            false,
+            MixSpace::default(),
             None,
         );
         self.add_shape(
@@ -387,7 +388,7 @@ impl RetainedWorld {
             [0.0, 1.0, 0.0, 0.0],
             crate::style::ColorMode::Single,
             crate::style::BlendMode::Opaque,
-            false,
+            MixSpace::default(),
             None,
         );
         self.add_shape(
