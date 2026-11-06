@@ -15,6 +15,7 @@
 // are compared with > 0.5 to avoid precision issues.
 
 import bevy_pbr::render::{
+    mesh_functions,
     pbr_fragment::pbr_input_from_standard_material,
     pbr_functions::alpha_discard,
     view_transformations::position_world_to_clip,
@@ -421,10 +422,23 @@ var<uniform> gradmesh: GradMeshUniform;
 /// normalized by the shape's half-extent along the gradient direction.
 fn compute_gradient_progress_material(in: VertexOutput) -> f32 {
     let color_mode = i32(gradmesh.flags.x);
-    let dir = gradmesh.direction.xyz;
+    var dir = gradmesh.direction.xyz;
 
     if (color_mode == 0) {
         return 0.0;
+    }
+
+    // `direction.w` selects the direction space: 0 = world (fixed), 1 = local
+    // (rotated by the entity's world-from-local transform, so the gradient
+    // follows rotated meshes).
+    if (gradmesh.direction.w > 0.5) {
+        let world_from_local = mesh_functions::get_world_from_local(in.instance_index);
+        let rotated = mat3x3<f32>(
+            world_from_local[0].xyz,
+            world_from_local[1].xyz,
+            world_from_local[2].xyz,
+        ) * dir;
+        dir = normalize(rotated);
     }
 
     // Object-space position: world position minus the shape's world center.
@@ -467,6 +481,12 @@ fn fragment(
         );
     }
 
+    // Per-vertex colours (compound part tints, coloured polygons) multiply the
+    // gradient, so the gradient stays on top of the tint.
+@if(VERTEX_COLORS) {
+    base_color = base_color * in.color.rgb;
+}
+
     // Apply dash pattern if enabled (requires UV attributes on the mesh)
 @if(VERTEX_UVS_A) {
     let dash = gradmesh.dash;
@@ -497,7 +517,12 @@ fn fragment(
 } @else {
     out.color = apply_pbr_lighting(pbr_input);
 
-    let blended = apply_blend_mode(out.color.rgb, in.position.xy, gradmesh.flags, gradmesh.color.w);
+    // Gradient alpha blends between both colours along the gradient.
+    var alpha_w = gradmesh.color.w;
+    if (gradmesh.flags.x > 0.5) {
+        alpha_w = mix(gradmesh.color.w, gradmesh.secondary_color.w, progress);
+    }
+    let blended = apply_blend_mode(out.color.rgb, in.position.xy, gradmesh.flags, alpha_w);
     out.color = blended;
 
     out.color = main_pass_post_lighting_processing(pbr_input, out.color);

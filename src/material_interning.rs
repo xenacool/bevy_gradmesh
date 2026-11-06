@@ -22,6 +22,7 @@ use bevy::asset::{Assets, Handle};
 use bevy::ecs::prelude::{Local, Resource};
 
 use crate::material::{GradMeshExtension, GradMeshMaterial, GradMeshUniformBuffer, Vec4};
+use crate::style::Style;
 
 /// Hashable key representing the uniform parameters of a `GradMeshMaterial`.
 ///
@@ -170,6 +171,8 @@ impl GradMeshMaterialKey {
 pub struct GradMeshMaterialPool {
     /// Cache of material keys to their asset handles.
     cache: HashMap<GradMeshMaterialKey, Handle<GradMeshMaterial>>,
+    /// Materials keyed by the `Style` they were built from (bucketed by hash).
+    styles: HashMap<u64, Vec<(Style, Handle<GradMeshMaterial>)>>,
     /// Total lookups performed.
     total_lookups: u64,
     /// Cache hits (existing material found).
@@ -200,20 +203,44 @@ impl GradMeshMaterialPool {
         handle
     }
 
+    /// Returns the shared material for `style`, building it on the first request.
+    ///
+    /// Equal styles (`Style: PartialEq`) return the same handle, so syncing a
+    /// node every frame with an unchanged style allocates no material asset.
+    pub fn get_or_add(
+        &mut self,
+        style: &Style,
+        assets: &mut Assets<GradMeshMaterial>,
+    ) -> Handle<GradMeshMaterial> {
+        self.total_lookups += 1;
+        let bucket = self.styles.entry(style.cache_hash()).or_default();
+        // Entries whose asset was removed are dropped instead of returned dangling.
+        bucket.retain(|(_, handle)| assets.contains(handle.id()));
+        if let Some((_, handle)) = bucket.iter().find(|(s, _)| s == style) {
+            self.hits += 1;
+            return handle.clone();
+        }
+        self.misses += 1;
+        let handle = assets.add(style.build());
+        bucket.push((style.clone(), handle.clone()));
+        handle
+    }
+
     /// Returns the number of cached materials.
     pub fn len(&self) -> usize {
-        self.cache.len()
+        self.cache.len() + self.styles.values().map(Vec::len).sum::<usize>()
     }
 
     /// Returns true if the pool is empty.
     pub fn is_empty(&self) -> bool {
-        self.cache.is_empty()
+        self.len() == 0
     }
 
     /// Clears the cache.  Note that the materials remain in the asset store;
     /// only the pool's internal index is cleared.
     pub fn clear(&mut self) {
         self.cache.clear();
+        self.styles.clear();
         self.hits = 0;
         self.misses = 0;
         self.total_lookups = 0;

@@ -9,14 +9,12 @@
 
 mod common;
 
-use std::sync::LazyLock;
-
 use bevy::prelude::*;
 use bevy::render::RenderPlugin;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
 use bevy_asset::RenderAssetUsages;
 use bevy_gradmesh::{
-    BatchRecorder, DeformationParams, GradMeshMaterial, GradMeshPlugin, LodConfig, MixSpace, Shape,
+    BakedSpline, BatchRecorder, CatmullRomSpline, DeformationParams, GradMeshMaterial, GradMeshPlugin, LodConfig, MixSpace, Shape,
     ShapeDetail, additive, dual_directional, dual_radial_alpha, opaque, transparent,
 };
 use common::screenshot::AutoScreenshotPlugin;
@@ -78,6 +76,8 @@ struct TrackDecoration;
 struct Coin {
     id: u32,
     collected: bool,
+    /// Resting position on the track centerline (bobbing is applied relative to this).
+    base: Vec3,
 }
 #[derive(Component)]
 struct SpeedBarFill;
@@ -108,12 +108,17 @@ struct LapTimer {
 #[derive(Resource)]
 struct DecorationsRecorder(BatchRecorder);
 
-// ─── Track Definition ───
+// ─── Track ───
 
-/// Closed Catmull-Rom spline control points for the race track.
-/// First 3 points repeated at end for C1 continuity at the seam.
-static TRACK_CP: LazyLock<Vec<Vec3>> = LazyLock::new(|| {
-    vec![
+/// Tightest turn (world units) the road may take; the spline relaxes anything sharper.
+const MIN_TURN_RADIUS: f32 = 14.0;
+
+/// Spacing of the baked frames the road, barriers and physics are built from.
+const TRACK_FRAME_STEP: f32 = 0.5;
+
+/// Hand-placed control points of a closed loop; tight corners are straightened for us.
+fn track_spline() -> CatmullRomSpline {
+    CatmullRomSpline::closed(vec![
         Vec3::new(0.0, 0.5, 100.0),
         Vec3::new(80.0, 0.8, 100.0),
         Vec3::new(160.0, 1.2, 100.0),
@@ -137,321 +142,17 @@ static TRACK_CP: LazyLock<Vec<Vec3>> = LazyLock::new(|| {
         Vec3::new(-100.0, 1.0, 100.0),
         Vec3::new(-40.0, 0.8, 140.0),
         Vec3::new(20.0, 0.6, 120.0),
-        // Close loop
-        Vec3::new(0.0, 0.5, 100.0),
-        Vec3::new(80.0, 0.8, 100.0),
-        Vec3::new(160.0, 1.2, 100.0),
-    ]
-});
-
-const NUM_UNIQUE_CPS: usize = 23;
-
-/// A single frame in the baked track table.
-#[derive(Clone, Copy)]
-struct TrackFrame {
-    /// 3D position on the curve
-    position: Vec3,
-    /// Unit forward tangent vector
-    forward: Vec3,
-    /// Unit right vector (parallel-transported, no flips)
-    right: Vec3,
-    /// Unit up vector
-    up: Vec3,
-    /// Road width at this point
-    width: f32,
-    /// Bank angle in radians (positive = left bank)
-    bank: f32,
-    /// Arc-length distance from start
-    distance: f32,
+    ])
+    .relaxed(MIN_TURN_RADIUS)
 }
 
-/// Baked track sampler using parallel transport frames and arc-length parameterization.
-///
-/// Replaces the old `track_point`/`track_heading`/`track_right` functions.
-/// Provides O(1) lookups with smooth quaternion-slerp interpolation between frames.
-#[derive(Resource, Clone)]
-struct TrackSampler {
-    /// Pre-computed frames at arc-length intervals
-    frames: Vec<TrackFrame>,
-    /// Total circuit length
-    total_distance: f32,
-}
-
-impl TrackSampler {
-    /// Bake the track from Catmull-Rom control points.
-    ///
-    /// Uses parallel transport frames to prevent right-vector flips at sharp turns,
-    /// and arc-length parameterization for even vertex spacing.
-    fn bake(control_points: &[Vec3], num_unique: usize, frame_step: f32) -> Self {
-        // 1. Evaluate the Catmull-Rom curve at dense uniform parameter intervals
-        let raw_samples: Vec<(f32, Vec3)> = (0..=2000)
-            .map(|i| {
-                let t = i as f32 / 2000.0;
-                (t, catmull_rom_point(control_points, num_unique, t))
-            })
-            .collect();
-
-        // 2. Compute cumulative arc-length and build (distance, t) lookup
-        let mut distances = vec![0.0_f32];
-        for i in 1..raw_samples.len() {
-            let dist = distances[i - 1] + (raw_samples[i].1 - raw_samples[i - 1].1).length();
-            distances.push(dist);
-        }
-        let total_distance = distances[distances.len() - 1];
-
-        // 3. Sample frames at even arc-length intervals using parallel transport
-        let mut frames = Vec::new();
-        let mut current_dist = 0.0_f32;
-
-        // Initial frame: compute first forward, then derive up/right
-        let first_t = distance_to_t(&distances, 0.0, total_distance);
-        let first_fwd = catmull_rom_tangent(control_points, num_unique, first_t).normalize();
-        let mut right = Vec3::Y.cross(first_fwd).normalize();
-        let mut up = first_fwd.cross(right).normalize();
-
-        loop {
-            // Find the curve point at current_dist via binary search on distances
-            let t = distance_to_t(&distances, current_dist, total_distance);
-            let pos = catmull_rom_point(control_points, num_unique, t);
-            let forward = catmull_rom_tangent(control_points, num_unique, t).normalize();
-
-            // Parallel transport: rotate the frame around forward to minimize rotation
-            // Project current up onto the plane perpendicular to the new forward
-            let dot = up.dot(forward);
-            if dot.abs() < 0.9999 {
-                // Remove the component of up along forward
-                let up_proj = up - forward * dot;
-                if up_proj.length_squared() > 1e-8 {
-                    up = up_proj.normalize();
-                } else {
-                    // Forward is nearly parallel to up — use right vector instead
-                    let right_proj = right - forward * right.dot(forward);
-                    if right_proj.length_squared() > 1e-8 {
-                        up = forward.cross(right_proj.normalize()).normalize();
-                    }
-                }
-            }
-            // Re-derive right from forward and up
-            right = forward.cross(up).normalize();
-
-            // Compute curvature for banking
-            let t_ahead = (t + 0.005).rem_euclid(1.0);
-            let t_behind = (t - 0.005).rem_euclid(1.0);
-            let fwd_ahead = catmull_rom_tangent(control_points, num_unique, t_ahead).normalize();
-            let fwd_behind = catmull_rom_tangent(control_points, num_unique, t_behind).normalize();
-            let curvature = (fwd_ahead.xz() - fwd_behind.xz()).length() / 0.01;
-
-            // Bank angle from curvature, clamped
-            let bank = (-curvature * 68.0).clamp(-0.4, 0.4);
-
-            // Variable width based on curvature (wider on straights, narrower on turns)
-            let width = if curvature < 0.01 {
-                16.0
-            } else if curvature < 0.03 {
-                14.0
-            } else {
-                12.0
-            };
-
-            frames.push(TrackFrame {
-                position: pos,
-                forward,
-                right,
-                up,
-                width,
-                bank,
-                distance: current_dist,
-            });
-
-            // Advance along arc-length
-            current_dist += frame_step;
-            if current_dist >= total_distance {
-                break;
-            }
-        }
-
-        // Ensure the last frame connects back to the first for a closed loop
-        if let Some(first) = frames.first() {
-            frames.push(TrackFrame {
-                position: first.position,
-                forward: first.forward,
-                right: first.right,
-                up: first.up,
-                width: first.width,
-                bank: 0.0,
-                distance: total_distance,
-            });
-        }
-
-        TrackSampler {
-            frames,
-            total_distance,
-        }
+/// Roads are wider on straights and narrower in corners.
+fn road_width(curvature: f32) -> f32 {
+    match curvature.abs() {
+        c if c < 1.0 / 150.0 => 16.0,
+        c if c < 1.0 / 50.0 => 14.0,
+        _ => 12.0,
     }
-
-    /// Sample the track at normalized parameter t ∈ [0, 1).
-    /// Returns interpolated position, forward, right, up, width, and bank.
-    fn sample(&self, t: f32) -> (Vec3, Vec3, Vec3, Vec3, f32, f32) {
-        let t = t.rem_euclid(1.0);
-        let dist = t * self.total_distance;
-        self.sample_at_distance(dist)
-    }
-
-    /// Sample the track at a specific arc-length distance.
-    fn sample_at_distance(&self, dist: f32) -> (Vec3, Vec3, Vec3, Vec3, f32, f32) {
-        let frames = &self.frames;
-        let n = frames.len();
-
-        // Find the two surrounding frames
-        let idx = if dist <= frames[0].distance {
-            0
-        } else if dist >= frames[n - 1].distance {
-            n - 2
-        } else {
-            // Binary search for the frame just before dist
-            let mut lo = 0;
-            let mut hi = n - 1;
-            while lo < hi - 1 {
-                let mid = (lo + hi) / 2;
-                if frames[mid].distance <= dist {
-                    lo = mid;
-                } else {
-                    hi = mid;
-                }
-            }
-            lo
-        };
-
-        let next = (idx + 1) % n;
-        let f0 = frames[idx];
-        let f1 = frames[next];
-
-        // Interpolation weight
-        let seg_len = (f1.distance - f0.distance).max(1e-6);
-        let w = ((dist - f0.distance) / seg_len).clamp(0.0, 1.0);
-
-        // Quaternion slerp for smooth orientation
-        let q0 = Quat::from_rotation_arc(Vec3::Z, f0.forward);
-        let q1 = Quat::from_rotation_arc(Vec3::Z, f1.forward);
-        let q = q0.slerp(q1, w);
-
-        let forward = q.mul_vec3(Vec3::Z).normalize();
-        let right = f0.right.lerp(f1.right, w).normalize();
-        let up = f0.up.lerp(f1.up, w).normalize();
-
-        let position = f0.position.lerp(f1.position, w);
-        let width = f0.width.lerp(f1.width, w);
-        let bank = f0.bank.lerp(f1.bank, w);
-
-        (position, forward, right, up, width, bank)
-    }
-
-    /// Compute signed curvature at parameter t.
-    fn curvature(&self, t: f32) -> f32 {
-        let (_, _fwd0, _, _, _, _) = self.sample(t);
-        let (_, fwd1, _, _, _, _) = self.sample((t + 0.003).rem_euclid(1.0));
-        let (_, fwd2, _, _, _, _) = self.sample((t - 0.003).rem_euclid(1.0));
-        (fwd1.xz() - fwd2.xz()).length() / 0.006
-    }
-
-    /// Find the nearest track parameter t for a given 3D point.
-    fn nearest_t(&self, point: Vec3) -> f32 {
-        let frames = &self.frames;
-        // Coarse search
-        let mut best_idx = 0usize;
-        let mut best_dist_sq = f32::MAX;
-        let step = (frames.len() as f32 / 100.0).ceil() as usize;
-        for i in (0..frames.len()).step_by(step.max(1)) {
-            let d = (point.xz() - frames[i].position.xz()).length_squared();
-            if d < best_dist_sq {
-                best_dist_sq = d;
-                best_idx = i;
-            }
-        }
-        // Refine around best_idx
-        let range = 10.max(step);
-        for i in best_idx.saturating_sub(range)..best_idx + range + 1 {
-            let i = i % frames.len();
-            let d = (point.xz() - frames[i].position.xz()).length_squared();
-            if d < best_dist_sq {
-                best_dist_sq = d;
-                best_idx = i;
-            }
-        }
-        best_idx as f32 / frames.len() as f32
-    }
-}
-
-/// Evaluate Catmull-Rom spline at parameter t ∈ [0, 1).
-fn catmull_rom_point(cps: &[Vec3], num_unique: usize, t: f32) -> Vec3 {
-    let t = t.rem_euclid(1.0);
-    let t_scaled = t * num_unique as f32;
-    let seg = t_scaled.floor() as usize;
-    let lt = t_scaled - seg as f32;
-    let prev_idx = if seg > 0 { seg - 1 } else { num_unique - 1 };
-    let p0 = cps[prev_idx];
-    let p1 = cps[seg];
-    let p2 = cps[(seg + 1) % (num_unique + 3)];
-    let p3 = cps[(seg + 2) % (num_unique + 3)];
-    // Catmull-Rom → cubic Bézier
-    let b0 = p1;
-    let b1 = p1 + (p2 - p0) / 3.0;
-    let b2 = p2 - (p3 - p1) / 3.0;
-    let b3 = p2;
-    let u = 1.0 - lt;
-    b0 * u * u * u + b1 * 3.0 * u * u * lt + b2 * 3.0 * u * lt * lt + b3 * lt * lt * lt
-}
-
-/// Compute tangent (derivative) of Catmull-Rom spline at parameter t.
-fn catmull_rom_tangent(cps: &[Vec3], num_unique: usize, t: f32) -> Vec3 {
-    let dt = 0.0005;
-    let p1 = catmull_rom_point(cps, num_unique, t);
-    let p2 = catmull_rom_point(cps, num_unique, (t + dt).rem_euclid(1.0));
-    (p2 - p1) / dt
-}
-
-/// Convert arc-length distance to curve parameter t via binary search.
-fn distance_to_t(distances: &[f32], dist: f32, _total: f32) -> f32 {
-    let n = distances.len();
-    if dist <= distances[0] {
-        return 0.0;
-    }
-    if dist >= distances[n - 1] {
-        return 1.0;
-    }
-    let mut lo = 0usize;
-    let mut hi = n - 1;
-    while lo < hi - 1 {
-        let mid = (lo + hi) / 2;
-        if distances[mid] <= dist {
-            lo = mid;
-        } else {
-            hi = mid;
-        }
-    }
-    // Interpolate between lo and hi
-    let seg_len = (distances[hi] - distances[lo]).max(1e-6);
-    let w = (dist - distances[lo]) / seg_len;
-    (lo as f32 + w) / (n - 1) as f32
-}
-
-/// Legacy compatibility functions — use direct Catmull-Rom evaluation.
-/// These are kept only for setup-time calls before the sampler is baked.
-fn track_point(t: f32) -> Vec3 {
-    catmull_rom_point(&TRACK_CP, NUM_UNIQUE_CPS, t)
-}
-
-fn track_heading(t: f32) -> Vec3 {
-    let dt = 0.001;
-    let p1 = catmull_rom_point(&TRACK_CP, NUM_UNIQUE_CPS, t);
-    let p2 = catmull_rom_point(&TRACK_CP, NUM_UNIQUE_CPS, (t + dt).rem_euclid(1.0));
-    let dir = (p2.xz() - p1.xz()).normalize();
-    Vec3::new(dir.x, 0.0, dir.y)
-}
-
-fn track_right(t: f32) -> Vec3 {
-    let h = track_heading(t);
-    Vec3::new(-h.z, 0.0, h.x).normalize()
 }
 
 // ─── Checkpoints ───
@@ -471,9 +172,10 @@ fn setup(
     mut meshes: ResMut<Assets<bevy::render::mesh::Mesh>>,
     mut materials: ResMut<Assets<GradMeshMaterial>>,
 ) {
-    let start_pos = track_point(0.0);
-    let th = track_heading(0.0);
-    let start_heading = th.x.atan2(th.z);
+    let track = track_spline().bake(TRACK_FRAME_STEP);
+    let start = track.sample(0.0);
+    let start_pos = start.position;
+    let start_heading = start.forward.x.atan2(start.forward.z);
 
     // 3D Camera
     let cam_offset = Vec3::new(
@@ -487,16 +189,6 @@ fn setup(
         Transform::from_translation(start_pos + cam_offset)
             .looking_at(start_pos + Vec3::Y * 0.5, Vec3::Y),
         Name::new("Camera3d"),
-    ));
-
-    // 2D Camera for HUD text overlay
-    commands.spawn((
-        Camera2d::default(),
-        Camera {
-            order: 1,
-            ..default()
-        },
-        Name::new("Camera2d"),
     ));
 
     // Lighting
@@ -519,7 +211,7 @@ fn setup(
             .looking_at(Vec3::new(-100.0, 0.0, -50.0), Vec3::Y),
         Name::new("Fill Light"),
     ));
-    commands.spawn(AmbientLight {
+    commands.insert_resource(GlobalAmbientLight {
         color: Color::srgb(0.2, 0.25, 0.4),
         brightness: 400.0,
         affects_lightmapped_meshes: false,
@@ -538,9 +230,8 @@ fn setup(
         Name::new("Ground"),
     ));
 
-    // Bake the track sampler (parallel transport frames + arc-length parameterization)
-    let sampler = TrackSampler::bake(&TRACK_CP, NUM_UNIQUE_CPS, 0.5);
-    commands.insert_resource(sampler.clone());
+    let sampler = track.clone();
+    commands.insert_resource(track);
 
     // Track, kart, coins, decorations
     build_track(&mut commands, &mut meshes, &mut materials, &sampler);
@@ -652,7 +343,7 @@ fn setup(
 
     // Coin count
     commands.spawn((
-        Text2d("0/24".into()),
+        Text2d(format!("0/{COIN_COUNT}").into()),
         TextColor(Color::srgb(1.0, 0.85, 0.2)),
         TextFont {
             font_size: FontSize::Px(28.0),
@@ -705,9 +396,9 @@ fn build_track(
     commands: &mut Commands,
     meshes: &mut Assets<bevy::render::mesh::Mesh>,
     materials: &mut Assets<GradMeshMaterial>,
-    sampler: &TrackSampler,
+    sampler: &BakedSpline,
 ) {
-    // Road surface — uses sampler for variable width and banking
+    // Road surface
     let track_mesh = meshes.add(build_road_mesh_from_sampler(sampler));
     let road_mat = materials.add({
         let mut mat =
@@ -741,7 +432,9 @@ fn build_track(
 
     for i in 0..curb_count {
         let t = i as f32 / curb_count as f32;
-        let (center, forward, right, _up, width, _bank) = sampler.sample(t);
+        let frame = sampler.sample(t);
+        let (center, forward, right) = (frame.position, frame.forward, frame.right);
+        let width = road_width(frame.curvature);
         let rot = Quat::from_rotation_arc(Vec3::Z, forward);
         let mat = if i % 2 == 0 { &curb_red } else { &curb_white };
         let offset = width / 2.0 + 0.15;
@@ -769,7 +462,9 @@ fn build_track(
 
     for i in 0..30 {
         let t = i as f32 / 30.0;
-        let (center, _forward, right, _up, width, _bank) = sampler.sample(t);
+        let frame = sampler.sample(t);
+        let (center, _forward, right) = (frame.position, frame.forward, frame.right);
+        let width = road_width(frame.curvature);
         let offset = width / 2.0 + 1.0;
         for side in [-1, 1] {
             let pos = center + right * offset * side as f32 + Vec3::Y * 1.0;
@@ -800,7 +495,9 @@ fn build_track(
 
     for i in 0..CHECKPOINT_COUNT {
         let t = i as f32 / CHECKPOINT_COUNT as f32;
-        let (center, forward, right, _up, width, _bank) = sampler.sample(t);
+        let frame = sampler.sample(t);
+        let (center, forward, right) = (frame.position, frame.forward, frame.right);
+        let width = road_width(frame.curvature);
         let rot = Quat::from_rotation_arc(Vec3::Z, forward);
         let pillar_offset = width / 2.0 + 0.5;
 
@@ -848,7 +545,9 @@ fn build_track(
 
     for i in 0..20 {
         let t = i as f32 / 20.0;
-        let (center, _forward, right, _up, width, _bank) = sampler.sample(t);
+        let frame = sampler.sample(t);
+        let (center, _forward, right) = (frame.position, frame.forward, frame.right);
+        let width = road_width(frame.curvature);
         let side = if i % 2 == 0 { 1.0 } else { -1.0 };
         let offset = width / 2.0 + 2.5;
         let base = center + right * offset * side;
@@ -869,11 +568,10 @@ fn build_track(
     }
 }
 
-/// Builds a road ribbon mesh from the baked track sampler.
-/// Uses variable width and banking from the sampler's frame data.
-fn build_road_mesh_from_sampler(sampler: &TrackSampler) -> bevy::render::mesh::Mesh {
-    let n = sampler.frames.len();
-    let frames = &sampler.frames;
+/// Builds a road ribbon mesh from the baked track, widening on straights.
+fn build_road_mesh_from_sampler(sampler: &BakedSpline) -> bevy::render::mesh::Mesh {
+    let frames = sampler.frames();
+    let n = frames.len();
 
     let mut positions = Vec::with_capacity(n * 2);
     let mut normals = Vec::with_capacity(n * 2);
@@ -882,20 +580,15 @@ fn build_road_mesh_from_sampler(sampler: &TrackSampler) -> bevy::render::mesh::M
 
     for i in 0..n {
         let f = frames[i];
-        let half_w = f.width / 2.0;
-
-        // Apply bank rotation to the right and up vectors
-        let bank_q = Quat::from_axis_angle(f.right, f.bank);
-        let banked_up = bank_q.mul_vec3(f.up);
-        let banked_right = bank_q.mul_vec3(f.right);
+        let half_w = road_width(f.curvature) / 2.0;
 
         let uv_v = i as f32 / n as f32;
 
-        positions.push(f.position + banked_right * half_w);
-        normals.push(banked_up);
+        positions.push(f.position + f.right * half_w);
+        normals.push(f.up);
         uvs.push(bevy::math::Vec2::new(1.0, uv_v));
-        positions.push(f.position - banked_right * half_w);
-        normals.push(banked_up);
+        positions.push(f.position - f.right * half_w);
+        normals.push(f.up);
         uvs.push(bevy::math::Vec2::new(0.0, uv_v));
     }
 
@@ -932,9 +625,10 @@ fn build_kart(
     commands: &mut Commands,
     meshes: &mut Assets<bevy::render::mesh::Mesh>,
     materials: &mut Assets<GradMeshMaterial>,
-    sampler: &TrackSampler,
+    sampler: &BakedSpline,
 ) {
-    let (start_pos, start_fwd, _, _, _, _) = sampler.sample(0.0);
+    let start = sampler.sample(0.0);
+    let (start_pos, start_fwd) = (start.position, start.forward);
     let start_yaw = start_fwd.x.atan2(start_fwd.z);
     // Start the simulation on the track, facing along it.
     commands.insert_resource(KartState {
@@ -1228,11 +922,15 @@ fn draw_decorations(
 
 // ─── Coins ───
 
+const COIN_COUNT: usize = 24;
+/// Height of a coin's resting position above the road centerline.
+const COIN_HOVER: f32 = 0.8;
+
 fn build_coins(
     commands: &mut Commands,
     meshes: &mut Assets<bevy::render::mesh::Mesh>,
     materials: &mut Assets<GradMeshMaterial>,
-    sampler: &TrackSampler,
+    sampler: &BakedSpline,
 ) {
     let coin_mesh = meshes.add(Shape::cylinder(0.3, 0.08, ShapeDetail::Medium).build());
     let coin_mat = materials.add({
@@ -1243,11 +941,11 @@ fn build_coins(
         mat
     });
 
-    for i in 0..24 {
-        let t = (i as f32 + 0.5) / 24.0;
-        let (center, _forward, right, _up, _width, _bank) = sampler.sample(t);
-        let side = if i % 2 == 0 { 1.0 } else { -1.0 };
-        let pos = center + right * 2.0 * side + Vec3::Y * 0.8;
+    // Walk the baked curve at even arc-length intervals so coins are evenly spaced,
+    // and sit exactly on the centerline, hovering just above the road surface.
+    for i in 0..COIN_COUNT {
+        let center = sampler.sample((i as f32 + 0.5) / COIN_COUNT as f32).position;
+        let pos = center + Vec3::Y * COIN_HOVER;
 
         commands.spawn((
             Mesh3d(coin_mesh.clone()),
@@ -1257,6 +955,7 @@ fn build_coins(
             Coin {
                 id: i as u32,
                 collected: false,
+                base: pos,
             },
             Name::new(format!("Coin {}", i)),
         ));
@@ -1269,7 +968,7 @@ fn handle_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     mut state: ResMut<KartState>,
-    sampler: Res<TrackSampler>,
+    sampler: Res<BakedSpline>,
 ) {
     let dt = time.delta_secs();
     let mut throttle = 0.0f32;
@@ -1288,7 +987,8 @@ fn handle_input(
         steer = -1.0;
     }
     if keyboard.just_pressed(KeyCode::KeyR) {
-        let (pos, fwd, _, _, _, _) = sampler.sample(0.0);
+        let start = sampler.sample(0.0);
+        let (pos, fwd) = (start.position, start.forward);
         state.position = pos;
         state.heading = fwd.x.atan2(fwd.z);
         state.speed = 0.0;
@@ -1318,7 +1018,7 @@ fn handle_input(
 
 // ─── Physics ───
 
-fn update_physics(mut state: ResMut<KartState>, time: Res<Time>, sampler: Res<TrackSampler>) {
+fn update_physics(mut state: ResMut<KartState>, time: Res<Time>, sampler: Res<BakedSpline>) {
     let dt = time.delta_secs().min(0.033);
     let forward = Vec3::new(state.heading.sin(), 0.0, state.heading.cos());
     let move_xz = forward.xz() * state.speed * dt;
@@ -1327,7 +1027,7 @@ fn update_physics(mut state: ResMut<KartState>, time: Res<Time>, sampler: Res<Tr
 
     // Find nearest track point using the sampler's baked frame table
     let best_t = sampler.nearest_t(state.position);
-    let (track_pos, _fwd, _right, _up, _width, _bank) = sampler.sample(best_t);
+    let track_pos = sampler.sample(best_t).position;
     let min_dist_sq = (state.position.xz() - track_pos.xz()).length_squared();
 
     state.position.y = track_pos.y;
@@ -1398,14 +1098,14 @@ fn check_checkpoints(
     mut timer: ResMut<LapTimer>,
     mut cp: ResMut<CheckpointState>,
     time: Res<Time>,
-    sampler: Res<TrackSampler>,
+    sampler: Res<BakedSpline>,
 ) {
     let kart_pos = state.position;
     let check_dist_sq = 36.0;
 
     for i in 0..CHECKPOINT_COUNT {
         let t = i as f32 / CHECKPOINT_COUNT as f32;
-        let (cp_pos, _, _, _, _, _) = sampler.sample(t);
+        let cp_pos = sampler.sample(t).position;
         if (kart_pos - cp_pos).length_squared() < check_dist_sq && !cp.passed[i] {
             let next = cp.progress as usize % CHECKPOINT_COUNT;
             if i == next {
@@ -1471,7 +1171,8 @@ fn animate_coins(time: Res<Time>, mut coin_query: Query<(&Coin, &mut Transform)>
         }
         transform.rotation = Quat::from_rotation_x(std::f32::consts::PI / 2.0)
             * Quat::from_rotation_y(t * 2.0 + coin.id as f32);
-        transform.translation.y = 0.8 + (t * 1.5 + coin.id as f32 * 0.5).sin() * 0.15;
+        transform.translation = coin.base
+            + Vec3::Y * ((t * 1.5 + coin.id as f32 * 0.5).sin() * 0.15);
     }
 }
 
@@ -1485,7 +1186,7 @@ fn update_hud_text(
     for (mut text, name) in &mut text_query {
         match name.as_str() {
             "Coin Count" => {
-                *text = Text2d(format!("{}/24", state.coins).into());
+                *text = Text2d(format!("{}/{}", state.coins, COIN_COUNT).into());
             }
             "Timer Text" => {
                 let lap = timer.current_lap.min(3);

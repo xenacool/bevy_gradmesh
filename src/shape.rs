@@ -2,9 +2,13 @@
 //!
 //! Each primitive generates watertight geometry with proper normals and UVs.
 
-use bevy::math::{Vec2, Vec3};
+use bevy::color::{Color, ColorToComponents};
+use bevy::math::{Rect, Vec2, Vec3};
 use bevy::render::mesh::{Mesh, PrimitiveTopology};
+use bevy::transform::components::Transform;
 use bevy_asset::RenderAssetUsages;
+
+use crate::geometry;
 use std::f32::consts::PI;
 use std::hash::Hash;
 
@@ -57,6 +61,114 @@ impl std::hash::Hash for Shape {
         self.kind.hash(state);
         self.detail.hash(state);
     }
+}
+
+/// One piece of a [`Shape::compound`]: a shape placed by a transform, with an
+/// optional vertex tint.
+///
+/// The tint multiplies the part's gradient colour (via vertex colours), so every
+/// part keeps its own gradient while the compound stays a single mesh.
+#[derive(Debug, Clone)]
+pub struct ShapePart {
+    pub shape: Shape,
+    pub transform: Transform,
+    pub tint: Option<Color>,
+}
+
+impl ShapePart {
+    /// A part at the origin without tint.
+    pub fn new(shape: Shape) -> Self {
+        Self {
+            shape,
+            transform: Transform::IDENTITY,
+            tint: None,
+        }
+    }
+
+    /// Places the part with `transform`.
+    #[must_use]
+    pub fn with_transform(mut self, transform: Transform) -> Self {
+        self.transform = transform;
+        self
+    }
+
+    /// Multiplies the part's colour by `tint`.
+    #[must_use]
+    pub fn with_tint(mut self, tint: Color) -> Self {
+        self.tint = Some(tint);
+        self
+    }
+
+    fn tint_bits(&self) -> Option<[u32; 4]> {
+        self.tint.map(|c| c.to_srgba().to_f32_array().map(f32::to_bits))
+    }
+
+    fn transform_bits(&self) -> [u32; 10] {
+        let t = &self.transform;
+        let r = t.rotation.to_array();
+        [
+            t.translation.x.to_bits(),
+            t.translation.y.to_bits(),
+            t.translation.z.to_bits(),
+            r[0].to_bits(),
+            r[1].to_bits(),
+            r[2].to_bits(),
+            r[3].to_bits(),
+            t.scale.x.to_bits(),
+            t.scale.y.to_bits(),
+            t.scale.z.to_bits(),
+        ]
+    }
+}
+
+impl PartialEq for ShapePart {
+    fn eq(&self, other: &Self) -> bool {
+        self.shape == other.shape
+            && self.transform_bits() == other.transform_bits()
+            && self.tint_bits() == other.tint_bits()
+    }
+}
+
+impl Eq for ShapePart {}
+
+impl std::hash::Hash for ShapePart {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.shape.hash(state);
+        self.transform_bits().hash(state);
+        self.tint_bits().hash(state);
+    }
+}
+
+fn eq_vec2s(a: &[Vec2], b: &[Vec2]) -> bool {
+    a.len() == b.len()
+        && a.iter()
+            .zip(b)
+            .all(|(a, b)| a.x.to_bits() == b.x.to_bits() && a.y.to_bits() == b.y.to_bits())
+}
+
+fn hash_vec2s<H: std::hash::Hasher>(v: &[Vec2], state: &mut H) {
+    v.len().hash(state);
+    for p in v {
+        hash_vec2(p, state);
+    }
+}
+
+fn eq_colors(a: &Option<Vec<[f32; 4]>>, b: &Option<Vec<[f32; 4]>>) -> bool {
+    match (a, b) {
+        (None, None) => true,
+        (Some(a), Some(b)) => {
+            a.len() == b.len()
+                && a.iter()
+                    .zip(b)
+                    .all(|(x, y)| x.iter().zip(y).all(|(p, q)| p.to_bits() == q.to_bits()))
+        }
+        _ => false,
+    }
+}
+
+/// Pieces per rounded rim of an extruded polygon.
+fn bevel_steps(detail: ShapeDetail) -> u32 {
+    (detail.segments() / 4).max(2)
 }
 
 #[derive(Debug, Clone)]
@@ -175,6 +287,31 @@ enum ShapeKind {
         top_radius: f32,
         bottom_radius: f32,
         height: f32,
+    },
+    /// Polygon with optional holes, extruded along Z by `depth` (flat when 0).
+    ExtrudedPolygon {
+        outer: Vec<Vec2>,
+        holes: Vec<Vec<Vec2>>,
+        colors: Option<Vec<[f32; 4]>>,
+        depth: f32,
+        roundness: f32,
+    },
+    /// Several shapes merged into one mesh.
+    Compound { parts: Vec<ShapePart> },
+    /// Profile of (radius, height) points revolved around Y.
+    Lathe { profile: Vec<Vec2>, segments: u32 },
+    /// Wraps another shape and adds a planar `UV_1`.
+    PlanarUv1 { inner: Box<Shape>, rect: Rect },
+    /// Flat thick polyline in the XY plane.
+    Polyline2D {
+        points: Vec<Vec2>,
+        thickness: f32,
+        closed: bool,
+    },
+    /// Flat thick Bézier curve in the XY plane.
+    Bezier2D {
+        control_points: Vec<Vec2>,
+        thickness: f32,
     },
 }
 
@@ -509,6 +646,75 @@ impl PartialEq for ShapeKind {
                     && b1.to_bits() == b2.to_bits()
                     && h1.to_bits() == h2.to_bits()
             }
+            (
+                Self::ExtrudedPolygon {
+                    outer: o1,
+                    holes: h1,
+                    colors: c1,
+                    depth: d1,
+                    roundness: r1,
+                },
+                Self::ExtrudedPolygon {
+                    outer: o2,
+                    holes: h2,
+                    colors: c2,
+                    depth: d2,
+                    roundness: r2,
+                },
+            ) => {
+                eq_vec2s(o1, o2)
+                    && h1.len() == h2.len()
+                    && h1.iter().zip(h2).all(|(a, b)| eq_vec2s(a, b))
+                    && eq_colors(c1, c2)
+                    && d1.to_bits() == d2.to_bits()
+                    && r1.to_bits() == r2.to_bits()
+            }
+            (Self::Compound { parts: p1 }, Self::Compound { parts: p2 }) => p1 == p2,
+            (
+                Self::Lathe {
+                    profile: p1,
+                    segments: s1,
+                },
+                Self::Lathe {
+                    profile: p2,
+                    segments: s2,
+                },
+            ) => eq_vec2s(p1, p2) && s1 == s2,
+            (
+                Self::PlanarUv1 {
+                    inner: i1,
+                    rect: r1,
+                },
+                Self::PlanarUv1 {
+                    inner: i2,
+                    rect: r2,
+                },
+            ) => {
+                i1 == i2
+                    && eq_vec2s(&[r1.min, r1.max], &[r2.min, r2.max])
+            }
+            (
+                Self::Polyline2D {
+                    points: p1,
+                    thickness: t1,
+                    closed: c1,
+                },
+                Self::Polyline2D {
+                    points: p2,
+                    thickness: t2,
+                    closed: c2,
+                },
+            ) => eq_vec2s(p1, p2) && t1.to_bits() == t2.to_bits() && c1 == c2,
+            (
+                Self::Bezier2D {
+                    control_points: p1,
+                    thickness: t1,
+                },
+                Self::Bezier2D {
+                    control_points: p2,
+                    thickness: t2,
+                },
+            ) => eq_vec2s(p1, p2) && t1.to_bits() == t2.to_bits(),
             _ => false,
         }
     }
@@ -690,6 +896,55 @@ impl std::hash::Hash for ShapeKind {
                 top_radius.to_bits().hash(state);
                 bottom_radius.to_bits().hash(state);
                 height.to_bits().hash(state);
+            }
+            Self::ExtrudedPolygon {
+                outer,
+                holes,
+                colors,
+                depth,
+                roundness,
+            } => {
+                hash_vec2s(outer, state);
+                holes.len().hash(state);
+                for h in holes {
+                    hash_vec2s(h, state);
+                }
+                colors.is_some().hash(state);
+                if let Some(colors) = colors {
+                    for c in colors {
+                        for v in c {
+                            v.to_bits().hash(state);
+                        }
+                    }
+                }
+                depth.to_bits().hash(state);
+                roundness.to_bits().hash(state);
+            }
+            Self::Compound { parts } => parts.hash(state),
+            Self::Lathe { profile, segments } => {
+                hash_vec2s(profile, state);
+                segments.hash(state);
+            }
+            Self::PlanarUv1 { inner, rect } => {
+                inner.hash(state);
+                hash_vec2(&rect.min, state);
+                hash_vec2(&rect.max, state);
+            }
+            Self::Polyline2D {
+                points,
+                thickness,
+                closed,
+            } => {
+                hash_vec2s(points, state);
+                thickness.to_bits().hash(state);
+                closed.hash(state);
+            }
+            Self::Bezier2D {
+                control_points,
+                thickness,
+            } => {
+                hash_vec2s(control_points, state);
+                thickness.to_bits().hash(state);
             }
         }
     }
@@ -1015,6 +1270,200 @@ impl Shape {
         }
     }
 
+    /// Creates a polygon extruded along its normal (+Z) by `depth`, centred on
+    /// `z = 0`, with rounded edges.
+    ///
+    /// * `vertices` - outline in the XY plane; either winding is accepted (see
+    ///   [`arch`](crate::outline::arch), [`rounded_rectangle`](crate::outline::rounded_rectangle)
+    ///   and [`blob`](crate::outline::blob) for ready-made outlines).
+    /// * `roundness` - `0.0` (sharp edges) to `1.0` (rim rounded as far as the
+    ///   depth and outline size allow).
+    /// * `detail` - controls how many pieces the rounded rim has.
+    pub fn extruded_polygon(
+        vertices: Vec<Vec2>,
+        depth: f32,
+        roundness: f32,
+        detail: ShapeDetail,
+    ) -> Self {
+        Self::extruded_polygon_with_holes(vertices, Vec::new(), depth, roundness, detail)
+    }
+
+    /// Like [`Shape::extruded_polygon`] with per-vertex RGBA colours (one per
+    /// vertex, linear). They multiply the gradient colour, so cobbles can carry
+    /// tinted tops. Mismatched lengths are ignored.
+    pub fn extruded_polygon_colored(
+        vertices: Vec<Vec2>,
+        colors: Vec<[f32; 4]>,
+        depth: f32,
+        roundness: f32,
+        detail: ShapeDetail,
+    ) -> Self {
+        let colors = (colors.len() == vertices.len()).then_some(colors);
+        Self {
+            kind: ShapeKind::ExtrudedPolygon {
+                outer: vertices,
+                holes: Vec::new(),
+                colors,
+                depth,
+                roundness,
+            },
+            detail,
+        }
+    }
+
+    /// Creates a flat polygon with one or more holes (for example a wall with a
+    /// door opening). Either winding is accepted for every ring.
+    pub fn arbitrary_polygon_with_holes(
+        outer: Vec<Vec2>,
+        holes: Vec<Vec<Vec2>>,
+        detail: ShapeDetail,
+    ) -> Self {
+        Self::extruded_polygon_with_holes(outer, holes, 0.0, 0.0, detail)
+    }
+
+    /// Creates a polygon with holes extruded like [`Shape::extruded_polygon`].
+    pub fn extruded_polygon_with_holes(
+        outer: Vec<Vec2>,
+        holes: Vec<Vec<Vec2>>,
+        depth: f32,
+        roundness: f32,
+        detail: ShapeDetail,
+    ) -> Self {
+        Self {
+            kind: ShapeKind::ExtrudedPolygon {
+                outer,
+                holes,
+                colors: None,
+                depth,
+                roundness,
+            },
+            detail,
+        }
+    }
+
+    /// Merges `parts` into one mesh (one draw call).
+    ///
+    /// Each part is built, moved by its transform and tinted with its optional
+    /// colour (applied as vertex colours that multiply the gradient). The compound
+    /// is `Hash + Eq`, so it can be cached like any other shape.
+    pub fn compound(parts: Vec<ShapePart>) -> Self {
+        Self {
+            kind: ShapeKind::Compound { parts },
+            detail: ShapeDetail::default(),
+        }
+    }
+
+    /// Revolves a profile of `(radius, height)` points around the Y axis.
+    ///
+    /// Points run along the silhouette from one end to the other; the profile is
+    /// reordered bottom-to-top if necessary so normals face outward. Corners
+    /// sharper than about 35 degrees stay crisp, gentle ones are smoothed, and
+    /// open ends away from the axis get flat caps. `segments` is the number of
+    /// slices around the axis (at least 3; `0` uses the segment count of
+    /// `detail`).
+    pub fn lathe(profile: Vec<Vec2>, segments: u32, detail: ShapeDetail) -> Self {
+        Self {
+            kind: ShapeKind::Lathe { profile, segments },
+            detail,
+        }
+    }
+
+    /// Adds `UV_1` from a planar projection of the vertex positions onto `rect`
+    /// (the mesh's local XZ plane: X maps to U, Z to V), so Bevy's `Lightmap`
+    /// component has coordinates to sample. See also
+    /// [`Style::with_lightmap_exposure`](crate::Style::with_lightmap_exposure).
+    #[must_use]
+    pub fn with_planar_uv1(self, rect: Rect) -> Self {
+        let detail = self.detail;
+        Self {
+            kind: ShapeKind::PlanarUv1 {
+                inner: Box::new(self),
+                rect,
+            },
+            detail,
+        }
+    }
+
+    /// Creates a flat polyline `thickness` wide in the XY plane (facing +Z) with
+    /// mitred joints, for 2D curves, guide lines and connection noodles. Use
+    /// [`Shape::build_2d`] with `Mesh2d`.
+    ///
+    /// UVs run along the line in `u` (0 to 1) and across it in `v`, so a
+    /// `dual_directional` gradient along `X` fades along the curve. `closed` joins
+    /// the last point back to the first. The flat counterpart of
+    /// [`Shape::polyline3d`].
+    pub fn polyline_2d(points: Vec<Vec2>, thickness: f32, closed: bool) -> Self {
+        Self {
+            kind: ShapeKind::Polyline2D {
+                points,
+                thickness,
+                closed,
+            },
+            detail: ShapeDetail::default(),
+        }
+    }
+
+    /// Creates a flat Bézier curve `thickness` wide through any number of control
+    /// points (degree = points - 1) in the XY plane. `detail` sets how finely the
+    /// curve is sampled. The flat counterpart of the 3D Bézier curve.
+    pub fn bezier_2d(control_points: Vec<Vec2>, thickness: f32, detail: ShapeDetail) -> Self {
+        Self {
+            kind: ShapeKind::Bezier2D {
+                control_points,
+                thickness,
+            },
+            detail,
+        }
+    }
+
+    /// Outline helper: see [`outline::arch`](crate::outline::arch).
+    pub fn arch(width: f32, height: f32, segments: u32) -> Vec<Vec2> {
+        crate::outline::arch(width, height, segments)
+    }
+
+    /// Outline helper: see [`outline::rounded_rectangle`](crate::outline::rounded_rectangle).
+    pub fn rounded_rectangle(size: Vec2, radius: f32, segments: u32) -> Vec<Vec2> {
+        crate::outline::rounded_rectangle(size, radius, segments)
+    }
+
+    /// Outline helper: see [`outline::blob`](crate::outline::blob).
+    pub fn blob(radius: f32, wobble: f32, seed: u64) -> Vec<Vec2> {
+        crate::outline::blob(radius, wobble, seed)
+    }
+
+    /// Builds flat geometry for `Mesh2d`: in the XY plane, facing +Z, with
+    /// gradient UVs and no billboarding. Pair it with
+    /// [`GradMeshMaterial2d`](crate::GradMeshMaterial2d) (see [`Style::build_2d`](crate::Style::build_2d))
+    /// and `Camera2d`.
+    ///
+    /// The 2D primitives (rectangle, disc, polygon, ring, star, wedge, rims,
+    /// arbitrary polygons) return the same geometry as [`Shape::build`], which is
+    /// already flat. Extruded polygons return their flat outline without depth,
+    /// and compounds and planar-UV wrappers apply this to their parts. Solid 3D
+    /// primitives have no flat form and return their ordinary mesh.
+    ///
+    /// `Transform` scale on the XY plane resizes the shape and
+    /// `Transform.translation.z` orders it against other 2D meshes.
+    pub fn build_2d(&self) -> Mesh {
+        match &self.kind {
+            ShapeKind::ExtrudedPolygon {
+                outer,
+                holes,
+                colors,
+                ..
+            } => geometry::polygon_mesh(outer, colors.as_deref(), holes, 0.0, 0.0, 1),
+            ShapeKind::Compound { parts } => {
+                let built: Vec<_> = parts
+                    .iter()
+                    .map(|p| (p.shape.build_2d(), p.transform, p.tint))
+                    .collect();
+                geometry::merge_meshes(&built)
+            }
+            ShapeKind::PlanarUv1 { inner, .. } => inner.build_2d(),
+            _ => self.build(),
+        }
+    }
+
     /// Builds the shape into a Bevy `Mesh`.
     pub fn build(&self) -> Mesh {
         match &self.kind {
@@ -1096,6 +1545,53 @@ impl Shape {
                 bottom_radius,
                 height,
             } => build_tapered_cylinder(*top_radius, *bottom_radius, *height, self.detail),
+            ShapeKind::ExtrudedPolygon {
+                outer,
+                holes,
+                colors,
+                depth,
+                roundness,
+            } => geometry::polygon_mesh(
+                outer,
+                colors.as_deref(),
+                holes,
+                *depth,
+                *roundness,
+                bevel_steps(self.detail),
+            ),
+            ShapeKind::Compound { parts } => {
+                let built: Vec<_> = parts
+                    .iter()
+                    .map(|p| (p.shape.build(), p.transform, p.tint))
+                    .collect();
+                geometry::merge_meshes(&built)
+            }
+            ShapeKind::Lathe { profile, segments } => geometry::lathe_mesh(
+                profile,
+                if *segments == 0 {
+                    self.detail.segments()
+                } else {
+                    *segments
+                },
+            ),
+            ShapeKind::Polyline2D {
+                points,
+                thickness,
+                closed,
+            } => geometry::polyline_2d_mesh(points, *thickness, *closed),
+            ShapeKind::Bezier2D {
+                control_points,
+                thickness,
+            } => geometry::polyline_2d_mesh(
+                &geometry::bezier_2d_points(control_points, self.detail.segments() * 2),
+                *thickness,
+                false,
+            ),
+            ShapeKind::PlanarUv1 { inner, rect } => {
+                let mut mesh = inner.build();
+                geometry::add_planar_uv1(&mut mesh, *rect);
+                mesh
+            }
         }
     }
 }
@@ -3204,6 +3700,98 @@ impl ShapeKind {
                 bottom_radius: l(b1, b2),
                 height: l(h1, h2),
             },
+            (
+                K::ExtrudedPolygon {
+                    outer: o1,
+                    holes: h1,
+                    colors: c1,
+                    depth: d1,
+                    roundness: r1,
+                },
+                K::ExtrudedPolygon {
+                    outer: o2,
+                    holes: h2,
+                    colors: c2,
+                    depth: d2,
+                    roundness: r2,
+                },
+            ) => {
+                if h1.len() != h2.len() {
+                    return None;
+                }
+                let outer = lerp_points(o1, o2, t, lerp_vec2)?;
+                let holes = h1
+                    .iter()
+                    .zip(h2)
+                    .map(|(a, b)| lerp_points(a, b, t, lerp_vec2))
+                    .collect::<Option<Vec<_>>>()?;
+                let colors = match (c1, c2) {
+                    (None, None) => None,
+                    (Some(a), Some(b)) if a.len() == b.len() => Some(
+                        a.iter()
+                            .zip(b)
+                            .map(|(x, y)| {
+                                [
+                                    lerp_f32(x[0], y[0], t),
+                                    lerp_f32(x[1], y[1], t),
+                                    lerp_f32(x[2], y[2], t),
+                                    lerp_f32(x[3], y[3], t),
+                                ]
+                            })
+                            .collect(),
+                    ),
+                    _ => return None,
+                };
+                K::ExtrudedPolygon {
+                    outer,
+                    holes,
+                    colors,
+                    depth: l(d1, d2),
+                    roundness: l(r1, r2),
+                }
+            }
+            (
+                K::Lathe {
+                    profile: p1,
+                    segments: s1,
+                },
+                K::Lathe {
+                    profile: p2,
+                    segments: s2,
+                },
+            ) => K::Lathe {
+                profile: lerp_points(p1, p2, t, lerp_vec2)?,
+                segments: pick(t, *s1, *s2),
+            },
+            (
+                K::Polyline2D {
+                    points: p1,
+                    thickness: t1,
+                    closed: c1,
+                },
+                K::Polyline2D {
+                    points: p2,
+                    thickness: t2,
+                    closed: c2,
+                },
+            ) => K::Polyline2D {
+                points: lerp_points(p1, p2, t, lerp_vec2)?,
+                thickness: l(t1, t2),
+                closed: pick(t, *c1, *c2),
+            },
+            (
+                K::Bezier2D {
+                    control_points: p1,
+                    thickness: t1,
+                },
+                K::Bezier2D {
+                    control_points: p2,
+                    thickness: t2,
+                },
+            ) => K::Bezier2D {
+                control_points: lerp_points(p1, p2, t, lerp_vec2)?,
+                thickness: l(t1, t2),
+            },
             _ => return None,
         })
     }
@@ -4117,5 +4705,252 @@ mod tests {
         let t1 = Shape::tapered_cylinder(0.5, 1.0, 2.0, ShapeDetail::Medium);
         let t2 = Shape::tapered_cylinder(0.5, 1.0, 2.0, ShapeDetail::Medium);
         assert_eq!(t1, t2, "Identical tapered cylinders should be equal");
+    }
+}
+
+#[cfg(test)]
+mod extended_shape_tests {
+    use super::*;
+    use crate::plugin::MeshCache;
+    use bevy::asset::Assets;
+    use bevy::mesh::{Indices, VertexAttributeValues};
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    const D: ShapeDetail = ShapeDetail::Medium;
+
+    fn hash_of(shape: &Shape) -> u64 {
+        let mut h = DefaultHasher::new();
+        shape.hash(&mut h);
+        h.finish()
+    }
+
+    fn door_wall() -> Shape {
+        Shape::extruded_polygon_with_holes(
+            Shape::rounded_rectangle(Vec2::new(4.0, 3.0), 0.2, 3),
+            vec![Shape::arch(1.0, 1.6, 8)],
+            0.5,
+            0.3,
+            D,
+        )
+    }
+
+    fn tower() -> Shape {
+        Shape::compound(vec![
+            ShapePart::new(Shape::lathe(
+                vec![Vec2::new(1.0, 0.0), Vec2::new(0.8, 2.0), Vec2::new(1.1, 2.5)],
+                16,
+                D,
+            )),
+            ShapePart::new(Shape::cone(1.3, 1.0, D))
+                .with_transform(Transform::from_xyz(0.0, 3.0, 0.0))
+                .with_tint(Color::srgb(0.9, 0.3, 0.3)),
+        ])
+    }
+
+    fn assert_pickable(mesh: &Mesh) {
+        let Some(VertexAttributeValues::Float32x3(positions)) =
+            mesh.attribute(Mesh::ATTRIBUTE_POSITION)
+        else {
+            panic!("missing positions");
+        };
+        assert!(!positions.is_empty());
+        assert!(positions.iter().flatten().all(|v| v.is_finite()));
+        // Panics when attribute lengths disagree.
+        assert_eq!(mesh.count_vertices(), positions.len());
+        assert!(mesh.contains_attribute(Mesh::ATTRIBUTE_NORMAL));
+        assert!(mesh.contains_attribute(Mesh::ATTRIBUTE_UV_0));
+        let indices: Vec<usize> = match mesh.indices().expect("indices") {
+            Indices::U16(v) => v.iter().map(|&i| i as usize).collect(),
+            Indices::U32(v) => v.iter().map(|&i| i as usize).collect(),
+        };
+        assert!(!indices.is_empty() && indices.len() % 3 == 0);
+        assert!(indices.iter().all(|&i| i < positions.len()));
+    }
+
+    #[test]
+    fn new_shapes_are_hash_and_eq() {
+        assert_eq!(door_wall(), door_wall());
+        assert_eq!(hash_of(&door_wall()), hash_of(&door_wall()));
+        assert_eq!(tower(), tower());
+        assert_eq!(hash_of(&tower()), hash_of(&tower()));
+        let moved = Shape::compound(vec![ShapePart::new(Shape::sphere(1.0, D))
+            .with_transform(Transform::from_xyz(1.0, 0.0, 0.0))]);
+        let other = Shape::compound(vec![ShapePart::new(Shape::sphere(1.0, D))
+            .with_transform(Transform::from_xyz(2.0, 0.0, 0.0))]);
+        assert_ne!(moved, other);
+        let lathe = Shape::lathe(vec![Vec2::X, Vec2::Y], 8, D);
+        assert_eq!(lathe, Shape::lathe(vec![Vec2::X, Vec2::Y], 8, D));
+        assert_ne!(lathe, Shape::lathe(vec![Vec2::X, Vec2::Y], 9, D));
+        let rect = Rect::new(-1.0, -1.0, 1.0, 1.0);
+        assert_eq!(
+            Shape::sphere(1.0, D).with_planar_uv1(rect),
+            Shape::sphere(1.0, D).with_planar_uv1(rect)
+        );
+        assert_ne!(Shape::sphere(1.0, D).with_planar_uv1(rect), Shape::sphere(1.0, D));
+    }
+
+    #[test]
+    fn compounds_and_extrusions_share_one_cached_handle() {
+        let mut cache = MeshCache::default();
+        let mut meshes = Assets::<Mesh>::default();
+        let a = cache.get_or_build_handle(&tower(), &mut meshes);
+        let b = cache.get_or_build_handle(&tower(), &mut meshes);
+        let c = cache.get_or_build_handle(&door_wall(), &mut meshes);
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+        assert_eq!(meshes.len(), 2);
+    }
+
+    #[test]
+    fn every_shape_builds_a_pickable_mesh() {
+        let shapes = [
+            Shape::sphere(1.0, D),
+            Shape::cuboid(Vec3::ONE, 0.2, D),
+            Shape::cylinder(1.0, 2.0, D),
+            Shape::cone(1.0, 2.0, D),
+            Shape::capsule(0.5, 2.0, D),
+            Shape::torus(1.0, 0.2, 0.0, std::f32::consts::TAU),
+            Shape::pyramid(4, 1.0, 1.0, D),
+            Shape::disc(1.0, D),
+            Shape::rectangle(Vec2::ONE, D),
+            Shape::star(5, 1.0, 0.5, D),
+            Shape::ring(1.0, 0.5, D),
+            Shape::arbitrary_polygon(Shape::blob(1.0, 0.3, 3), D),
+            Shape::extruded_polygon(Shape::arch(1.0, 2.0, 8), 0.3, 0.5, D),
+            Shape::extruded_polygon_colored(
+                Shape::blob(1.0, 0.3, 9),
+                vec![[1.0, 0.8, 0.8, 1.0]; crate::outline::BLOB_VERTICES],
+                0.2,
+                1.0,
+                D,
+            ),
+            Shape::arbitrary_polygon_with_holes(
+                Shape::rounded_rectangle(Vec2::new(4.0, 3.0), 0.3, 3),
+                vec![Shape::arch(1.0, 1.5, 6)],
+                D,
+            ),
+            door_wall(),
+            tower(),
+            Shape::lathe(vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.5), Vec2::new(0.0, 1.0)], 12, D),
+            Shape::cuboid(Vec3::ONE, 0.0, D).with_planar_uv1(Rect::new(-1.0, -1.0, 1.0, 1.0)),
+            Shape::polyline_2d(vec![Vec2::ZERO, Vec2::new(1.0, 0.5), Vec2::new(2.0, 0.0)], 0.1, false),
+            Shape::polyline_2d(Shape::rounded_rectangle(Vec2::splat(2.0), 0.3, 3), 0.1, true),
+            Shape::bezier_2d(vec![Vec2::ZERO, Vec2::new(1.0, 2.0), Vec2::new(2.0, 0.0)], 0.1, D),
+        ];
+        for shape in &shapes {
+            assert_pickable(&shape.build());
+            assert_pickable(&shape.build_2d());
+        }
+    }
+
+    #[test]
+    fn build_2d_is_flat_and_faces_plus_z() {
+        for shape in [
+            Shape::rectangle(Vec2::new(2.0, 1.0), D),
+            Shape::disc(1.0, D),
+            Shape::arbitrary_polygon_with_holes(
+                Shape::rounded_rectangle(Vec2::new(4.0, 3.0), 0.3, 3),
+                vec![Shape::arch(1.0, 1.5, 6)],
+                D,
+            ),
+            door_wall(),
+        ] {
+            let mesh = shape.build_2d();
+            let Some(VertexAttributeValues::Float32x3(positions)) =
+                mesh.attribute(Mesh::ATTRIBUTE_POSITION)
+            else {
+                panic!("positions");
+            };
+            assert!(positions.iter().all(|p| p[2] == 0.0), "{shape:?}");
+            let Some(VertexAttributeValues::Float32x3(normals)) =
+                mesh.attribute(Mesh::ATTRIBUTE_NORMAL)
+            else {
+                panic!("normals");
+            };
+            assert!(normals.iter().all(|n| n[2] > 0.99));
+            let Some(VertexAttributeValues::Float32x2(uvs)) = mesh.attribute(Mesh::ATTRIBUTE_UV_0)
+            else {
+                panic!("uvs");
+            };
+            assert!(uvs.iter().flatten().all(|v| (-1e-4..=1.0001).contains(v)));
+        }
+    }
+
+    #[test]
+    fn extruded_polygon_adds_thickness_and_door_wall_has_a_hole() {
+        let flat = Shape::arbitrary_polygon_with_holes(
+            Shape::rounded_rectangle(Vec2::new(4.0, 3.0), 0.0, 1),
+            vec![Shape::arch(1.0, 1.0, 8)],
+            D,
+        )
+        .build();
+        let solid = Shape::arbitrary_polygon(Shape::rounded_rectangle(Vec2::new(4.0, 3.0), 0.0, 1), D)
+            .build();
+        // The hole costs extra vertices and the opening is not covered by triangles.
+        assert!(flat.count_vertices() > solid.count_vertices());
+
+        let wall = door_wall().build();
+        let Some(VertexAttributeValues::Float32x3(p)) = wall.attribute(Mesh::ATTRIBUTE_POSITION)
+        else {
+            panic!();
+        };
+        let (min_z, max_z) = p.iter().fold((f32::MAX, f32::MIN), |(a, b), v| (a.min(v[2]), b.max(v[2])));
+        assert!((min_z + 0.25).abs() < 1e-5 && (max_z - 0.25).abs() < 1e-5);
+    }
+
+    #[test]
+    fn extruded_shapes_lerp_between_matching_outlines() {
+        let a = Shape::extruded_polygon(Shape::rounded_rectangle(Vec2::splat(2.0), 0.3, 2), 0.2, 0.0, D);
+        let b = Shape::extruded_polygon(Shape::rounded_rectangle(Vec2::splat(4.0), 0.3, 2), 0.6, 1.0, D);
+        let mid = a.lerp(&b, 0.5);
+        assert_eq!(
+            mid,
+            Shape::extruded_polygon(Shape::rounded_rectangle(Vec2::splat(3.0), 0.3, 2), 0.4, 0.5, D)
+        );
+        // Mismatched outlines snap to the nearer endpoint.
+        let c = Shape::extruded_polygon(Shape::arch(1.0, 1.0, 4), 0.2, 0.0, D);
+        assert_eq!(a.lerp(&c, 0.25), a);
+    }
+
+    #[test]
+    fn compound_merges_parts_into_one_mesh_with_tints() {
+        let mesh = tower().build();
+        assert_pickable(&mesh);
+        let a = Shape::lathe(
+            vec![Vec2::new(1.0, 0.0), Vec2::new(0.8, 2.0), Vec2::new(1.1, 2.5)],
+            16,
+            D,
+        )
+        .build();
+        let b = Shape::cone(1.3, 1.0, D).build();
+        assert_eq!(mesh.count_vertices(), a.count_vertices() + b.count_vertices());
+        let Some(VertexAttributeValues::Float32x4(colors)) = mesh.attribute(Mesh::ATTRIBUTE_COLOR)
+        else {
+            panic!("tinted compound needs vertex colours");
+        };
+        assert_eq!(colors[0], [1.0; 4]);
+        assert!(colors[a.count_vertices()][1] < 0.5);
+    }
+
+    #[test]
+    fn lathe_with_zero_segments_uses_detail() {
+        let a = Shape::lathe(vec![Vec2::X, Vec2::new(1.0, 1.0)], 0, ShapeDetail::Low).build();
+        let b = Shape::lathe(vec![Vec2::X, Vec2::new(1.0, 1.0)], ShapeDetail::Low.segments(), D).build();
+        assert_eq!(a.count_vertices(), b.count_vertices());
+    }
+
+    #[test]
+    fn planar_uv1_is_added_without_changing_the_inner_shape() {
+        let rect = Rect::new(-2.0, -2.0, 2.0, 2.0);
+        let mesh = Shape::cuboid(Vec3::new(2.0, 2.0, 2.0), 0.0, D)
+            .with_planar_uv1(rect)
+            .build();
+        assert!(mesh.contains_attribute(Mesh::ATTRIBUTE_UV_1));
+        assert!(!Shape::cuboid(Vec3::new(2.0, 2.0, 2.0), 0.0, D).build().contains_attribute(Mesh::ATTRIBUTE_UV_1));
+        assert_eq!(
+            mesh.count_vertices(),
+            Shape::cuboid(Vec3::new(2.0, 2.0, 2.0), 0.0, D).build().count_vertices()
+        );
     }
 }

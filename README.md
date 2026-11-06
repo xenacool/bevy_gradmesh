@@ -11,7 +11,20 @@ BevyGradmesh provides a clean API for generating procedural 3D primitives with p
 - **3D primitives**: Sphere, ellipsoid, cuboid (with rounded edges), cylinder, cone, capsule, hemisphere, torus (with arc support), regular prism, pyramid, tapered cylinder
 - **2D primitives**: Disc, polygon, ellipse, rectangle, star (N-pointed), ring/annulus, wedge/pie-slice
 - **Advanced geometry**: Arbitrary polygons (convex & concave), 3D polylines as tubes, Bézier curves (linear, quadratic, cubic)
+- **Extruded polygons and holes**: `Shape::extruded_polygon` (rounded edges, per-vertex colours) and `Shape::arbitrary_polygon_with_holes` / `extruded_polygon_with_holes` for walls with openings
+- **Outline helpers**: `arch`, `rounded_rectangle` and `blob` return counter-clockwise outlines centred on the origin
+- **Compound shapes**: `Shape::compound` merges several shapes with transforms and tints into one mesh and one draw call
+- **Lathe**: `Shape::lathe` revolves a `(radius, height)` profile around Y
+- **Flat curves**: `Shape::polyline_2d` and `Shape::bezier_2d` with thickness
+- **Lightmap UVs**: `Shape::with_planar_uv1` adds a planar `UV_1` for Bevy `Lightmap`s
 - **Detail levels**: Control mesh resolution from minimal (8 segments) to extreme (32 segments)
+
+### 2D
+
+- **True `Mesh2d` output**: `Shape::build_2d()` returns flat XY-plane geometry facing +Z with gradient UVs — no billboarding and no 3D camera
+- **`GradMeshMaterial2d`**: an unlit `Material2d` with the same dual-directional and dual-radial gradients, mix spaces, alpha and dashes; `Style::build_2d()` builds it from a `Style`
+- **Scale and layering**: `Transform` scale resizes shapes on the XY plane and `Transform.translation.z` orders them
+- **No extra setup**: `GradMeshPlugin` registers the material when Bevy's 2D mesh renderer is present (add `GradMesh2dPlugin` otherwise)
 
 ### Rendering Modes
 
@@ -25,7 +38,12 @@ BevyGradmesh provides a clean API for generating procedural 3D primitives with p
 - **Gradient materials**: Dual-directional and dual-radial shading for 3D-looking gradients
 - **Selectable mix space**: OKLAB (default), OKLCH, linear RGB or sRGB for gradients and CPU-side `Style::lerp` / `Shape::lerp` blending
 - **Blend modes**: Opaque, transparent, additive, multiplicative, screen, dither, and dashed outlines
-- **PBR integration**: Full compatibility with Bevy's physically-based rendering (roughness, metallicity, emissive)
+- **PBR integration**: Full compatibility with Bevy's physically-based rendering (roughness, metallicity, emissive); `Style::with_perceptual_roughness`, `with_metallic` and `with_emissive` are written to the material and blended by `Style::lerp`
+- **Style helpers**: `Style::shaded(color, dark_factor)` for a one-colour gradient, `Style::with_alpha` for ghost previews, and `PartialEq` on `Style`, `Dash` and `AppearanceSnapshot`
+- **Gradient direction space**: world space by default; `Style::with_direction_space(DirectionSpace::Local)` makes the gradient follow the entity's rotation (for example Y-up meshes placed in a Z-up scene)
+- **Deduplication**: `MeshCache::get_or_build_handle` returns one `Handle<Mesh>` per equal `Shape`, and `GradMeshMaterialPool::get_or_add` one material per equal `Style`
+- **Lightmaps**: gradient materials honour Bevy lightmaps (the baked texture lights the surface, the gradient colours it); tune with `Style::with_lightmap_exposure`
+- **Vertex tints**: per-vertex colours (compound part tints, `extruded_polygon_colored`) multiply the gradient
 - **Custom shader passthrough**: Attach any Bevy shader via `BlendMode::Custom`
 
 ### Performance
@@ -139,6 +157,18 @@ Transparency, emissive glow, metallic surfaces, and combined effects:
 Playable racing demo with a Bézier-curve track, PBR kart, collectible coins, and HUD:
 
 ![Kart Racer](screenshots/screenshot_kart_racer.png)
+
+### 2D Gradients
+
+`Camera2d` and `Mesh2d` with `GradMeshMaterial2d`: gradient cards, a translucent dragged card layered by z, a radial disc, a pulsing star, a dashed ring and a polygon with a hole:
+
+![2D Gradients](screenshots/screenshot_gradient_2d.png)
+
+### Composed Shapes
+
+Compound tower (lathe plus roof), a wall with an arched opening, extruded cobbles, an emissive torch, a metallic gem and a translucent ghost piece that casts no shadow:
+
+![Composed Shapes](screenshots/screenshot_composed_shapes.png)
 
 ### Deformation
 

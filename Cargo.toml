@@ -1,6 +1,6 @@
 [package]
 name = "bevy_gradmesh"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Jessica Collins (https://github.com/xenacool)"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
@@ -25,7 +25,7 @@ too_many_lines = "allow"
 too_many_arguments = "allow"
 
 [dependencies]
-bevy = { version = "0.20", default-features = false, features = ["bevy_pbr", "bevy_render", "bevy_log", "bevy_text", "bevy_ui", "debug", "default_font"] }
+bevy = { version = "0.20", default-features = false, features = ["bevy_pbr", "bevy_render", "bevy_sprite_render", "bevy_log", "bevy_text", "bevy_ui", "debug", "default_font"] }
 bevy_asset = "0.20"
 bevy_material = "0.20"
 bytemuck = "1.21"
@@ -73,3 +73,11 @@ path = "examples/pbr_effects.rs"
 [[example]]
 name = "kart_racer"
 path = "examples/kart_racer.rs"
+
+[[example]]
+name = "gradient_2d"
+path = "examples/gradient_2d.rs"
+
+[[example]]
+name = "composed_shapes"
+path = "examples/composed_shapes.rs"

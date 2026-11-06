@@ -26,7 +26,7 @@ use crate::render_pipeline::InstancedStats;
 use crate::shape::Shape;
 use crate::standalone_pipeline::StandaloneRenderPlugin;
 use bevy::app::Plugin;
-use bevy::asset::Assets;
+use bevy::asset::{Assets, Handle};
 use bevy::ecs::prelude::*;
 use bevy::pbr::{ExtendedMaterial, MaterialPlugin, StandardMaterial};
 use bevy::render::mesh::Mesh;
@@ -39,6 +39,8 @@ use bevy::render::mesh::Mesh;
 #[derive(Resource, Default, Debug)]
 pub struct MeshCache {
     inner: HashMap<Shape, Mesh>,
+    /// Asset handles for shapes already added to `Assets<Mesh>`.
+    handles: HashMap<Shape, Handle<Mesh>>,
     /// Successful cache lookups.
     hits: u64,
     /// Cache lookups that required building a new mesh.
@@ -62,20 +64,32 @@ impl MeshCache {
         mesh
     }
 
-    /// Inserts a mesh handle into Bevy's `Assets<Mesh>`, caching the handle
-    /// so repeated lookups return the same `Handle`.
+    /// Returns the `Handle<Mesh>` for `shape`, building the mesh and adding it
+    /// to `meshes` on the first request.
     ///
-    /// Returns the cached `Handle<Mesh>`.
-    pub fn get_or_insert(
+    /// Equal `Shape` values always return the same handle, so repeated calls
+    /// (for example once per frame while dragging) allocate no new mesh asset.
+    pub fn get_or_build_handle(
         &mut self,
         shape: &Shape,
-        assets: &mut Assets<Mesh>,
-    ) -> bevy::asset::Handle<Mesh> {
-        // We can't store Handles in the same cache because Assets<Mesh> might
-        // be replaced; instead we cache the Mesh data and only add to Assets
-        // when we have a miss.
-        let mesh = self.get_or_build(shape);
-        assets.add(mesh.clone())
+        meshes: &mut Assets<Mesh>,
+    ) -> Handle<Mesh> {
+        if let Some(handle) = self.handles.get(shape) {
+            // A handle whose asset was removed (e.g. the `Assets` resource was
+            // replaced) is rebuilt instead of returned dangling.
+            if meshes.contains(handle.id()) {
+                self.hits += 1;
+                return handle.clone();
+            }
+        }
+        let handle = meshes.add(self.get_or_build(shape).clone());
+        self.handles.insert(shape.clone(), handle.clone());
+        handle
+    }
+
+    /// Alias for [`MeshCache::get_or_build_handle`].
+    pub fn get_or_insert(&mut self, shape: &Shape, assets: &mut Assets<Mesh>) -> Handle<Mesh> {
+        self.get_or_build_handle(shape, assets)
     }
 
     /// Returns the number of cached meshes.
@@ -91,6 +105,7 @@ impl MeshCache {
     /// Clears the cache.
     pub fn clear(&mut self) {
         self.inner.clear();
+        self.handles.clear();
         self.hits = 0;
         self.misses = 0;
     }
@@ -193,6 +208,18 @@ mod tests {
     }
 
     #[test]
+    fn mesh_cache_handle_is_shared_between_equal_shapes() {
+        let mut cache = MeshCache::default();
+        let mut meshes = Assets::<Mesh>::default();
+        let a = cache.get_or_build_handle(&Shape::sphere(1.0, ShapeDetail::Low), &mut meshes);
+        let b = cache.get_or_build_handle(&Shape::sphere(1.0, ShapeDetail::Low), &mut meshes);
+        let c = cache.get_or_build_handle(&Shape::sphere(2.0, ShapeDetail::Low), &mut meshes);
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+        assert_eq!(meshes.len(), 2);
+    }
+
+    #[test]
     fn mesh_cache_different_shapes_are_misses() {
         let mut cache = MeshCache::default();
         let shape1 = Shape::sphere(1.0, ShapeDetail::Low);
@@ -229,5 +256,11 @@ impl Plugin for GradMeshPlugin {
             .init_resource::<GradMeshMaterialPool>()
             .add_systems(bevy::app::Update, tick_deformation)
             .add_systems(bevy::app::Update, warn_excessive_materials);
+
+        // The 2D material needs Bevy's 2D mesh renderer; only register it when
+        // that renderer is present (otherwise add `GradMesh2dPlugin` manually).
+        if app.is_plugin_added::<bevy::sprite_render::Mesh2dRenderPlugin>() {
+            app.add_plugins(crate::material2d::GradMesh2dPlugin);
+        }
     }
 }

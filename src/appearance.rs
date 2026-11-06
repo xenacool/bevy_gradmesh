@@ -60,7 +60,7 @@ impl AppearanceType {
 /// - `y`: phase offset (0.0–1.0)
 /// - `z`: type code (0=Static, 1=ColorPulse, 2=ColorCycle, 3=GradientShift)
 /// - `w`: reserved
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct AppearanceSnapshot {
     pub speed: f32,
     pub phase: f32,

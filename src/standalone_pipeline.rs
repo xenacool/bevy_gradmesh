@@ -530,7 +530,10 @@ impl Plugin for StandaloneRenderPlugin {
         app.sub_app_mut(RenderApp)
             .add_render_command::<Opaque3d, DrawStandaloneBatch>()
             .init_resource::<StandalonePipelineCache>()
-            .add_systems(RenderStartup, init_standalone_pipeline)
+            .add_systems(
+                RenderStartup,
+                init_standalone_pipeline.after(bevy::pbr::MeshPipelineSystems),
+            )
             .add_systems(
                 Render,
                 (

@@ -66,7 +66,7 @@ fn setup(
     ));
 
     // Ambient light to fill shadows
-    commands.spawn(AmbientLight {
+    commands.insert_resource(GlobalAmbientLight {
         color: Color::srgb(0.6, 0.6, 0.7),
         brightness: 300.0,
         affects_lightmapped_meshes: false,

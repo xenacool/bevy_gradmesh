@@ -452,7 +452,10 @@ impl Plugin for InstancedRenderPlugin {
             .add_render_command::<Opaque3d, DrawInstancedBatch>()
             .init_resource::<InstancedPipelineCache>()
             .init_resource::<InstancedStats>()
-            .add_systems(RenderStartup, init_instanced_pipeline)
+            .add_systems(
+                RenderStartup,
+                init_instanced_pipeline.after(bevy::pbr::MeshPipelineSystems),
+            )
             .add_systems(
                 Render,
                 (

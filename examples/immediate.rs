@@ -72,7 +72,7 @@ fn setup(
         },
         Transform::from_xyz(5.0, 8.0, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
-    commands.spawn(AmbientLight {
+    commands.insert_resource(GlobalAmbientLight {
         color: Color::srgb(0.5, 0.5, 0.6),
         brightness: 200.0,
         affects_lightmapped_meshes: false,
