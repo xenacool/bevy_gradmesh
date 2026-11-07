@@ -1,5 +1,7 @@
 # BevyGradmesh
 
+[![Crates.io](https://img.shields.io/crates/v/bevy_gradmesh.svg)](https://crates.io/crates/bevy_gradmesh)
+
 Procedural mesh generation and gradient materials for [Bevy](https://bevyengine.org/).
 
 BevyGradmesh provides a clean API for generating procedural 3D primitives with proper geometry, detail levels, and gradient shading — inspired by Freya Holmer's work.
