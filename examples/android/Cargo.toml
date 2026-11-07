@@ -1,0 +1,39 @@
+[package]
+name = "gradmesh_android"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "Minimal Android (NativeActivity) app that renders bevy_gradmesh through the standalone pipeline"
+
+# Standalone project: not part of the bevy_gradmesh crate or any workspace.
+[workspace]
+
+[lib]
+name = "gradmesh_android"
+crate-type = ["lib", "cdylib"]
+
+[dependencies]
+bevy_gradmesh = { path = "../.." }
+# Hand-picked features: no audio (`-laaudio` is not available in the NDK link line),
+# no gltf, no gilrs, no windowing backends other than winit/Android.
+bevy = { version = "0.20", default-features = false, features = [
+    "android-native-activity",
+    "std",
+    "multi_threaded",
+    "default_app",
+    "bevy_winit",
+    "bevy_window",
+    "bevy_camera",
+    "bevy_render",
+    "bevy_core_pipeline",
+    "bevy_pbr",
+    "bevy_ui",
+    "bevy_ui_render",
+    "bevy_text",
+    "default_font",
+] }
+
+[profile.release]
+opt-level = 2
+debug = false
+strip = true

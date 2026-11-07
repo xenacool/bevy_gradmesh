@@ -46,6 +46,7 @@ pub mod instanced_render;
 pub mod lod;
 pub mod material;
 pub mod material2d;
+pub mod sdf2d;
 pub mod material_interning;
 pub mod mix_space;
 pub mod outline;
@@ -73,6 +74,7 @@ pub use material::{
     multiplicative, opaque, screen, transparent, with_gradient_bounds, with_mix_space,
 };
 pub use material2d::{GradMesh2dPlugin, GradMeshMaterial2d};
+pub use sdf2d::{SdfKind, SdfMaterial2d, SdfMaterial2dPlugin, SdfUniform, unit_quad};
 pub use material_interning::{
     GradMeshMaterialKey, GradMeshMaterialPool, MATERIAL_WARNING_THRESHOLD, warn_excessive_materials,
 };

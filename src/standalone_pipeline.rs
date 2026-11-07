@@ -19,27 +19,28 @@
 //!
 //! The standalone pipeline reuses the `Opaque3d` binned render phase (like the
 //! existing `InstancedRenderPlugin`) but replaces the PBR-dependent shader with
-//! a pure WGSL shader (`standalone.wgsl`) that has no Bevy PBR imports.
-//! It uses `SpecializedMeshPipeline` with an empty key so all batches share
-//! a single pipeline specialization.
+//! a pure shader (`standalone.wesl`) that only imports `bevy_render::view::View`.
+//! The pipeline is specialized only on view state (MSAA, target format) and mesh
+//! topology, never on material, so all batches share a single specialization.
+//!
+//! This module depends on `bevy_render` and `bevy_core_pipeline` only — nothing
+//! from `bevy_pbr`. The camera is bound through its own `ViewUniform` bind group
+//! and meshes are bound straight from the `MeshAllocator`.
 //!
 //! ```text
 //! StandalonePipeline
-//! ├── Single render pipeline (no specialization per material)
+//! ├── One bind group: the camera `ViewUniform` (dynamic offset)
 //! ├── Reuses Opaque3d binned render phase
 //! ├── Per-batch vertex buffer (transforms + properties)
-//! └── Standalone WGSL shader (no PBR imports)
+//! └── Standalone shader (no PBR imports)
 //! ```
 
 use std::mem::size_of;
 
 use bevy::core_pipeline::core_3d::{Opaque3d, Opaque3dBatchSetKey, Opaque3dBinKey};
 use bevy::ecs::system::{SystemParamItem, lifetimeless::*};
+use bevy::core_pipeline::core_3d::CORE_3D_DEPTH_FORMAT;
 use bevy::mesh::{MeshVertexBufferLayoutRef, VertexBufferLayout};
-use bevy::pbr::{
-    MeshPipeline, MeshPipelineKey, RenderMeshInstances, SetMeshBindGroup, SetMeshViewBindGroup,
-    ViewKeyCache,
-};
 use bevy::prelude::*;
 use bevy::render::extract_component::{ExtractComponent, ExtractComponentPlugin};
 use bevy::render::mesh::allocator::MeshSlabs;
@@ -49,10 +50,11 @@ use bevy::render::render_phase::{
     AddRenderCommand, BinnedRenderPhaseType, DrawFunctions, InputUniformIndex, PhaseItem,
     RenderCommand, RenderCommandResult, SetItemPipeline, TrackedRenderPass, ViewBinnedRenderPhases,
 };
+use bevy::render::render_resource::binding_types::uniform_buffer;
 use bevy::render::render_resource::*;
 use bevy::render::renderer::RenderDevice;
 use bevy::render::sync_world::MainEntity;
-use bevy::render::view::ExtractedView;
+use bevy::render::view::{ExtractedView, Msaa, ViewUniform, ViewUniformOffset, ViewUniforms};
 use bevy::render::{Render, RenderApp, RenderStartup, RenderSystems};
 
 use crate::batch::{InstanceProperties, InstanceTransform};
@@ -98,56 +100,127 @@ pub struct StandaloneGpuBuffers {
 // ─── Pipeline ───
 
 /// The standalone pipeline for GradMesh rendering (no PBR).
-#[derive(Resource)]
+#[derive(Resource, Clone)]
 pub struct StandalonePipeline {
-    /// The base mesh pipeline for specialization.
-    mesh_pipeline: MeshPipeline,
-    /// Shader handle for the standalone WGSL shader.
+    /// Layout of the camera bind group (group 0).
+    view_layout: BindGroupLayoutDescriptor,
+    /// Shader handle for the standalone shader.
     shader: Handle<Shader>,
 }
 
 impl StandalonePipeline {
-    pub fn new(mesh_pipeline: MeshPipeline, shader: Handle<Shader>) -> Self {
+    pub fn new(shader: Handle<Shader>) -> Self {
+        let view_layout = BindGroupLayoutDescriptor::new(
+            "standalone gradmesh view layout",
+            &BindGroupLayoutEntries::single(
+                ShaderStages::VERTEX_FRAGMENT,
+                uniform_buffer::<ViewUniform>(true),
+            ),
+        );
         Self {
-            mesh_pipeline,
+            view_layout,
             shader,
         }
     }
 }
 
+/// Camera bind group shared by every standalone batch.
+#[derive(Resource)]
+pub struct StandaloneViewBindGroup(BindGroup);
+
 /// Specialized pipelines cache for standalone rendering.
 pub type StandalonePipelineCache = SpecializedMeshPipelines<StandalonePipeline>;
 
-/// Empty pipeline key — all standalone batches share the same pipeline.
-#[derive(Default, Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct StandalonePipelineKey;
-
-impl From<StandalonePipelineKey> for u64 {
-    fn from(_: StandalonePipelineKey) -> u64 {
-        0
-    }
+/// Pipeline key — depends only on view state and mesh topology, never on
+/// material, so all standalone batches on a view share the same pipeline.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct StandalonePipelineKey {
+    /// MSAA sample count of the view.
+    pub msaa_samples: u32,
+    /// Colour target format of the view.
+    pub target_format: TextureFormat,
+    /// Primitive topology of the mesh.
+    pub topology: PrimitiveTopology,
+    /// Index format, required by wgpu for strip topologies.
+    pub strip_index_format: Option<IndexFormat>,
 }
 
-impl From<u64> for StandalonePipelineKey {
-    fn from(_: u64) -> Self {
-        StandalonePipelineKey
+impl StandalonePipelineKey {
+    /// Build a key from the view's MSAA and target format plus a mesh's topology.
+    pub fn new(
+        msaa_samples: u32,
+        target_format: TextureFormat,
+        topology: PrimitiveTopology,
+        index_format: Option<IndexFormat>,
+    ) -> Self {
+        Self {
+            msaa_samples,
+            target_format,
+            topology,
+            strip_index_format: if topology.is_strip() {
+                index_format
+            } else {
+                None
+            },
+        }
     }
 }
 
 impl SpecializedMeshPipeline for StandalonePipeline {
-    type Key = MeshPipelineKey;
+    type Key = StandalonePipelineKey;
 
     fn specialize(
         &self,
         key: Self::Key,
         layout: &MeshVertexBufferLayoutRef,
     ) -> Result<RenderPipelineDescriptor, SpecializedMeshPipelineError> {
-        let mut descriptor = self.mesh_pipeline.specialize(key, layout)?;
+        // Per-vertex mesh buffer: position, normal, uv at locations 0-2.
+        let mesh_buffer_layout = layout.0.get_layout(&[
+            Mesh::ATTRIBUTE_POSITION.at_shader_location(0),
+            Mesh::ATTRIBUTE_NORMAL.at_shader_location(1),
+            Mesh::ATTRIBUTE_UV_0.at_shader_location(2),
+        ])?;
 
-        // Use the standalone shader for both vertex and fragment
-        descriptor.vertex.shader = self.shader.clone();
-        descriptor.vertex.entry_point = Some("vs_standalone".into());
-        descriptor.label = Some("standalone gradmesh pipeline".into());
+        let mut descriptor = RenderPipelineDescriptor {
+            label: Some("standalone gradmesh pipeline".into()),
+            layout: vec![self.view_layout.clone()],
+            vertex: VertexState {
+                shader: self.shader.clone(),
+                entry_point: Some("vs_standalone".into()),
+                buffers: vec![mesh_buffer_layout],
+                ..default()
+            },
+            fragment: Some(FragmentState {
+                shader: self.shader.clone(),
+                entry_point: Some("fs_standalone".into()),
+                targets: vec![Some(ColorTargetState {
+                    format: key.target_format,
+                    blend: None,
+                    write_mask: ColorWrites::ALL,
+                })],
+                ..default()
+            }),
+            primitive: PrimitiveState {
+                topology: key.topology,
+                strip_index_format: key.strip_index_format,
+                front_face: FrontFace::Ccw,
+                cull_mode: None,
+                ..default()
+            },
+            depth_stencil: Some(DepthStencilState {
+                format: CORE_3D_DEPTH_FORMAT,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(CompareFunction::Greater),
+                stencil: StencilState::default(),
+                bias: DepthBiasState::default(),
+            }),
+            multisample: MultisampleState {
+                count: key.msaa_samples,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            ..default()
+        };
 
         // Add the instanced vertex buffer layout
         let transform_stride = size_of::<InstanceTransform>() as u64;
@@ -215,11 +288,6 @@ impl SpecializedMeshPipeline for StandalonePipeline {
             .to_vec(),
         });
 
-        if let Some(fragment) = descriptor.fragment.as_mut() {
-            fragment.shader = self.shader.clone();
-            fragment.entry_point = Some("fs_standalone".into());
-        }
-
         Ok(descriptor)
     }
 }
@@ -229,51 +297,59 @@ impl SpecializedMeshPipeline for StandalonePipeline {
 /// The draw command tuple for standalone batches.
 pub type DrawStandaloneBatch = (
     SetItemPipeline,
-    SetMeshViewBindGroup<0>,
-    SetMeshBindGroup<1>,
+    SetStandaloneViewBindGroup<0>,
     DrawStandaloneBatchImpl,
 );
+
+/// Binds the camera `ViewUniform` bind group at group `I`.
+pub struct SetStandaloneViewBindGroup<const I: usize>;
+
+impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetStandaloneViewBindGroup<I> {
+    type Param = SRes<StandaloneViewBindGroup>;
+    type ViewQuery = Read<ViewUniformOffset>;
+    type ItemQuery = ();
+
+    #[inline]
+    fn render<'w>(
+        _item: &P,
+        view_uniform_offset: &'w ViewUniformOffset,
+        _entity: Option<()>,
+        view_bind_group: SystemParamItem<'w, '_, Self::Param>,
+        pass: &mut TrackedRenderPass<'w>,
+    ) -> RenderCommandResult {
+        pass.set_bind_group(I, &view_bind_group.into_inner().0, &[view_uniform_offset.offset]);
+        RenderCommandResult::Success
+    }
+}
 
 /// Implements the actual draw call for standalone batches.
 pub struct DrawStandaloneBatchImpl;
 
 impl<P: PhaseItem> RenderCommand<P> for DrawStandaloneBatchImpl {
-    type Param = (
-        SRes<RenderAssets<RenderMesh>>,
-        SRes<RenderMeshInstances>,
-        SRes<MeshAllocator>,
-    );
+    type Param = (SRes<RenderAssets<RenderMesh>>, SRes<MeshAllocator>);
     type ViewQuery = ();
     type ItemQuery = (Read<StandaloneGpuBuffers>, Read<StandaloneBatchData>);
 
     #[inline]
     fn render<'w>(
-        item: &P,
+        _item: &P,
         _view: (),
         item_query: Option<(&'w StandaloneGpuBuffers, &'w StandaloneBatchData)>,
-        (meshes, render_mesh_instances, mesh_allocator): SystemParamItem<'w, '_, Self::Param>,
+        (meshes, mesh_allocator): SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
         let mesh_allocator = mesh_allocator.into_inner();
 
-        let Some((gpu_buffers, _batch_data)) = item_query else {
+        let Some((gpu_buffers, batch_data)) = item_query else {
+            return RenderCommandResult::Skip;
+        };
+        let mesh_asset_id = batch_data.mesh_id;
+
+        let Some(gpu_mesh) = meshes.into_inner().get(mesh_asset_id) else {
             return RenderCommandResult::Skip;
         };
 
-        let Some(mesh_instance) = render_mesh_instances
-            .into_inner()
-            .render_mesh_queue_data(item.main_entity())
-        else {
-            return RenderCommandResult::Skip;
-        };
-
-        let Some(gpu_mesh) = meshes.into_inner().get(mesh_instance.mesh_asset_id()) else {
-            return RenderCommandResult::Skip;
-        };
-
-        let Some(vertex_buffer_slice) =
-            mesh_allocator.mesh_vertex_slice(&mesh_instance.mesh_asset_id())
-        else {
+        let Some(vertex_buffer_slice) = mesh_allocator.mesh_vertex_slice(&mesh_asset_id) else {
             return RenderCommandResult::Skip;
         };
 
@@ -288,8 +364,7 @@ impl<P: PhaseItem> RenderCommand<P> for DrawStandaloneBatchImpl {
                 index_format,
                 count,
             } => {
-                let Some(index_buffer_slice) =
-                    mesh_allocator.mesh_index_slice(&mesh_instance.mesh_asset_id())
+                let Some(index_buffer_slice) = mesh_allocator.mesh_index_slice(&mesh_asset_id)
                 else {
                     return RenderCommandResult::Skip;
                 };
@@ -382,11 +457,9 @@ fn queue_standalone_batches(
     mut pipelines: ResMut<StandalonePipelineCache>,
     pipeline_cache: Res<PipelineCache>,
     meshes: Res<RenderAssets<RenderMesh>>,
-    render_mesh_instances: Res<RenderMeshInstances>,
     standalone_batches: Query<(Entity, &MainEntity, &StandaloneBatchData)>,
     mut opaque_render_phases: ResMut<ViewBinnedRenderPhases<Opaque3d>>,
-    views: Query<&ExtractedView>,
-    view_key_cache: Res<ViewKeyCache>,
+    views: Query<(&ExtractedView, &Msaa)>,
     mut stats: ResMut<InstancedStats>,
     _lod_config: Option<Res<LodConfig>>,
 ) {
@@ -403,12 +476,8 @@ fn queue_standalone_batches(
     stats.culled_instances = 0;
     stats.total_instances_before_cull = 0;
 
-    for view in &views {
+    for (view, msaa) in &views {
         let Some(opaque_phase) = opaque_render_phases.get_mut(&view.retained_view_entity) else {
-            continue;
-        };
-
-        let Some(&view_key) = view_key_cache.get(&view.retained_view_entity) else {
             continue;
         };
 
@@ -423,21 +492,17 @@ fn queue_standalone_batches(
                 continue;
             }
 
-            let Some(mesh_instance) = render_mesh_instances.render_mesh_queue_data(main_entity)
-            else {
+            let Some(mesh) = meshes.get(batch_data.mesh_id) else {
                 continue;
             };
 
-            let Some(mesh) = meshes.get(mesh_instance.mesh_asset_id()) else {
-                continue;
-            };
-
-            // Specialize the pipeline
-            let key = view_key
-                | MeshPipelineKey::from_primitive_topology_and_strip_index(
-                    mesh.primitive_topology(),
-                    mesh.index_format(),
-                );
+            // Specialize the pipeline on view state and mesh topology only.
+            let key = StandalonePipelineKey::new(
+                msaa.samples(),
+                view.target_format,
+                mesh.primitive_topology(),
+                mesh.index_format(),
+            );
 
             let Ok(pipeline) =
                 pipelines.specialize(&pipeline_cache, &standalone_pipeline, key, &mesh.layout)
@@ -525,19 +590,22 @@ pub struct StandaloneRenderPlugin;
 
 impl Plugin for StandaloneRenderPlugin {
     fn build(&self, app: &mut App) {
+        bevy::asset::embedded_asset!(app, "shader/standalone.wesl");
+
         app.add_plugins(ExtractComponentPlugin::<StandaloneBatchData>::default());
 
         app.sub_app_mut(RenderApp)
             .add_render_command::<Opaque3d, DrawStandaloneBatch>()
             .init_resource::<StandalonePipelineCache>()
-            .add_systems(
-                RenderStartup,
-                init_standalone_pipeline.after(bevy::pbr::MeshPipelineSystems),
-            )
+            // Also initialised by `InstancedRenderPlugin`; `init_resource` is a no-op
+            // when it already exists, so the standalone plugin works on its own.
+            .init_resource::<InstancedStats>()
+            .add_systems(RenderStartup, init_standalone_pipeline)
             .add_systems(
                 Render,
                 (
                     prepare_standalone_buffers.in_set(RenderSystems::PrepareResources),
+                    prepare_standalone_view_bind_group.in_set(RenderSystems::PrepareBindGroups),
                     queue_standalone_batches.in_set(RenderSystems::Queue),
                 ),
             );
@@ -545,19 +613,34 @@ impl Plugin for StandaloneRenderPlugin {
 }
 
 /// Initialize the standalone pipeline resource.
-fn init_standalone_pipeline(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    mesh_pipeline: Option<Res<MeshPipeline>>,
-) {
-    let Some(mesh_pipeline) = mesh_pipeline else {
-        return;
-    };
+fn init_standalone_pipeline(mut commands: Commands, asset_server: Res<AssetServer>) {
     use bevy::asset::AssetPath;
-    let path = AssetPath::from_path_buf(bevy::asset::embedded_path!("shader/standalone.wgsl"))
+    let path = AssetPath::from_path_buf(bevy::asset::embedded_path!("shader/standalone.wesl"))
         .with_source("embedded");
     let shader = asset_server.load(path);
-    commands.insert_resource(StandalonePipeline::new(mesh_pipeline.clone(), shader));
+    commands.insert_resource(StandalonePipeline::new(shader));
+}
+
+/// Build the camera bind group from the shared `ViewUniforms` buffer.
+fn prepare_standalone_view_bind_group(
+    mut commands: Commands,
+    render_device: Res<RenderDevice>,
+    pipeline_cache: Res<PipelineCache>,
+    view_uniforms: Res<ViewUniforms>,
+    standalone_pipeline: Option<Res<StandalonePipeline>>,
+) {
+    let Some(standalone_pipeline) = standalone_pipeline else {
+        return;
+    };
+    let Some(view_binding) = view_uniforms.uniforms.binding() else {
+        return;
+    };
+    let bind_group = render_device.create_bind_group(
+        "standalone gradmesh view bind group",
+        &pipeline_cache.get_bind_group_layout(&standalone_pipeline.view_layout),
+        &BindGroupEntries::single(view_binding),
+    );
+    commands.insert_resource(StandaloneViewBindGroup(bind_group));
 }
 
 // ─── Spawn API ───
@@ -642,11 +725,35 @@ mod tests {
     use super::*;
 
     #[test]
-    fn standalone_pipeline_key_is_unit() {
-        let key = StandalonePipelineKey;
-        let hash: u64 = key.into();
-        assert_eq!(hash, 0);
-        let back: StandalonePipelineKey = hash.into();
-        assert_eq!(back, StandalonePipelineKey);
+    fn standalone_pipeline_key_depends_only_on_view_and_topology() {
+        let a = StandalonePipelineKey::new(
+            4,
+            TextureFormat::Rgba8UnormSrgb,
+            PrimitiveTopology::TriangleList,
+            Some(IndexFormat::Uint32),
+        );
+        let b = StandalonePipelineKey::new(
+            4,
+            TextureFormat::Rgba8UnormSrgb,
+            PrimitiveTopology::TriangleList,
+            Some(IndexFormat::Uint16),
+        );
+        // Index format only matters for strip topologies.
+        assert_eq!(a, b);
+
+        let strip_a = StandalonePipelineKey::new(
+            1,
+            TextureFormat::Rgba8UnormSrgb,
+            PrimitiveTopology::TriangleStrip,
+            Some(IndexFormat::Uint32),
+        );
+        let strip_b = StandalonePipelineKey::new(
+            1,
+            TextureFormat::Rgba8UnormSrgb,
+            PrimitiveTopology::TriangleStrip,
+            Some(IndexFormat::Uint16),
+        );
+        assert_ne!(strip_a, strip_b);
+        assert_ne!(a, strip_a);
     }
 }

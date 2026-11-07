@@ -243,7 +243,6 @@ impl Plugin for GradMeshPlugin {
         // Embed the shaders so they're available when plugins load them
         bevy::asset::embedded_asset!(app, "shader/gradmesh.wesl");
         bevy::asset::embedded_asset!(app, "shader/instanced.wesl");
-        bevy::asset::embedded_asset!(app, "shader/standalone.wgsl");
 
         app.add_plugins(MaterialPlugin::<
             ExtendedMaterial<StandardMaterial, GradMeshExtension>,
@@ -261,6 +260,7 @@ impl Plugin for GradMeshPlugin {
         // that renderer is present (otherwise add `GradMesh2dPlugin` manually).
         if app.is_plugin_added::<bevy::sprite_render::Mesh2dRenderPlugin>() {
             app.add_plugins(crate::material2d::GradMesh2dPlugin);
+            app.add_plugins(crate::sdf2d::SdfMaterial2dPlugin);
         }
     }
 }
