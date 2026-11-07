@@ -1,6 +1,6 @@
 [package]
 name = "bevy_gradmesh"
-version = "0.2.5"
+version = "0.2.6"
 authors = ["Jessica Collins (https://github.com/xenacool)"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
@@ -74,10 +74,6 @@ path = "examples/instanced.rs"
 [[example]]
 name = "pbr_effects"
 path = "examples/pbr_effects.rs"
-
-[[example]]
-name = "kart_racer"
-path = "examples/kart_racer.rs"
 
 [[example]]
 name = "gradient_2d"

@@ -18,6 +18,7 @@ BevyGradmesh provides a clean API for generating procedural 3D primitives with p
 - **Compound shapes**: `Shape::compound` merges several shapes with transforms and tints into one mesh and one draw call
 - **Lathe**: `Shape::lathe` revolves a `(radius, height)` profile around Y
 - **Flat curves**: `Shape::polyline_2d` and `Shape::bezier_2d` with thickness
+- **Sweep**: `Shape::sweep` extrudes a 2D profile along a 3D path with optional openings (arched gates, windows), length-based tints, and per-segment scaling
 - **Rounded roofs and gems**: `Shape::rounded_cone` and `Shape::rounded_pyramid` (and `regular_prism`) take a `roundness`
 - **Bounds**: `Shape::bounds`, `Shape::bounds_2d` and `Shape::is_round` read a shape's size and kind
 - **Detail levels**: Control mesh resolution from minimal (8 segments) to extreme (32 segments)
@@ -26,6 +27,9 @@ BevyGradmesh provides a clean API for generating procedural 3D primitives with p
 
 - **True `Mesh2d` output**: `Shape::build_2d()` returns flat XY-plane geometry facing +Z with gradient UVs — no billboarding and no 3D camera
 - **`GradMeshMaterial2d`**: an unlit `Material2d` with the same dual-directional and dual-radial gradients, mix spaces, alpha and dashes; `Style::build_2d()` builds it from a `Style`
+- **SDF 2D shapes**: `SdfMaterial2d` evaluates disc, ellipse, rounded rectangle and partial arcs per-pixel on a shared unit quad — rims, edge anti-aliasing, and animated arcs change only material floats each frame
+- **SDF dash modes**: `Dash2d` with `DashSnap::Off`, `Tiling` and `EndToEnd` (length-based or count-based), plus sliding offset animation
+- **SDF gradient variants**: radial gradients fitted to bounds and angular (conic) gradients with sweep control
 - **Scale and layering**: `Transform` scale resizes shapes on the XY plane and `Transform.translation.z` orders them
 - **No extra setup**: `GradMeshPlugin` registers the material when Bevy's 2D mesh renderer is present (add `GradMesh2dPlugin` otherwise)
 
@@ -60,9 +64,10 @@ BevyGradmesh provides a clean API for generating procedural 3D primitives with p
 
 ### Custom Pipeline (Mobile-Friendly)
 
-- **Standalone pipeline**: `StandaloneRenderPlugin` bypasses Bevy's PBR system entirely, using a simple vertex+fragment shader with no PBR imports
+- **Standalone pipeline**: `StandaloneRenderPlugin` and `render_standalone_batches()` bypass Bevy's PBR system entirely, using a simple vertex+fragment shader with no `StandardMaterial`, no lights, and no PBR imports
 - **Zero descriptor pool pressure**: All material variation via per-instance vertex attributes — one pipeline, one bind group layout, one descriptor set
 - **Faster compilation**: One shader pipeline instead of N specializations
+- **`GradMeshMobilePlugin`**: lightweight plugin variant for minimal dependency setups
 
 ### Animation
 
@@ -93,7 +98,7 @@ It is commonly used in stylized games to give characters a painted, cel-shaded a
 
 ```toml
 [dependencies]
-bevy_gradmesh = "0.1"
+bevy_gradmesh = "0.2"
 ```
 
 ```rust
@@ -155,17 +160,41 @@ Transparency, emissive glow, metallic surfaces, and combined effects:
 
 ![PBR Effects](screenshots/screenshot_pbr_effects.png)
 
-### Kart Racer
-
-Playable racing demo with a Bézier-curve track, PBR kart, collectible coins, and HUD:
-
-![Kart Racer](screenshots/screenshot_kart_racer.png)
-
 ### 2D Gradients
 
 `Camera2d` and `Mesh2d` with `GradMeshMaterial2d`: gradient cards, a translucent dragged card layered by z, a radial disc, a pulsing star, a dashed ring and a polygon with a hole:
 
 ![2D Gradients](screenshots/screenshot_gradient_2d.png)
+
+### SDF 2D
+
+One shared unit quad mesh: filled discs, ellipses, rounded rectangles, rims, animated partial arcs, radial and angular gradients — all shape changes are material floats, no mesh regeneration:
+
+![SDF 2D](screenshots/screenshot_sdf_2d.png)
+
+### SDF Dash Gallery
+
+Dashed rim outlines on discs, ellipses, rounded rectangles and partial arcs, comparing `Off`, `Tiling`, `EndToEnd` and count-based snap modes at rim widths from 1.5 to 18 pixels:
+
+![SDF Dash Gallery](screenshots/screenshot_sdf_dash_gallery.png)
+
+### Sweep
+
+Profiles swept along 3D paths: a wall following a baked spline loop with an arched gate and windows, a kerbed road on an S-curve with length tint, and a tapering pipe winding up a helix:
+
+![Sweep](screenshots/screenshot_sweep.png)
+
+### Instanced Rendering
+
+500 spheres rendered in a single GPU batch via `BatchRecorder`:
+
+![Instanced Rendering](screenshots/screenshot_instanced.png)
+
+### Standalone Pipeline
+
+Gradient shapes drawn without any PBR material or lights — one shader pipeline, one bind group:
+
+![Standalone Pipeline](screenshots/screenshot_standalone.png)
 
 ### Composed Shapes
 

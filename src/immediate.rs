@@ -224,7 +224,7 @@ impl ImmediateRecorder {
         material: GradMeshMaterial,
         billboard: BillboardMode,
     ) {
-        let mesh = meshes.add(Shape::disc(radius, ShapeDetail::Medium).build());
+        let mesh = meshes.add(Shape::disc(radius, ShapeDetail::Medium).build_2d());
         let mat = materials.add(material);
         let entity = self.spawn_2d(commands, mesh, mat, billboard);
         self.entities.push(entity);
@@ -241,7 +241,7 @@ impl ImmediateRecorder {
         material: GradMeshMaterial,
         billboard: BillboardMode,
     ) {
-        let mesh = meshes.add(Shape::disc_rim(radius, rim_width, ShapeDetail::Medium).build());
+        let mesh = meshes.add(Shape::disc_rim(radius, rim_width, ShapeDetail::Medium).build_2d());
         let mat = materials.add(material);
         let entity = self.spawn_2d(commands, mesh, mat, billboard);
         self.entities.push(entity);
@@ -302,11 +302,12 @@ impl ImmediateRecorder {
         let midpoint = (start + end) * 0.5;
         let line_direction = direction.normalize();
 
-        // Create a thin capsule for the line
+        // Create a thin capsule for the line, rotated to face the camera
         let mesh = meshes.add(Shape::capsule(thickness, length, ShapeDetail::Minimal).build());
         let mat = materials.add(material);
 
-        let rotation = Quat::from_rotation_arc(Vec3::Y, line_direction);
+        let rotation = Quat::from_rotation_arc(Vec3::Y, line_direction)
+            * Quat::from_rotation_x(std::f32::consts::PI / 2.0);
         let entity = commands
             .spawn((
                 Mesh3d(mesh),
@@ -329,7 +330,7 @@ impl ImmediateRecorder {
         material: GradMeshMaterial,
         billboard: BillboardMode,
     ) {
-        let mesh = meshes.add(Shape::polygon(sides, radius, ShapeDetail::Minimal).build());
+        let mesh = meshes.add(Shape::polygon(sides, radius, ShapeDetail::Minimal).build_2d());
         let mat = materials.add(material);
         let entity = self.spawn_2d(commands, mesh, mat, billboard);
         self.entities.push(entity);
@@ -503,7 +504,7 @@ impl ImmediateRecorder {
         material: GradMeshMaterial,
         billboard: BillboardMode,
     ) {
-        let mesh = meshes.add(Shape::rectangle(size, ShapeDetail::Medium).build());
+        let mesh = meshes.add(Shape::rectangle(size, ShapeDetail::Medium).build_2d());
         let mat = materials.add(material);
         let entity = self.spawn_2d(commands, mesh, mat, billboard);
         self.entities.push(entity);
@@ -520,7 +521,7 @@ impl ImmediateRecorder {
         material: GradMeshMaterial,
         billboard: BillboardMode,
     ) {
-        let mesh = meshes.add(Shape::rectangle_rim(size, rim_width, ShapeDetail::Medium).build());
+        let mesh = meshes.add(Shape::rectangle_rim(size, rim_width, ShapeDetail::Medium).build_2d());
         let mat = materials.add(material);
         let entity = self.spawn_2d(commands, mesh, mat, billboard);
         self.entities.push(entity);
@@ -539,7 +540,7 @@ impl ImmediateRecorder {
         billboard: BillboardMode,
     ) {
         let mesh =
-            meshes.add(Shape::polygon_rim(sides, radius, rim_width, ShapeDetail::Minimal).build());
+            meshes.add(Shape::polygon_rim(sides, radius, rim_width, ShapeDetail::Minimal).build_2d());
         let mat = materials.add(material);
         let entity = self.spawn_2d(commands, mesh, mat, billboard);
         self.entities.push(entity);
@@ -555,7 +556,7 @@ impl ImmediateRecorder {
         material: GradMeshMaterial,
         billboard: BillboardMode,
     ) {
-        let mesh = meshes.add(Shape::ellipse(radius, ShapeDetail::Medium).build());
+        let mesh = meshes.add(Shape::ellipse(radius, ShapeDetail::Medium).build_2d());
         let mat = materials.add(material);
         let entity = self.spawn_2d(commands, mesh, mat, billboard);
         self.entities.push(entity);
@@ -572,7 +573,7 @@ impl ImmediateRecorder {
         material: GradMeshMaterial,
         billboard: BillboardMode,
     ) {
-        let mesh = meshes.add(Shape::ellipse_rim(radius, rim_width, ShapeDetail::Medium).build());
+        let mesh = meshes.add(Shape::ellipse_rim(radius, rim_width, ShapeDetail::Medium).build_2d());
         let mat = materials.add(material);
         let entity = self.spawn_2d(commands, mesh, mat, billboard);
         self.entities.push(entity);
