@@ -2,10 +2,13 @@
 //!
 //! Provides style methods: opaque, transparent, dual_directional, dual_radial.
 
-use bevy::asset::{Assets, Handle};
+use bevy::asset::Handle;
+#[cfg(feature = "pbr")]
+use bevy::asset::Assets;
 use bevy::color::{Alpha, Color, LinearRgba};
 use bevy::math::Vec3;
 use bevy::prelude::Shader;
+#[cfg(feature = "pbr")]
 use bevy_material::AlphaMode;
 
 #[cfg(feature = "pbr")]
@@ -52,6 +55,8 @@ pub enum ColorMode {
     Single,
     DualDirectional,
     DualRadial,
+    /// Colour by the world height of each fragment (see [`Style::with_height_bands`]).
+    HeightBands,
 }
 
 /// Dash type for outlined shapes.
@@ -197,6 +202,23 @@ pub struct Rim {
     pub power: f32,
 }
 
+/// Most bands a [`Style::with_height_bands`] style can hold.
+pub const MAX_HEIGHT_BANDS: usize = 4;
+
+/// Colours chosen by world height, set with [`Style::with_height_bands`].
+///
+/// Unused slots repeat the last band's colour at an unreachable height, so the
+/// shader needs no band count.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HeightBands {
+    /// Band colours (linear), lowest band first.
+    pub colors: [LinearRgba; MAX_HEIGHT_BANDS],
+    /// Height each band starts at, ascending. Unused slots hold `f32::MAX`.
+    pub heights: [f32; MAX_HEIGHT_BANDS],
+    /// Number of real bands (`1..=4`).
+    pub count: usize,
+}
+
 /// Material style descriptor.
 ///
 /// Describes how a primitive should be shaded. Use the factory methods
@@ -233,6 +255,8 @@ pub struct Style {
     pub stripes: Option<Stripes>,
     /// View-dependent rim light (`GradMeshMaterial` only).
     pub rim: Option<Rim>,
+    /// Colours by world height (`GradMeshMaterial` only), see [`Style::with_height_bands`].
+    pub height_bands: Option<HeightBands>,
 }
 
 impl Style {
@@ -254,6 +278,7 @@ impl Style {
             noise: None,
             stripes: None,
             rim: None,
+            height_bands: None,
         }
     }
 
@@ -275,6 +300,7 @@ impl Style {
             noise: None,
             stripes: None,
             rim: None,
+            height_bands: None,
         }
     }
 
@@ -302,6 +328,7 @@ impl Style {
             noise: None,
             stripes: None,
             rim: None,
+            height_bands: None,
         }
     }
 
@@ -350,6 +377,7 @@ impl Style {
             noise: None,
             stripes: None,
             rim: None,
+            height_bands: None,
         }
     }
 
@@ -371,6 +399,7 @@ impl Style {
             noise: None,
             stripes: None,
             rim: None,
+            height_bands: None,
         }
     }
 
@@ -392,6 +421,7 @@ impl Style {
             noise: None,
             stripes: None,
             rim: None,
+            height_bands: None,
         }
     }
 
@@ -413,6 +443,7 @@ impl Style {
             noise: None,
             stripes: None,
             rim: None,
+            height_bands: None,
         }
     }
 
@@ -434,6 +465,7 @@ impl Style {
             noise: None,
             stripes: None,
             rim: None,
+            height_bands: None,
         }
     }
 
@@ -455,6 +487,7 @@ impl Style {
             noise: None,
             stripes: None,
             rim: None,
+            height_bands: None,
         }
     }
 
@@ -476,6 +509,7 @@ impl Style {
             noise: None,
             stripes: None,
             rim: None,
+            height_bands: None,
         }
     }
 
@@ -497,6 +531,7 @@ impl Style {
             noise: None,
             stripes: None,
             rim: None,
+            height_bands: None,
         }
     }
 
@@ -518,6 +553,7 @@ impl Style {
             noise: None,
             stripes: None,
             rim: None,
+            height_bands: None,
         }
     }
 
@@ -539,6 +575,7 @@ impl Style {
             noise: None,
             stripes: None,
             rim: None,
+            height_bands: None,
         }
     }
 
@@ -564,6 +601,7 @@ impl Style {
             noise: None,
             stripes: None,
             rim: None,
+            height_bands: None,
         }
     }
 
@@ -664,6 +702,48 @@ impl Style {
         self
     }
 
+    /// Colours the shape by the world height of each fragment: a band's colour
+    /// holds from its height up to the next band, with a hard step between them
+    /// (no blending). Fragments below the first band take its colour.
+    ///
+    /// `bands` is `(height, colour)` pairs in any order (they are sorted by
+    /// height); at most [`MAX_HEIGHT_BANDS`] (4) are used, extra ones are dropped
+    /// with a `debug_assert!`. An empty slice leaves the style unchanged. The
+    /// style's own colour no longer shows, but noise, stripes, rim light and
+    /// vertex tints still apply. Heights are in world space, so it suits terrain
+    /// that stays put. Applies to [`GradMeshMaterial`] only; the instanced,
+    /// standalone and `Mesh2d` paths ignore it. [`Style::lerp`] blends band
+    /// colours and heights when both styles have bands.
+    #[must_use]
+    pub fn with_height_bands(mut self, bands: &[(f32, Color)]) -> Self {
+        debug_assert!(
+            bands.len() <= MAX_HEIGHT_BANDS,
+            "height bands: at most {MAX_HEIGHT_BANDS} are supported"
+        );
+        if bands.is_empty() {
+            return self;
+        }
+        let mut sorted: Vec<(f32, LinearRgba)> = bands
+            .iter()
+            .take(MAX_HEIGHT_BANDS)
+            .map(|(h, c)| (if h.is_nan() { 0.0 } else { *h }, c.to_linear()))
+            .collect();
+        sorted.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let last = sorted[sorted.len() - 1].1;
+        let mut out = HeightBands {
+            colors: [last; MAX_HEIGHT_BANDS],
+            heights: [f32::MAX; MAX_HEIGHT_BANDS],
+            count: sorted.len(),
+        };
+        for (i, (h, c)) in sorted.into_iter().enumerate() {
+            out.colors[i] = c;
+            out.heights[i] = h;
+        }
+        self.height_bands = Some(out);
+        self.color_mode = ColorMode::HeightBands;
+        self
+    }
+
     /// Multiplies the alpha of both gradient colours by `alpha` (clamped to
     /// `0.0..=1.0`). [`Style::lerp`] blends the resulting colours, so the alpha
     /// fades smoothly.
@@ -721,6 +801,7 @@ impl Style {
 
     /// Hash consistent with `PartialEq` for bit-identical styles, used by the
     /// material pool.
+    #[cfg_attr(not(feature = "pbr"), allow(dead_code))]
     pub(crate) fn cache_hash(&self) -> u64 {
         use std::hash::{Hash, Hasher};
         let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -742,6 +823,16 @@ impl Style {
             self.perceptual_roughness.unwrap_or(-1.0),
         ] {
             v.to_bits().hash(&mut h);
+        }
+        if let Some(b) = &self.height_bands {
+            b.count.hash(&mut h);
+            for i in 0..MAX_HEIGHT_BANDS {
+                b.heights[i].to_bits().hash(&mut h);
+                let c = b.colors[i];
+                for v in [c.red, c.green, c.blue, c.alpha] {
+                    v.to_bits().hash(&mut h);
+                }
+            }
         }
         self.direction_space.hash(&mut h);
         if let Some(n) = self.noise {
@@ -942,6 +1033,34 @@ impl Style {
                 }
             }
         };
+        let height_bands = if t <= 0.0 {
+            self.height_bands
+        } else if t >= 1.0 {
+            other.height_bands
+        } else {
+            match (self.height_bands, other.height_bands) {
+                (Some(a), Some(b)) => {
+                    let mut out = a;
+                    for i in 0..MAX_HEIGHT_BANDS {
+                        let (ca, cb) = (a.colors[i], b.colors[i]);
+                        out.colors[i] = LinearRgba {
+                            red: mix(ca.red, cb.red),
+                            green: mix(ca.green, cb.green),
+                            blue: mix(ca.blue, cb.blue),
+                            alpha: mix(ca.alpha, cb.alpha),
+                        };
+                        out.heights[i] = if a.heights[i] == f32::MAX || b.heights[i] == f32::MAX {
+                            near.height_bands.map_or(f32::MAX, |n| n.heights[i])
+                        } else {
+                            mix(a.heights[i], b.heights[i])
+                        };
+                    }
+                    out.count = near.height_bands.map_or(a.count, |n| n.count);
+                    Some(out)
+                }
+                _ => near.height_bands,
+            }
+        };
 
         Self {
             blend_mode: near.blend_mode.clone(),
@@ -959,6 +1078,7 @@ impl Style {
             noise,
             stripes,
             rim,
+            height_bands,
         }
     }
 
@@ -994,6 +1114,7 @@ impl Style {
         let mut material = self.build_base();
 
         let uniforms = &mut material.extension.uniforms;
+        self.apply_height_bands(uniforms);
         if self.direction_space == DirectionSpace::Local {
             uniforms.direction.w = 1.0;
         }
@@ -1035,6 +1156,119 @@ impl Style {
         material
     }
 
+    /// Writes the height-band mode code, colours and heights into `uniforms`.
+    fn apply_height_bands(&self, uniforms: &mut crate::material::GradMeshUniformBuffer) {
+        use crate::material::Vec4;
+        let Some(bands) = self.height_bands.filter(|_| self.color_mode == ColorMode::HeightBands)
+        else {
+            return;
+        };
+        uniforms.flags.x = 3.0;
+        for (slot, c) in uniforms.bands.iter_mut().zip(bands.colors) {
+            *slot = Vec4::new(c.red, c.green, c.blue, c.alpha);
+        }
+        uniforms.band_heights = Vec4::from_array(bands.heights);
+    }
+
+    /// Builds the shader uniforms for this style without any `bevy_pbr` types.
+    ///
+    /// This is what the 2D materials use; it matches the uniforms that
+    /// [`Style::build`] writes into the extended material.
+    pub fn build_uniforms(&self) -> crate::material::GradMeshUniformBuffer {
+        use crate::material::{Vec4, presets};
+
+        let srgba = self.color.to_srgba();
+        let (r, g, b, a) = (srgba.red, srgba.green, srgba.blue, srgba.alpha);
+        let (sr, sg, sb, sa) = self.secondary_color.map_or((r, g, b, a), |c| {
+            let s = c.to_srgba();
+            (s.red, s.green, s.blue, s.alpha)
+        });
+
+        let mut uniforms = 'base: {
+            if let Some(dash) = self.dash.as_ref().filter(|d| d.is_enabled()) {
+                let dash_type_code = match dash.style {
+                    DashType::Normal => 0,
+                    DashType::Chevron => 1,
+                    DashType::Rounded => 2,
+                };
+                let shape_type_code = match self.shape_type {
+                    ShapeType::Generic => 0,
+                    ShapeType::Disc => 1,
+                    ShapeType::Rectangle => 2,
+                };
+                break 'base presets::dashed(
+                    r,
+                    g,
+                    b,
+                    dash.count,
+                    dash.spacing,
+                    dash.offset,
+                    dash_type_code,
+                    dash.modifier,
+                    shape_type_code,
+                );
+            }
+            let mut u = match self.color_mode {
+                ColorMode::DualDirectional => presets::dual_directional(
+                    [r, g, b],
+                    [sr, sg, sb],
+                    [self.direction.x, self.direction.y, self.direction.z],
+                ),
+                ColorMode::DualRadial => {
+                    if a < 1.0 || sa < 1.0 {
+                        presets::dual_radial_alpha([r, g, b, a], [sr, sg, sb, sa])
+                    } else {
+                        presets::dual_radial([r, g, b], [sr, sg, sb])
+                    }
+                }
+                ColorMode::Single | ColorMode::HeightBands => match &self.blend_mode {
+                    BlendMode::Opaque | BlendMode::Custom(_) => presets::opaque(r, g, b),
+                    BlendMode::Transparent => presets::transparent(r, g, b, a),
+                    BlendMode::Additive => presets::additive(r, g, b),
+                    BlendMode::Multiplicative => presets::multiplicative(r, g, b),
+                    BlendMode::Screen => presets::screen(r, g, b),
+                    BlendMode::Dither => presets::dither(r, g, b, a),
+                    BlendMode::Subtractive => presets::subtractive(r, g, b),
+                    BlendMode::Lighten => presets::lighten(r, g, b),
+                    BlendMode::ColorDodge => presets::color_dodge(r, g, b),
+                    BlendMode::LinearBurn => presets::linear_burn(r, g, b),
+                    BlendMode::ColorBurn => presets::color_burn(r, g, b),
+                    BlendMode::Darken => presets::darken(r, g, b),
+                },
+            };
+            if self.color_mode != ColorMode::Single {
+                u.flags.w = self.space.gpu_code();
+            }
+            u
+        };
+
+        if self.direction_space == DirectionSpace::Local {
+            uniforms.direction.w = 1.0;
+        }
+        if let Some(n) = self.noise {
+            uniforms.noise = Vec4::new(n.scale, n.amount, 0.0, 0.0);
+        }
+        if let Some(st) = self.stripes {
+            uniforms.stripes =
+                Vec4::new(st.direction.x, st.direction.y, st.direction.z, st.frequency);
+            uniforms.stripes_amount = Vec4::new(st.amount, 0.0, 0.0, 0.0);
+        }
+        if let Some(r) = self.rim {
+            uniforms.rim = Vec4::new(r.color.red, r.color.green, r.color.blue, r.power);
+        }
+        if self.color_mode != ColorMode::Single && self.is_translucent() {
+            let a = self.color.alpha();
+            let sa = self.secondary_color.map_or(a, |c| c.alpha());
+            uniforms.color.w = a;
+            uniforms.secondary_color.w = sa;
+            if uniforms.flags.y == 0.0 {
+                uniforms.flags.y = 1.0;
+            }
+        }
+        self.apply_height_bands(&mut uniforms);
+        uniforms
+    }
+
     #[cfg(feature = "pbr")]
     fn build_base(&self) -> GradMeshMaterial {
         // Extract color components using to_srgba() which handles all Color variants
@@ -1063,7 +1297,7 @@ impl Style {
                 },
                 self.space,
             ),
-            ColorMode::Single => match &self.blend_mode {
+            ColorMode::Single | ColorMode::HeightBands => match &self.blend_mode {
                 BlendMode::Opaque => opaque(r, g, b),
                 BlendMode::Transparent => transparent(r, g, b, a),
                 BlendMode::Additive => additive(r, g, b),
@@ -1342,5 +1576,104 @@ mod tests {
     fn dual_radial_style() {
         let style = Style::dual_radial(Color::srgb(1.0, 1.0, 1.0), Color::srgb(0.0, 0.0, 0.0));
         assert_eq!(style.color_mode, ColorMode::DualRadial);
+    }
+}
+
+#[cfg(test)]
+mod height_band_tests {
+    use super::*;
+
+    const GRASS: Color = Color::srgb(0.2, 0.6, 0.2);
+    const ROCK: Color = Color::srgb(0.5, 0.5, 0.5);
+    const SNOW: Color = Color::srgb(0.95, 0.95, 1.0);
+
+    fn terrain() -> Style {
+        Style::opaque(Color::WHITE).with_height_bands(&[(0.0, GRASS), (1.0, ROCK), (2.0, SNOW)])
+    }
+
+    #[test]
+    fn bands_are_sorted_and_padded() {
+        let s = Style::opaque(Color::WHITE).with_height_bands(&[(2.0, SNOW), (0.0, GRASS), (1.0, ROCK)]);
+        assert_eq!(s.color_mode, ColorMode::HeightBands);
+        let b = s.height_bands.unwrap();
+        assert_eq!(b.count, 3);
+        assert_eq!(b.heights, [0.0, 1.0, 2.0, f32::MAX]);
+        assert_eq!(b.colors[0], GRASS.to_linear());
+        assert_eq!(b.colors[2], SNOW.to_linear());
+        // The unused slot repeats the last band.
+        assert_eq!(b.colors[3], SNOW.to_linear());
+    }
+
+    #[test]
+    fn empty_bands_change_nothing() {
+        let plain = Style::opaque(Color::WHITE);
+        assert_eq!(plain.clone().with_height_bands(&[]), plain);
+    }
+
+    #[test]
+    fn uniforms_carry_the_bands() {
+        let u = terrain().build_uniforms();
+        assert_eq!(u.flags.x, 3.0);
+        assert_eq!(u.band_heights.as_array(), [0.0, 1.0, 2.0, f32::MAX]);
+        let rock = ROCK.to_linear();
+        assert_eq!(u.bands[1].as_array(), [rock.red, rock.green, rock.blue, rock.alpha]);
+        // Other styles leave the band slots empty and the mode code alone.
+        let single = Style::opaque(ROCK).build_uniforms();
+        assert_eq!(single.flags.x, 0.0);
+        assert_eq!(single.band_heights.as_array(), [0.0; 4]);
+    }
+
+    #[cfg(feature = "pbr")]
+    #[test]
+    fn built_material_matches_the_uniforms() {
+        let style = terrain();
+        let material = style.build();
+        assert_eq!(material.extension.uniforms.flags.x, 3.0);
+        assert_eq!(
+            material.extension.uniforms.band_heights,
+            style.build_uniforms().band_heights
+        );
+    }
+
+    #[test]
+    fn different_bands_are_different_styles() {
+        let a = terrain();
+        let b = Style::opaque(Color::WHITE).with_height_bands(&[(0.0, GRASS), (1.5, ROCK), (2.0, SNOW)]);
+        assert_ne!(a, b);
+        assert_ne!(a.cache_hash(), b.cache_hash());
+        assert_eq!(a.cache_hash(), terrain().cache_hash());
+    }
+
+    #[test]
+    fn lerp_blends_band_colours_and_heights() {
+        let a = terrain();
+        let b = Style::opaque(Color::WHITE).with_height_bands(&[(0.0, SNOW), (3.0, ROCK), (4.0, GRASS)]);
+        // The endpoints keep the bands exactly (the plain colour may change colour
+        // space, which `Style::lerp` always does).
+        assert_eq!(a.lerp(&b, 0.0).height_bands, a.height_bands);
+        assert_eq!(a.lerp(&b, 1.0).height_bands, b.height_bands);
+        let mid = a.lerp(&b, 0.5).height_bands.unwrap();
+        assert_eq!(mid.heights[..3], [0.0, 2.0, 3.0]);
+        assert_eq!(mid.heights[3], f32::MAX);
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "at most 4")]
+    fn more_than_four_bands_assert_in_debug() {
+        let five: Vec<(f32, Color)> = (0..5).map(|i| (i as f32, GRASS)).collect();
+        let _ = Style::opaque(Color::WHITE).with_height_bands(&five);
+    }
+
+    #[test]
+    #[cfg(not(debug_assertions))]
+    fn more_than_four_bands_truncate_in_release() {
+        let five: Vec<(f32, Color)> = (0..5).map(|i| (i as f32, GRASS)).collect();
+        let b = Style::opaque(Color::WHITE)
+            .with_height_bands(&five)
+            .height_bands
+            .unwrap();
+        assert_eq!(b.count, 4);
+        assert_eq!(b.heights, [0.0, 1.0, 2.0, 3.0]);
     }
 }

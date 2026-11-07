@@ -3,7 +3,7 @@
 //! Each primitive generates watertight geometry with proper normals and UVs.
 
 use bevy::color::{Color, ColorToComponents};
-use bevy::math::{Rect, Vec2, Vec3};
+use bevy::math::{Rect, UVec2, Vec2, Vec3};
 use bevy::render::mesh::{Mesh, PrimitiveTopology};
 use bevy::transform::components::Transform;
 use bevy_asset::RenderAssetUsages;
@@ -11,6 +11,7 @@ use bevy_asset::RenderAssetUsages;
 use crate::geometry;
 use std::f32::consts::PI;
 use std::hash::Hash;
+use std::sync::Arc;
 
 /// Mesh detail level controlling segment count.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -190,6 +191,175 @@ impl std::hash::Hash for ShapePart {
     }
 }
 
+/// Options for [`Shape::sweep`].
+///
+/// Everything here is plain data (no closures), so a swept [`Shape`] stays
+/// `Clone + Eq + Hash` and can be cached like any other shape. Floats compare
+/// and hash by their bits.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SweepOptions {
+    /// Joins the last path point back to the first. Closed sweeps have no caps
+    /// and no seam; give them whole turns of [`SweepOptions::twist`].
+    pub closed: bool,
+    /// Closes the two open ends of an open sweep with flat caps.
+    pub caps: bool,
+    /// The up direction the first frame starts from; later frames follow by
+    /// parallel transport (the same rule as
+    /// [`CatmullRomSpline::bake`](crate::CatmullRomSpline::bake)).
+    pub up: Vec3,
+    /// Profile scale along the path as `(ratio, scale)` keyframes, with `ratio`
+    /// running `0.0..=1.0` over the path length and linear steps in between.
+    /// `scale.x` stretches across the path and `scale.y` upwards. See
+    /// [`SweepOptions::scale_with`] to fill this from a closure.
+    pub scale_along: Option<Vec<(f32, Vec2)>>,
+    /// Turns of the profile around the path over its whole length.
+    pub twist: f32,
+    /// With twist, scale or tint, long path segments are split into
+    /// `detail / 4` pieces so the change looks smooth.
+    pub detail: ShapeDetail,
+    /// Vertex tint along the path as `(ratio, colour)` keyframes (linear steps in
+    /// between). It multiplies the style's gradient colour.
+    pub tint_by_length: Option<Vec<(f32, Color)>>,
+    /// Gates and windows cut through the swept body. See [`SweepOpening`].
+    pub openings: Vec<SweepOpening>,
+}
+
+/// A hole through a swept wall: a gate or a window.
+///
+/// `outline` lives in wall-face coordinates: `x` runs `0.0..=1.0` over the
+/// opening's `t` range along the path and `y` is the height above the profile
+/// origin, in profile units (before any [`SweepOptions::scale_along`]). The hole
+/// goes through the whole thickness of the profile, with reveal faces (sill,
+/// lintel and jambs) on the inside.
+///
+/// Rules:
+/// * The outline should be convex, or at least cross every vertical line twice
+///   at most (rectangles, arches, circles and trapezoids all qualify); the hole
+///   spans the full height range of the outline at each position.
+/// * A gate is an outline that reaches the profile's lowest height: the wall
+///   (and its bottom face) is cut open there. Outlines that reach the top cut
+///   the top as well.
+/// * Outlines that leave the wall are clipped: `x` is clamped to `0..=1` and
+///   heights beyond the profile just open the wall. On an open path, openings
+///   are kept 0.1% of the path length away from its ends.
+/// * Openings cannot overlap along the path; a later one that does is ignored
+///   with a warning, like one with fewer than three outline points.
+/// * Openings expect profiles whose horizontal cross-section is one interval
+///   (walls, rails, kerbs), and are meant for sweeps without twist.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SweepOpening {
+    /// The stretch of the path the opening's `x` axis maps onto, as ratios of
+    /// the path length.
+    pub t: std::ops::Range<f32>,
+    /// The hole's outline, `x` across the `t` range and `y` as height.
+    pub outline: Vec<Vec2>,
+}
+
+impl SweepOpening {
+    /// A rectangle spanning `x` of its range and heights `y_min..y_max`.
+    pub fn rect(t: std::ops::Range<f32>, y_min: f32, y_max: f32) -> Self {
+        Self {
+            t,
+            outline: vec![
+                Vec2::new(0.0, y_min),
+                Vec2::new(1.0, y_min),
+                Vec2::new(1.0, y_max),
+                Vec2::new(0.0, y_max),
+            ],
+        }
+    }
+
+    /// A gate: a rectangle from `y_min` up to `spring`, topped by a round arch
+    /// of `segments` pieces that peaks at `y_max`.
+    pub fn arch(t: std::ops::Range<f32>, y_min: f32, spring: f32, y_max: f32, segments: u32) -> Self {
+        let segments = segments.max(2);
+        let mut outline = vec![Vec2::new(0.0, y_min), Vec2::new(1.0, y_min)];
+        for i in 0..=segments {
+            let a = i as f32 / segments as f32 * std::f32::consts::PI;
+            outline.push(Vec2::new(
+                0.5 + 0.5 * a.cos(),
+                spring + (y_max - spring) * a.sin(),
+            ));
+        }
+        Self { t, outline }
+    }
+}
+
+impl Default for SweepOptions {
+    fn default() -> Self {
+        Self {
+            closed: false,
+            caps: true,
+            up: Vec3::Y,
+            scale_along: None,
+            twist: 0.0,
+            detail: ShapeDetail::default(),
+            tint_by_length: None,
+            openings: Vec::new(),
+        }
+    }
+}
+
+impl SweepOptions {
+    /// Fills [`SweepOptions::scale_along`] by sampling `f` (path ratio to
+    /// profile scale) at `samples` evenly spaced ratios from 0 to 1 (at least 2).
+    ///
+    /// A closure cannot be stored in a hashable shape, so it is baked into
+    /// keyframes here.
+    #[must_use]
+    pub fn scale_with(mut self, samples: usize, f: impl Fn(f32) -> Vec2) -> Self {
+        let samples = samples.max(2);
+        self.scale_along = Some(
+            (0..samples)
+                .map(|i| {
+                    let r = i as f32 / (samples - 1) as f32;
+                    (r, f(r))
+                })
+                .collect(),
+        );
+        self
+    }
+
+    /// Every float and flag that makes two options different, as bits.
+    fn identity_bits(&self) -> Vec<u32> {
+        let mut v = vec![
+            u32::from(self.closed),
+            u32::from(self.caps),
+            self.up.x.to_bits(),
+            self.up.y.to_bits(),
+            self.up.z.to_bits(),
+            self.twist.to_bits(),
+        ];
+        match &self.scale_along {
+            None => v.push(0),
+            Some(keys) => {
+                v.extend([1, keys.len() as u32]);
+                for (r, s) in keys {
+                    v.extend([r.to_bits(), s.x.to_bits(), s.y.to_bits()]);
+                }
+            }
+        }
+        match &self.tint_by_length {
+            None => v.push(0),
+            Some(keys) => {
+                v.extend([1, keys.len() as u32]);
+                for (r, c) in keys {
+                    v.push(r.to_bits());
+                    v.extend(c.to_srgba().to_f32_array().map(f32::to_bits));
+                }
+            }
+        }
+        v.push(self.openings.len() as u32);
+        for op in &self.openings {
+            v.extend([op.t.start.to_bits(), op.t.end.to_bits(), op.outline.len() as u32]);
+            for p in &op.outline {
+                v.extend([p.x.to_bits(), p.y.to_bits()]);
+            }
+        }
+        v
+    }
+}
+
 fn eq_vec2s(a: &[Vec2], b: &[Vec2]) -> bool {
     a.len() == b.len()
         && a.iter()
@@ -363,6 +533,27 @@ enum ShapeKind {
     Bezier2D {
         control_points: Vec<Vec2>,
         thickness: f32,
+    },
+    /// A caller-supplied mesh, identified by `key` (see [`Shape::from_mesh`]).
+    Mesh {
+        mesh: Arc<Mesh>,
+        key: u64,
+        bounds: ShapeBounds,
+        round: bool,
+    },
+    /// A profile swept along a path (see [`Shape::sweep`]).
+    Sweep {
+        profile: Vec<Vec2>,
+        path: Vec<Vec3>,
+        options: SweepOptions,
+    },
+    /// A grid of heights over the XZ plane (see [`Shape::heightfield`]).
+    Heightfield {
+        size: UVec2,
+        extent: Vec2,
+        heights: Arc<[f32]>,
+        key: u64,
+        bounds: ShapeBounds,
     },
 }
 
@@ -766,6 +957,42 @@ impl PartialEq for ShapeKind {
                     thickness: t2,
                 },
             ) => eq_vec2s(p1, p2) && t1.to_bits() == t2.to_bits(),
+            (Self::Mesh { key: k1, .. }, Self::Mesh { key: k2, .. }) => k1 == k2,
+            (
+                Self::Sweep {
+                    profile: p1,
+                    path: w1,
+                    options: o1,
+                },
+                Self::Sweep {
+                    profile: p2,
+                    path: w2,
+                    options: o2,
+                },
+            ) => {
+                eq_vec2s(p1, p2)
+                    && w1.len() == w2.len()
+                    && w1.iter().zip(w2).all(|(a, b)| {
+                        a.x.to_bits() == b.x.to_bits()
+                            && a.y.to_bits() == b.y.to_bits()
+                            && a.z.to_bits() == b.z.to_bits()
+                    })
+                    && o1.identity_bits() == o2.identity_bits()
+            }
+            (
+                Self::Heightfield {
+                    size: s1,
+                    extent: e1,
+                    key: k1,
+                    ..
+                },
+                Self::Heightfield {
+                    size: s2,
+                    extent: e2,
+                    key: k2,
+                    ..
+                },
+            ) => k1 == k2 && s1 == s2 && e1.x.to_bits() == e2.x.to_bits() && e1.y.to_bits() == e2.y.to_bits(),
             _ => false,
         }
     }
@@ -998,6 +1225,26 @@ impl std::hash::Hash for ShapeKind {
             } => {
                 hash_vec2s(control_points, state);
                 thickness.to_bits().hash(state);
+            }
+            Self::Mesh { key, .. } => key.hash(state),
+            Self::Sweep {
+                profile,
+                path,
+                options,
+            } => {
+                hash_vec2s(profile, state);
+                path.len().hash(state);
+                for p in path {
+                    hash_vec3(p, state);
+                }
+                options.identity_bits().hash(state);
+            }
+            Self::Heightfield {
+                size, extent, key, ..
+            } => {
+                size.hash(state);
+                hash_vec2(extent, state);
+                key.hash(state);
             }
         }
     }
@@ -1482,6 +1729,107 @@ impl Shape {
         }
     }
 
+    /// A shape made of a caller-supplied `mesh`, identified by `key`.
+    ///
+    /// The shape is `Eq` and `Hash` by `key` (and detail) only; the mesh itself is
+    /// never compared. The caller owns key uniqueness: two different meshes with
+    /// the same key share one cache entry. Bounds and [`Shape::is_round`] are
+    /// measured from the mesh positions once, here, so [`Shape::bounds`] does not
+    /// build anything. [`Shape::build`] and [`Shape::build_2d`] return a copy of
+    /// the mesh, [`Shape::lerp`] takes the nearer shape, and the shape works as a
+    /// [`ShapePart`] of [`Shape::compound`].
+    pub fn from_mesh(mesh: Arc<Mesh>, key: u64) -> Self {
+        let bounds = mesh_bounds(&mesh);
+        let round = mesh_is_round(&mesh, &bounds);
+        Self {
+            kind: ShapeKind::Mesh {
+                mesh,
+                key,
+                bounds,
+                round,
+            },
+            detail: ShapeDetail::default(),
+        }
+    }
+
+    /// Sweeps `profile` along `path` as one mesh: roads, rails, pipes and walls
+    /// along a curve.
+    ///
+    /// `profile` is a closed outline in the local XY plane, `x` across the path
+    /// and `y` up (the frame's `right` and `up`, as in
+    /// [`SplineFrame`](crate::SplineFrame)); it is wound counter-clockwise for you.
+    /// `path` is a polyline; for a baked spline pass the frame positions. Repeated
+    /// path points are dropped.
+    ///
+    /// Frames come from parallel transport starting at [`SweepOptions::up`].
+    /// Joints are mitred, so the sides keep a constant width through a bend (the
+    /// mitre is clamped to 4 times the width at very sharp turns; the inside of a
+    /// tight bend with a wide profile can still overlap itself). Normals are smooth
+    /// along the path; across the profile a corner sharper than about 40 degrees
+    /// stays crisp and gentler ones are smoothed. UVs run across the profile in
+    /// `u` and along the path in `v`.
+    ///
+    /// With fewer than two distinct path points (three when closed) or fewer than
+    /// three distinct profile points the mesh is empty and a warning is logged.
+    /// Two sweeps blend with [`Shape::lerp`] only as the nearer one.
+    pub fn sweep(profile: Vec<Vec2>, path: Vec<Vec3>, options: SweepOptions) -> Self {
+        let detail = options.detail;
+        Self {
+            kind: ShapeKind::Sweep {
+                profile,
+                path,
+                options,
+            },
+            detail,
+        }
+    }
+
+    /// A terrain chunk: a grid of `size.x * size.y` height samples spread over
+    /// `extent` world units and centred on the origin in XZ.
+    ///
+    /// `heights[x + y * size.x]` is the sample at column `x` and row `y`, with rows
+    /// running along +Z. The mesh has smooth normals from central differences,
+    /// UVs from 0 to 1 and skirts that hang below the four edges (a tenth of the
+    /// larger extent) to hide cracks between neighbouring chunks. Bounds include
+    /// the skirts.
+    ///
+    /// The shape is `Eq` and `Hash` by `key`, `size` and `extent`; the heights are
+    /// not walked, so change `key` when the heights change. `detail` only takes
+    /// part in the shape's identity. A `size` below 2 in either axis, or a
+    /// `heights` slice of the wrong length, gives an empty mesh and a warning when
+    /// built.
+    pub fn heightfield(
+        size: UVec2,
+        extent: Vec2,
+        heights: Arc<[f32]>,
+        key: u64,
+        detail: ShapeDetail,
+    ) -> Self {
+        let valid = size.x >= 2 && size.y >= 2 && heights.len() == (size.x * size.y) as usize;
+        let bounds = if valid {
+            let (lo, hi) = heights
+                .iter()
+                .fold((f32::MAX, f32::MIN), |(lo, hi), &h| (lo.min(h), hi.max(h)));
+            let skirt = geometry::heightfield_skirt_depth(extent);
+            ShapeBounds {
+                min: Vec3::new(-extent.x * 0.5, lo - skirt, -extent.y * 0.5),
+                max: Vec3::new(extent.x * 0.5, hi, extent.y * 0.5),
+            }
+        } else {
+            ShapeBounds::default()
+        };
+        Self {
+            kind: ShapeKind::Heightfield {
+                size,
+                extent,
+                heights,
+                key,
+                bounds,
+            },
+            detail,
+        }
+    }
+
     /// Outline helper: see [`outline::arch`](crate::outline::arch).
     pub fn arch(width: f32, height: f32, segments: u32) -> Vec<Vec2> {
         crate::outline::arch(width, height, segments)
@@ -1505,13 +1853,19 @@ impl Shape {
     /// curves included) but cost one mesh build; cache the result when reading
     /// it every frame.
     pub fn bounds(&self) -> ShapeBounds {
-        mesh_bounds(&self.build())
+        match &self.kind {
+            ShapeKind::Mesh { bounds, .. } | ShapeKind::Heightfield { bounds, .. } => *bounds,
+            _ => mesh_bounds(&self.build()),
+        }
     }
 
     /// Whether the shape's outline is round: spheres, ellipsoids, discs,
     /// ellipses and rings (and their rims). Useful for ray tests that
     /// approximate such shapes with an ellipsoid inside [`Shape::bounds`].
     pub fn is_round(&self) -> bool {
+        if let ShapeKind::Mesh { round, .. } = &self.kind {
+            return *round;
+        }
         matches!(
             self.kind,
             ShapeKind::Sphere { .. }
@@ -1526,7 +1880,10 @@ impl Shape {
 
     /// Like [`Shape::bounds`], for the flat geometry of [`Shape::build_2d`].
     pub fn bounds_2d(&self) -> ShapeBounds {
-        mesh_bounds(&self.build_2d())
+        match &self.kind {
+            ShapeKind::Mesh { bounds, .. } | ShapeKind::Heightfield { bounds, .. } => *bounds,
+            _ => mesh_bounds(&self.build_2d()),
+        }
     }
 
     /// Builds flat geometry for `Mesh2d`: in the XY plane, facing +Z, with
@@ -1701,6 +2058,18 @@ impl Shape {
                 *thickness,
                 false,
             ),
+            ShapeKind::Mesh { mesh, .. } => Mesh::clone(mesh),
+            ShapeKind::Sweep {
+                profile,
+                path,
+                options,
+            } => geometry::sweep_mesh(profile, path, options),
+            ShapeKind::Heightfield {
+                size,
+                extent,
+                heights,
+                ..
+            } => geometry::heightfield_mesh(*size, *extent, heights),
         }
     }
 }
@@ -3667,6 +4036,27 @@ fn mesh_bounds(mesh: &Mesh) -> ShapeBounds {
         }
         _ => ShapeBounds::default(),
     }
+}
+
+/// Whether every vertex lies within about 5% of the ellipsoid inscribed in
+/// `bounds`, which is how [`Shape::from_mesh`] guesses [`Shape::is_round`].
+fn mesh_is_round(mesh: &Mesh, bounds: &ShapeBounds) -> bool {
+    use bevy::render::mesh::VertexAttributeValues;
+    let Some(VertexAttributeValues::Float32x3(p)) = mesh.attribute(Mesh::ATTRIBUTE_POSITION)
+    else {
+        return false;
+    };
+    let half = bounds.half_extents();
+    if p.is_empty() || half.max_element() <= 0.0 {
+        return false;
+    }
+    let center = bounds.center();
+    let norm = |v: f32, h: f32| if h > 1e-6 { v / h } else { 0.0 };
+    p.iter().all(|p| {
+        let d = Vec3::from_array(*p) - center;
+        let q = Vec3::new(norm(d.x, half.x), norm(d.y, half.y), norm(d.z, half.z));
+        (q.length() - 1.0).abs() <= 0.05
+    })
 }
 
 fn lerp_f32(a: f32, b: f32, t: f32) -> f32 {
@@ -5740,5 +6130,1013 @@ mod rounded_solid_tests {
     fn bounds_convert_to_a_corner_pair() {
         let (lo, hi): (Vec3, Vec3) = Shape::cuboid(Vec3::new(2.0, 4.0, 6.0), 0.0, D).bounds().into();
         assert!((hi - lo - Vec3::new(2.0, 4.0, 6.0)).abs().max_element() < 1e-4);
+    }
+}
+
+#[cfg(test)]
+mod from_mesh_tests {
+    use super::*;
+    use bevy::mesh::VertexAttributeValues;
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::Hasher;
+
+    const D: ShapeDetail = ShapeDetail::Medium;
+
+    fn hash_of(s: &Shape) -> u64 {
+        let mut h = DefaultHasher::new();
+        s.hash(&mut h);
+        h.finish()
+    }
+
+    fn positions(mesh: &Mesh) -> Vec<[f32; 3]> {
+        match mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
+            Some(VertexAttributeValues::Float32x3(p)) => p.clone(),
+            _ => Vec::new(),
+        }
+    }
+
+    fn normals(mesh: &Mesh) -> Vec<[f32; 3]> {
+        match mesh.attribute(Mesh::ATTRIBUTE_NORMAL) {
+            Some(VertexAttributeValues::Float32x3(n)) => n.clone(),
+            _ => Vec::new(),
+        }
+    }
+
+    fn mesh_shape(source: &Shape, key: u64) -> Shape {
+        Shape::from_mesh(Arc::new(source.build()), key)
+    }
+
+    #[test]
+    fn equality_and_hash_follow_the_key() {
+        let a = mesh_shape(&Shape::sphere(1.0, D), 7);
+        let same_key = mesh_shape(&Shape::cuboid(Vec3::ONE, 0.0, D), 7);
+        let other_key = mesh_shape(&Shape::sphere(1.0, D), 8);
+        assert_eq!(a, same_key);
+        assert_eq!(hash_of(&a), hash_of(&same_key));
+        assert_ne!(a, other_key);
+        assert_ne!(a, Shape::sphere(1.0, D));
+    }
+
+    #[test]
+    fn bounds_match_the_positions_without_building() {
+        let mesh = Shape::cuboid(Vec3::new(2.0, 4.0, 6.0), 0.0, D).build();
+        let expected = ShapeBounds::from_points(positions(&mesh).into_iter().map(Vec3::from_array));
+        let shape = Shape::from_mesh(Arc::new(mesh), 1);
+        assert_eq!(shape.bounds(), expected);
+        assert_eq!(shape.bounds_2d(), expected);
+        assert!((shape.bounds().size() - Vec3::new(2.0, 4.0, 6.0)).length() < 1e-5);
+    }
+
+    #[test]
+    fn is_round_tells_a_sphere_from_a_box() {
+        assert!(mesh_shape(&Shape::sphere(1.5, ShapeDetail::High), 1).is_round());
+        assert!(!mesh_shape(&Shape::cuboid(Vec3::ONE, 0.0, D), 2).is_round());
+    }
+
+    #[test]
+    fn build_returns_the_mesh() {
+        let source = Shape::sphere(1.0, D).build();
+        let shape = Shape::from_mesh(Arc::new(source.clone()), 3);
+        assert_eq!(positions(&shape.build()), positions(&source));
+        assert_eq!(positions(&shape.build_2d()), positions(&source));
+    }
+
+    #[test]
+    fn lerp_takes_the_nearer_shape() {
+        let a = mesh_shape(&Shape::sphere(1.0, D), 1);
+        let b = mesh_shape(&Shape::sphere(2.0, D), 2);
+        assert_eq!(a.lerp(&b, 0.3), a);
+        assert_eq!(a.lerp(&b, 0.7), b);
+    }
+
+    #[test]
+    fn works_inside_a_compound() {
+        let part = mesh_shape(&Shape::cuboid(Vec3::ONE, 0.0, D), 1);
+        let single = part.build();
+        let compound = Shape::compound(vec![
+            ShapePart::new(part.clone()),
+            ShapePart::new(part)
+                .with_transform(Transform::from_xyz(5.0, 0.0, 0.0)),
+        ]);
+        assert_eq!(
+            positions(&compound.build()).len(),
+            positions(&single).len() * 2
+        );
+        assert!((compound.bounds().max.x - 5.5).abs() < 1e-5);
+    }
+
+    #[test]
+    fn mesh_without_normals_or_uvs_still_compounds() {
+        let mut bare = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        );
+        bare.insert_attribute(
+            Mesh::ATTRIBUTE_POSITION,
+            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        );
+        let compound = Shape::compound(vec![ShapePart::new(Shape::from_mesh(Arc::new(bare), 9))]);
+        assert_eq!(positions(&compound.build()).len(), 3);
+    }
+
+    fn field(sx: u32, sy: u32, f: impl Fn(u32, u32) -> f32) -> Arc<[f32]> {
+        (0..sy)
+            .flat_map(|y| (0..sx).map(move |x| (x, y)))
+            .map(|(x, y)| f(x, y))
+            .collect::<Vec<_>>()
+            .into()
+    }
+
+    fn heightfield(sx: u32, sy: u32, f: impl Fn(u32, u32) -> f32) -> Shape {
+        Shape::heightfield(
+            UVec2::new(sx, sy),
+            Vec2::new(8.0, 6.0),
+            field(sx, sy, f),
+            1,
+            D,
+        )
+    }
+
+    #[test]
+    fn heightfield_vertex_count_includes_skirts() {
+        let mesh = heightfield(5, 4, |_, _| 0.0).build();
+        assert_eq!(positions(&mesh).len(), 5 * 4 + 2 * (5 + 4));
+        let grid_tris = 4 * 3 * 2;
+        let skirt_tris = 2 * (4 + 3) * 2;
+        assert_eq!(mesh.indices().unwrap().len(), (grid_tris + skirt_tris) * 3);
+    }
+
+    #[test]
+    fn flat_heightfield_normals_point_up() {
+        let mesh = heightfield(4, 4, |_, _| 2.0).build();
+        for n in normals(&mesh).iter().take(16) {
+            assert!((Vec3::from_array(*n) - Vec3::Y).length() < 1e-5);
+        }
+    }
+
+    #[test]
+    fn sloped_heightfield_normals_lean_downhill() {
+        // Height rises with x, so the normal tilts towards -x.
+        let mesh = heightfield(4, 4, |x, _| x as f32).build();
+        let n = Vec3::from_array(normals(&mesh)[5]);
+        assert!(n.x < -0.1 && n.y > 0.0 && n.z.abs() < 1e-5);
+    }
+
+    #[test]
+    fn heightfield_triangles_face_up() {
+        let mesh = heightfield(3, 3, |_, _| 0.0).build();
+        let p: Vec<Vec3> = positions(&mesh).into_iter().map(Vec3::from_array).collect();
+        let idx: Vec<u32> = mesh.indices().unwrap().iter().map(|i| i as u32).collect();
+        // The first 2x2 cells (8 triangles) are the grid.
+        for tri in idx.chunks(3).take(8) {
+            let n = (p[tri[1] as usize] - p[tri[0] as usize])
+                .cross(p[tri[2] as usize] - p[tri[0] as usize]);
+            assert!(n.y > 0.0, "grid triangle faces down: {n:?}");
+        }
+    }
+
+    #[test]
+    fn skirts_hang_below_the_edge_and_face_outwards() {
+        let mesh = heightfield(3, 3, |_, _| 1.0).build();
+        let p: Vec<Vec3> = positions(&mesh).into_iter().map(Vec3::from_array).collect();
+        let idx: Vec<u32> = mesh.indices().unwrap().iter().map(|i| i as u32).collect();
+        let centre = Vec3::new(0.0, 1.0, 0.0);
+        for tri in idx.chunks(3).skip(8) {
+            let (a, b, c) = (p[tri[0] as usize], p[tri[1] as usize], p[tri[2] as usize]);
+            let n = (b - a).cross(c - a);
+            let mid = (a + b + c) / 3.0;
+            assert!(n.dot(mid - centre) > 0.0, "skirt faces inwards: {n:?}");
+            assert!(n.y.abs() < 1e-5);
+        }
+        let lowest = p.iter().map(|p| p.y).fold(f32::MAX, f32::min);
+        assert!((lowest - (1.0 - 0.8)).abs() < 1e-5);
+    }
+
+    #[test]
+    fn heightfield_bounds_include_heights_and_skirts() {
+        let shape = heightfield(3, 3, |x, y| (x + y) as f32);
+        let b = shape.bounds();
+        assert_eq!(b.min.x, -4.0);
+        assert_eq!(b.max.z, 3.0);
+        assert_eq!(b.max.y, 4.0);
+        let built = ShapeBounds::from_points(
+            positions(&shape.build()).into_iter().map(Vec3::from_array),
+        );
+        assert!((b.min - built.min).length() < 1e-5 && (b.max - built.max).length() < 1e-5);
+    }
+
+    #[test]
+    fn equal_heightfield_parameters_give_equal_shapes() {
+        let a = heightfield(3, 3, |_, _| 0.0);
+        let b = heightfield(3, 3, |_, _| 0.0);
+        assert_eq!(a, b);
+        assert_eq!(hash_of(&a), hash_of(&b));
+        let moved = Shape::heightfield(
+            UVec2::new(3, 3),
+            Vec2::new(8.0, 6.0),
+            field(3, 3, |_, _| 0.0),
+            2,
+            D,
+        );
+        assert_ne!(a, moved);
+    }
+
+    #[test]
+    fn invalid_heightfield_builds_an_empty_mesh() {
+        let one_wide = heightfield(1, 4, |_, _| 0.0);
+        assert!(positions(&one_wide.build()).is_empty());
+        let wrong_len = Shape::heightfield(
+            UVec2::new(3, 3),
+            Vec2::splat(1.0),
+            vec![0.0; 5].into(),
+            1,
+            D,
+        );
+        assert!(positions(&wrong_len.build()).is_empty());
+        assert_eq!(wrong_len.bounds(), ShapeBounds::default());
+    }
+}
+
+#[cfg(test)]
+mod sweep_tests {
+    use super::*;
+    use bevy::mesh::{Indices, VertexAttributeValues};
+    use std::collections::HashMap;
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::Hasher;
+
+    fn positions(mesh: &Mesh) -> Vec<Vec3> {
+        match mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
+            Some(VertexAttributeValues::Float32x3(p)) => {
+                p.iter().map(|p| Vec3::from_array(*p)).collect()
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    fn normals(mesh: &Mesh) -> Vec<Vec3> {
+        match mesh.attribute(Mesh::ATTRIBUTE_NORMAL) {
+            Some(VertexAttributeValues::Float32x3(p)) => {
+                p.iter().map(|p| Vec3::from_array(*p)).collect()
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    fn indices(mesh: &Mesh) -> Vec<u32> {
+        match mesh.indices() {
+            Some(Indices::U32(v)) => v.clone(),
+            Some(Indices::U16(v)) => v.iter().map(|&i| u32::from(i)).collect(),
+            None => Vec::new(),
+        }
+    }
+
+    /// A 2 wide, 0.2 tall box outline.
+    fn slab() -> Vec<Vec2> {
+        vec![
+            Vec2::new(-1.0, 0.0),
+            Vec2::new(1.0, 0.0),
+            Vec2::new(1.0, 0.2),
+            Vec2::new(-1.0, 0.2),
+        ]
+    }
+
+    fn straight() -> Vec<Vec3> {
+        vec![Vec3::ZERO, Vec3::new(6.0, 0.0, 0.0)]
+    }
+
+    fn near(a: Vec3, b: Vec3) -> bool {
+        a.distance(b) < 1e-4
+    }
+
+    fn has_vertex(mesh: &Mesh, p: Vec3) -> bool {
+        positions(mesh).iter().any(|v| near(*v, p))
+    }
+
+    /// Open boundary edges after welding vertices by position; 0 means closed.
+    fn boundary_edges(mesh: &Mesh) -> usize {
+        let key = |p: Vec3| {
+            [
+                (p.x * 1000.0).round() as i64,
+                (p.y * 1000.0).round() as i64,
+                (p.z * 1000.0).round() as i64,
+            ]
+        };
+        let p = positions(mesh);
+        let mut edges: HashMap<([i64; 3], [i64; 3]), i32> = HashMap::new();
+        for t in indices(mesh).chunks_exact(3) {
+            for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
+                let (ka, kb) = (key(p[a as usize]), key(p[b as usize]));
+                if ka == kb {
+                    continue;
+                }
+                let (lo, hi, dir) = if ka < kb { (ka, kb, 1) } else { (kb, ka, -1) };
+                *edges.entry((lo, hi)).or_default() += dir;
+            }
+        }
+        // A closed, consistently wound surface uses every edge once per
+        // direction, so the signed count cancels out.
+        edges.values().filter(|&&v| v != 0).count()
+    }
+
+    fn hash_of(s: &Shape) -> u64 {
+        let mut h = DefaultHasher::new();
+        s.hash(&mut h);
+        h.finish()
+    }
+
+    #[test]
+    fn straight_sweep_counts_and_length() {
+        let shape = Shape::sweep(slab(), straight(), SweepOptions::default());
+        let mesh = shape.build();
+        // 4 corners all hard: 2 vertices each per ring, 2 rings, plus 2 caps of 4.
+        assert_eq!(positions(&mesh).len(), 2 * 8 + 2 * 4);
+        let b = shape.bounds();
+        assert!((b.size() - Vec3::new(6.0, 0.2, 2.0)).length() < 1e-4, "{:?}", b.size());
+        let no_caps = Shape::sweep(
+            slab(),
+            straight(),
+            SweepOptions {
+                caps: false,
+                ..default()
+            },
+        )
+        .build();
+        assert_eq!(positions(&no_caps).len(), 16);
+        // Caps add two triangles per cap for a quad profile.
+        assert_eq!(indices(&mesh).len() - indices(&no_caps).len(), 2 * 2 * 3);
+    }
+
+    #[test]
+    fn triangles_face_the_way_their_normals_point() {
+        for options in [
+            SweepOptions::default(),
+            SweepOptions {
+                closed: true,
+                ..default()
+            },
+        ] {
+            let path = if options.closed {
+                vec![
+                    Vec3::new(-3.0, 0.0, -3.0),
+                    Vec3::new(3.0, 0.0, -3.0),
+                    Vec3::new(3.0, 0.0, 3.0),
+                    Vec3::new(-3.0, 0.0, 3.0),
+                ]
+            } else {
+                vec![Vec3::ZERO, Vec3::new(4.0, 0.0, 0.0), Vec3::new(4.0, 2.0, 4.0)]
+            };
+            let mesh = Shape::sweep(slab(), path, options).build();
+            let (p, n) = (positions(&mesh), normals(&mesh));
+            for t in indices(&mesh).chunks_exact(3) {
+                let (a, b, c) = (t[0] as usize, t[1] as usize, t[2] as usize);
+                let face = (p[b] - p[a]).cross(p[c] - p[a]);
+                if face.length() < 1e-6 {
+                    continue;
+                }
+                let avg = n[a] + n[b] + n[c];
+                assert!(face.dot(avg) > 0.0, "triangle {t:?} faces against its normals");
+            }
+        }
+    }
+
+    #[test]
+    fn sweeps_are_watertight() {
+        let open = Shape::sweep(
+            slab(),
+            vec![Vec3::ZERO, Vec3::new(4.0, 0.0, 0.0), Vec3::new(4.0, 0.0, 4.0)],
+            SweepOptions::default(),
+        )
+        .build();
+        assert_eq!(boundary_edges(&open), 0);
+        let closed = Shape::sweep(
+            slab(),
+            vec![
+                Vec3::new(-3.0, 0.0, -3.0),
+                Vec3::new(3.0, 0.0, -3.0),
+                Vec3::new(3.0, 0.0, 3.0),
+                Vec3::new(-3.0, 0.0, 3.0),
+            ],
+            SweepOptions {
+                closed: true,
+                ..default()
+            },
+        )
+        .build();
+        assert_eq!(boundary_edges(&closed), 0);
+        let uncapped = Shape::sweep(
+            slab(),
+            straight(),
+            SweepOptions {
+                caps: false,
+                ..default()
+            },
+        )
+        .build();
+        assert_eq!(boundary_edges(&uncapped), 8, "an open tube shows both rims");
+    }
+
+    #[test]
+    fn mitred_bend_keeps_the_width() {
+        let mesh = Shape::sweep(
+            slab(),
+            vec![Vec3::ZERO, Vec3::new(4.0, 0.0, 0.0), Vec3::new(4.0, 0.0, 4.0)],
+            SweepOptions::default(),
+        )
+        .build();
+        // Outer and inner corners of the joint sit exactly one unit from both legs.
+        assert!(has_vertex(&mesh, Vec3::new(5.0, 0.2, -1.0)));
+        assert!(has_vertex(&mesh, Vec3::new(3.0, 0.2, 1.0)));
+        assert!(has_vertex(&mesh, Vec3::new(5.0, 0.0, -1.0)));
+        // Every vertex is exactly one unit from the line of one of the two legs
+        // in plan view: the sides keep a constant width through the bend.
+        for p in positions(&mesh) {
+            let d = p.z.abs().min((p.x - 4.0).abs());
+            assert!((d - 1.0).abs() < 1e-3, "vertex {p:?} is {d} from the leg lines");
+        }
+    }
+
+    #[test]
+    fn sharp_turn_does_not_spike() {
+        let angle = 150.0_f32.to_radians();
+        let path = vec![
+            Vec3::ZERO,
+            Vec3::new(4.0, 0.0, 0.0),
+            Vec3::new(4.0, 0.0, 0.0) + Vec3::new(angle.cos(), 0.0, angle.sin()) * 4.0,
+        ];
+        let mesh = Shape::sweep(slab(), path.clone(), SweepOptions::default()).build();
+        let to_path = |p: Vec3| {
+            path.windows(2)
+                .map(|w| {
+                    let ab = w[1] - w[0];
+                    let t = ((p - w[0]).dot(ab) / ab.length_squared()).clamp(0.0, 1.0);
+                    Vec3::new(p.x, 0.0, p.z).distance(w[0] + ab * t)
+                })
+                .fold(f32::MAX, f32::min)
+        };
+        // The mitre tip is the farthest point from the path: 1 / cos(75 deg) ~ 3.9
+        // half-widths, never beyond the clamp of 4.
+        let farthest = positions(&mesh).iter().map(|p| to_path(*p)).fold(0.0, f32::max);
+        assert!(farthest > 3.0, "the sharp joint should widen, got {farthest}");
+        assert!(farthest <= 4.0 + 1e-3, "mitre grew to {farthest}");
+        assert!(positions(&mesh).iter().all(|p| p.is_finite()));
+    }
+
+    #[test]
+    fn closed_loop_has_no_seam_gap() {
+        let path: Vec<Vec3> = (0..8)
+            .map(|i| {
+                let a = i as f32 / 8.0 * std::f32::consts::TAU;
+                Vec3::new(a.cos() * 5.0, 0.0, a.sin() * 5.0)
+            })
+            .collect();
+        let mesh = Shape::sweep(
+            slab(),
+            path,
+            SweepOptions {
+                closed: true,
+                caps: true,
+                ..default()
+            },
+        )
+        .build();
+        // No caps on a closed sweep: 8 rings of 8 vertices.
+        assert_eq!(positions(&mesh).len(), 8 * 8);
+        assert_eq!(boundary_edges(&mesh), 0);
+        // A circle sweep is symmetric: the profile at ring 0 and ring 4 mirror.
+        let b = Shape::sweep(
+            slab(),
+            (0..8)
+                .map(|i| {
+                    let a = i as f32 / 8.0 * std::f32::consts::TAU;
+                    Vec3::new(a.cos() * 5.0, 0.0, a.sin() * 5.0)
+                })
+                .collect(),
+            SweepOptions {
+                closed: true,
+                ..default()
+            },
+        )
+        .bounds();
+        assert!((b.size().y - 0.2).abs() < 1e-4, "frames drifted: {:?}", b.size());
+    }
+
+    #[test]
+    fn closed_loop_with_a_tilting_path_still_welds() {
+        // A loop that leaves the horizontal plane accumulates transport twist.
+        let path: Vec<Vec3> = (0..12)
+            .map(|i| {
+                let a = i as f32 / 12.0 * std::f32::consts::TAU;
+                Vec3::new(a.cos() * 5.0, (a * 2.0).sin() * 2.0, a.sin() * 5.0)
+            })
+            .collect();
+        let mesh = Shape::sweep(
+            slab(),
+            path,
+            SweepOptions {
+                closed: true,
+                ..default()
+            },
+        )
+        .build();
+        assert_eq!(boundary_edges(&mesh), 0);
+        assert!(positions(&mesh).iter().all(|p| p.is_finite()));
+    }
+
+    #[test]
+    fn twist_rotates_the_end_profile() {
+        let mesh = Shape::sweep(
+            slab(),
+            straight(),
+            SweepOptions {
+                twist: 0.25,
+                caps: false,
+                ..default()
+            },
+        )
+        .build();
+        let end: Vec<Vec3> = positions(&mesh)
+            .into_iter()
+            .filter(|p| (p.x - 6.0).abs() < 1e-4)
+            .collect();
+        assert!(!end.is_empty());
+        let z = end.iter().map(|p| p.z.abs()).fold(0.0, f32::max);
+        let y = end.iter().map(|p| p.y.abs()).fold(0.0, f32::max);
+        // A quarter turn swaps the wide axis (z) for the tall one (y).
+        assert!(z < 0.25, "z extent {z}");
+        assert!(y > 0.9, "y extent {y}");
+    }
+
+    #[test]
+    fn scale_along_scales_the_profile() {
+        let options = SweepOptions {
+            caps: false,
+            ..default()
+        }
+        .scale_with(2, |t| Vec2::splat(1.0 + t));
+        let mesh = Shape::sweep(slab(), straight(), options).build();
+        let width_at = |x: f32| {
+            positions(&mesh)
+                .iter()
+                .filter(|p| (p.x - x).abs() < 1e-4)
+                .map(|p| p.z.abs())
+                .fold(0.0, f32::max)
+        };
+        assert!((width_at(0.0) - 1.0).abs() < 1e-4);
+        assert!((width_at(6.0) - 2.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn tint_by_length_writes_vertex_colours() {
+        let options = SweepOptions {
+            tint_by_length: Some(vec![(0.0, Color::BLACK), (1.0, Color::WHITE)]),
+            ..default()
+        };
+        let mesh = Shape::sweep(slab(), straight(), options).build();
+        let Some(VertexAttributeValues::Float32x4(colors)) =
+            mesh.attribute(Mesh::ATTRIBUTE_COLOR)
+        else {
+            panic!("tinted sweep has no vertex colours");
+        };
+        let p = positions(&mesh);
+        let at = |x: f32| {
+            let i = (0..p.len()).find(|&i| (p[i].x - x).abs() < 1e-4).unwrap();
+            colors[i]
+        };
+        assert!(at(0.0)[0] < 0.01);
+        assert!(at(6.0)[0] > 0.99);
+        let mid = at(3.0)[0];
+        assert!((0.1..0.9).contains(&mid), "mid tint {mid}");
+        // Untinted sweeps carry no colour attribute.
+        let plain = Shape::sweep(slab(), straight(), SweepOptions::default()).build();
+        assert!(plain.attribute(Mesh::ATTRIBUTE_COLOR).is_none());
+    }
+
+    #[test]
+    fn rounded_profiles_are_smooth_and_boxes_are_crisp() {
+        let circle: Vec<Vec2> = (0..12)
+            .map(|i| {
+                let a = i as f32 / 12.0 * std::f32::consts::TAU;
+                Vec2::new(a.cos(), a.sin()) * 0.5
+            })
+            .collect();
+        let pipe = Shape::sweep(
+            circle,
+            straight(),
+            SweepOptions {
+                caps: false,
+                ..default()
+            },
+        )
+        .build();
+        // One vertex per profile point per ring, plus the u seam at the first.
+        assert_eq!(positions(&pipe).len(), 2 * 13);
+        let boxy = Shape::sweep(slab(), straight(), SweepOptions { caps: false, ..default() }).build();
+        assert_eq!(positions(&boxy).len(), 2 * 8);
+    }
+
+    #[test]
+    fn degenerate_input_gives_an_empty_mesh() {
+        let one_point = Shape::sweep(slab(), vec![Vec3::ZERO], SweepOptions::default());
+        assert!(positions(&one_point.build()).is_empty());
+        let two_profile_points = Shape::sweep(
+            vec![Vec2::ZERO, Vec2::X],
+            straight(),
+            SweepOptions::default(),
+        );
+        assert!(positions(&two_profile_points.build()).is_empty());
+        let closed_two = Shape::sweep(
+            slab(),
+            straight(),
+            SweepOptions {
+                closed: true,
+                ..default()
+            },
+        );
+        assert!(positions(&closed_two.build()).is_empty());
+    }
+
+    #[test]
+    fn repeated_path_points_are_dropped() {
+        let clean = Shape::sweep(slab(), straight(), SweepOptions::default()).build();
+        let repeated = Shape::sweep(
+            slab(),
+            vec![Vec3::ZERO, Vec3::ZERO, Vec3::new(6.0, 0.0, 0.0), Vec3::new(6.0, 0.0, 0.0)],
+            SweepOptions::default(),
+        )
+        .build();
+        assert_eq!(positions(&repeated), positions(&clean));
+    }
+
+    #[test]
+    fn clockwise_profiles_are_rewound() {
+        let mut cw = slab();
+        cw.reverse();
+        let a = Shape::sweep(slab(), straight(), SweepOptions::default()).build();
+        let b = Shape::sweep(cw, straight(), SweepOptions::default()).build();
+        assert_eq!(positions(&a).len(), positions(&b).len());
+        let (p, n) = (positions(&b), normals(&b));
+        for t in indices(&b).chunks_exact(3) {
+            let (i, j, k) = (t[0] as usize, t[1] as usize, t[2] as usize);
+            let face = (p[j] - p[i]).cross(p[k] - p[i]);
+            assert!(face.dot(n[i] + n[j] + n[k]) > 0.0);
+        }
+    }
+
+    #[test]
+    fn up_hint_orients_the_profile() {
+        let flat = Shape::sweep(slab(), straight(), SweepOptions::default()).bounds();
+        let sideways = Shape::sweep(
+            slab(),
+            straight(),
+            SweepOptions {
+                up: Vec3::Z,
+                ..default()
+            },
+        )
+        .bounds();
+        assert!((flat.size().y - 0.2).abs() < 1e-4);
+        assert!((sideways.size().z - 0.2).abs() < 1e-4);
+        // A path along the up hint still gets a valid frame.
+        let vertical = Shape::sweep(
+            slab(),
+            vec![Vec3::ZERO, Vec3::new(0.0, 5.0, 0.0)],
+            SweepOptions::default(),
+        );
+        assert!(positions(&vertical.build()).iter().all(|p| p.is_finite()));
+    }
+
+    #[test]
+    fn equal_sweeps_are_equal_and_hash_alike() {
+        let a = Shape::sweep(slab(), straight(), SweepOptions::default());
+        let b = Shape::sweep(slab(), straight(), SweepOptions::default());
+        assert_eq!(a, b);
+        assert_eq!(hash_of(&a), hash_of(&b));
+        let twisted = Shape::sweep(
+            slab(),
+            straight(),
+            SweepOptions {
+                twist: 0.5,
+                ..default()
+            },
+        );
+        assert_ne!(a, twisted);
+        let longer = Shape::sweep(
+            slab(),
+            vec![Vec3::ZERO, Vec3::new(7.0, 0.0, 0.0)],
+            SweepOptions::default(),
+        );
+        assert_ne!(a, longer);
+        assert_eq!(a.lerp(&longer, 0.2), a);
+        assert_eq!(a.lerp(&longer, 0.8), longer);
+    }
+
+    fn default<T: Default>() -> T {
+        T::default()
+    }
+}
+
+#[cfg(test)]
+mod opening_tests {
+    use super::*;
+    use bevy::mesh::{Indices, VertexAttributeValues};
+    use std::collections::HashMap;
+
+    fn positions(mesh: &Mesh) -> Vec<Vec3> {
+        match mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
+            Some(VertexAttributeValues::Float32x3(p)) => {
+                p.iter().map(|p| Vec3::from_array(*p)).collect()
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    fn normals(mesh: &Mesh) -> Vec<Vec3> {
+        match mesh.attribute(Mesh::ATTRIBUTE_NORMAL) {
+            Some(VertexAttributeValues::Float32x3(p)) => {
+                p.iter().map(|p| Vec3::from_array(*p)).collect()
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    fn indices(mesh: &Mesh) -> Vec<u32> {
+        match mesh.indices() {
+            Some(Indices::U32(v)) => v.clone(),
+            Some(Indices::U16(v)) => v.iter().map(|&i| u32::from(i)).collect(),
+            None => Vec::new(),
+        }
+    }
+
+    /// A 0.4 thick, 2 high wall section.
+    fn wall() -> Vec<Vec2> {
+        vec![
+            Vec2::new(-0.2, 0.0),
+            Vec2::new(0.2, 0.0),
+            Vec2::new(0.2, 2.0),
+            Vec2::new(-0.2, 2.0),
+        ]
+    }
+
+    fn straight() -> Vec<Vec3> {
+        vec![Vec3::ZERO, Vec3::new(10.0, 0.0, 0.0)]
+    }
+
+    fn with(openings: Vec<SweepOpening>) -> SweepOptions {
+        SweepOptions {
+            openings,
+            ..SweepOptions::default()
+        }
+    }
+
+    fn build(path: Vec<Vec3>, options: SweepOptions) -> Mesh {
+        Shape::sweep(wall(), path, options).build()
+    }
+
+    /// Open boundary edges after welding vertices by position; 0 means a closed,
+    /// consistently wound surface.
+    fn boundary_edges(mesh: &Mesh) -> usize {
+        let key = |p: Vec3| {
+            [
+                (p.x * 1000.0).round() as i64,
+                (p.y * 1000.0).round() as i64,
+                (p.z * 1000.0).round() as i64,
+            ]
+        };
+        let p = positions(mesh);
+        let mut edges: HashMap<([i64; 3], [i64; 3]), i32> = HashMap::new();
+        for t in indices(mesh).chunks_exact(3) {
+            for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
+                let (ka, kb) = (key(p[a as usize]), key(p[b as usize]));
+                if ka == kb {
+                    continue;
+                }
+                let (lo, hi, dir) = if ka < kb { (ka, kb, 1) } else { (kb, ka, -1) };
+                *edges.entry((lo, hi)).or_default() += dir;
+            }
+        }
+        edges.values().filter(|&&v| v != 0).count()
+    }
+
+    /// Number of triangles a ray crosses.
+    fn ray_hits(mesh: &Mesh, origin: Vec3, dir: Vec3) -> usize {
+        let p = positions(mesh);
+        indices(mesh)
+            .chunks_exact(3)
+            .filter(|t| {
+                let (a, b, c) = (p[t[0] as usize], p[t[1] as usize], p[t[2] as usize]);
+                let (e1, e2) = (b - a, c - a);
+                let h = dir.cross(e2);
+                let det = e1.dot(h);
+                if det.abs() < 1e-9 {
+                    return false;
+                }
+                let f = 1.0 / det;
+                let s = origin - a;
+                let u = f * s.dot(h);
+                if !(0.0..=1.0).contains(&u) {
+                    return false;
+                }
+                let q = s.cross(e1);
+                let v = f * dir.dot(q);
+                if v < 0.0 || u + v > 1.0 {
+                    return false;
+                }
+                f * e2.dot(q) > 1e-6
+            })
+            .count()
+    }
+
+    /// Rays are nudged off round numbers so they never run along the shared
+    /// diagonal of two triangles.
+    fn through(mesh: &Mesh, x: f32, y: f32) -> usize {
+        ray_hits(mesh, Vec3::new(x + 0.0137, y + 0.0071, -5.0), Vec3::Z)
+    }
+
+    #[test]
+    fn a_window_is_a_real_hole() {
+        let plain = build(straight(), SweepOptions::default());
+        let holed = build(
+            straight(),
+            with(vec![SweepOpening::rect(0.4..0.6, 0.8, 1.4)]),
+        );
+        // Solid wall: the ray crosses both faces. Through the window: nothing.
+        assert_eq!(through(&plain, 5.0, 1.1), 2);
+        assert_eq!(through(&holed, 5.0, 1.1), 0);
+        // Beside and above the window the wall is still there.
+        assert_eq!(through(&holed, 3.0, 1.1), 2);
+        assert_eq!(through(&holed, 5.0, 1.7), 2);
+        assert_eq!(through(&holed, 5.0, 0.4), 2);
+        assert!(indices(&holed).len() > indices(&plain).len());
+    }
+
+    #[test]
+    fn a_window_leaves_a_watertight_surface() {
+        let holed = build(
+            straight(),
+            with(vec![SweepOpening::rect(0.4..0.6, 0.8, 1.4)]),
+        );
+        assert_eq!(boundary_edges(&holed), 0);
+    }
+
+    #[test]
+    fn a_window_has_reveal_faces_on_the_inside() {
+        let holed = build(
+            straight(),
+            with(vec![SweepOpening::rect(0.4..0.6, 0.8, 1.4)]),
+        );
+        let (p, n) = (positions(&holed), normals(&holed));
+        let in_hole = |v: Vec3| (4.0..=6.0).contains(&v.x) && (0.79..=1.41).contains(&v.y);
+        // Sill faces up at the bottom, lintel faces down at the top, jambs face
+        // along the wall into the hole.
+        let facing = |dir: Vec3, y: Option<f32>, x: Option<f32>| {
+            indices(&holed).chunks_exact(3).any(|t| {
+                let c = (p[t[0] as usize] + p[t[1] as usize] + p[t[2] as usize]) / 3.0;
+                let avg = (n[t[0] as usize] + n[t[1] as usize] + n[t[2] as usize]).normalize();
+                in_hole(c)
+                    && avg.dot(dir) > 0.99
+                    && y.is_none_or(|y| (c.y - y).abs() < 1e-3)
+                    && x.is_none_or(|x| (c.x - x).abs() < 1e-3)
+            })
+        };
+        assert!(facing(Vec3::Y, Some(0.8), None), "no sill");
+        assert!(facing(Vec3::NEG_Y, Some(1.4), None), "no lintel");
+        assert!(facing(Vec3::X, None, Some(4.0)), "no left jamb");
+        assert!(facing(Vec3::NEG_X, None, Some(6.0)), "no right jamb");
+    }
+
+    #[test]
+    fn a_gate_cuts_the_bottom_open() {
+        let gate = build(
+            straight(),
+            with(vec![SweepOpening::rect(0.4..0.6, 0.0, 1.4)]),
+        );
+        assert_eq!(boundary_edges(&gate), 0);
+        // Through the gate, up to the lintel, nothing blocks the ray; the wall
+        // above it is solid.
+        assert_eq!(through(&gate, 5.0, 0.1), 0);
+        assert_eq!(through(&gate, 5.0, 1.3), 0);
+        assert_eq!(through(&gate, 5.0, 1.7), 2);
+        assert_eq!(through(&gate, 3.0, 0.1), 2);
+        // No floor remains between the jambs: a ray dropped from inside the gate
+        // leaves the wall, while beside the gate it hits the wall's bottom face.
+        let down = ray_hits(&gate, Vec3::new(5.0137, 1.0, 0.0071), Vec3::NEG_Y);
+        assert_eq!(down, 0, "the gate has no bottom face");
+        let down_beside = ray_hits(&gate, Vec3::new(3.0137, 1.0, 0.0071), Vec3::NEG_Y);
+        assert_eq!(down_beside, 1, "the solid wall keeps its bottom face");
+    }
+
+    #[test]
+    fn an_arched_gate_is_watertight_and_open() {
+        let gate = build(
+            straight(),
+            with(vec![SweepOpening::arch(0.35..0.65, 0.0, 1.0, 1.7, 8)]),
+        );
+        assert_eq!(boundary_edges(&gate), 0);
+        assert_eq!(through(&gate, 5.0, 0.5), 0);
+        assert_eq!(through(&gate, 5.0, 1.5), 0);
+        assert_eq!(through(&gate, 5.0, 1.9), 2);
+        // Near the arch's shoulder the wall closes in.
+        assert_eq!(through(&gate, 3.6, 1.6), 2);
+    }
+
+    #[test]
+    fn openings_follow_a_bend() {
+        let path = vec![
+            Vec3::ZERO,
+            Vec3::new(5.0, 0.0, 0.0),
+            Vec3::new(5.0, 0.0, 5.0),
+            Vec3::new(10.0, 0.0, 5.0),
+        ];
+        let options = with(vec![
+            SweepOpening::arch(0.1..0.3, 0.0, 1.0, 1.6, 6),
+            SweepOpening::rect(0.45..0.55, 0.6, 1.2),
+            SweepOpening::rect(0.7..0.9, 0.6, 1.2),
+        ]);
+        let mesh = build(path, options);
+        assert_eq!(boundary_edges(&mesh), 0);
+        let (p, n) = (positions(&mesh), normals(&mesh));
+        for t in indices(&mesh).chunks_exact(3) {
+            let (a, b, c) = (t[0] as usize, t[1] as usize, t[2] as usize);
+            let face = (p[b] - p[a]).cross(p[c] - p[a]);
+            if face.length() < 1e-6 {
+                continue;
+            }
+            assert!(
+                face.dot(n[a] + n[b] + n[c]) > 0.0,
+                "triangle {t:?} faces against its normals"
+            );
+        }
+    }
+
+    #[test]
+    fn openings_on_a_closed_loop_stay_watertight() {
+        let path: Vec<Vec3> = (0..8)
+            .map(|i| {
+                let a = i as f32 / 8.0 * std::f32::consts::TAU;
+                Vec3::new(a.cos() * 5.0, 0.0, a.sin() * 5.0)
+            })
+            .collect();
+        let options = SweepOptions {
+            closed: true,
+            openings: vec![
+                SweepOpening::arch(0.2..0.3, 0.0, 1.0, 1.6, 6),
+                SweepOpening::rect(0.6..0.7, 0.6, 1.2),
+            ],
+            ..SweepOptions::default()
+        };
+        let mesh = build(path, options);
+        assert_eq!(boundary_edges(&mesh), 0);
+    }
+
+    #[test]
+    fn overlapping_and_invalid_openings_are_ignored() {
+        let first = SweepOpening::rect(0.3..0.5, 0.5, 1.5);
+        let alone = build(straight(), with(vec![first.clone()]));
+        let overlapping = build(
+            straight(),
+            with(vec![first.clone(), SweepOpening::rect(0.4..0.6, 0.2, 1.0)]),
+        );
+        assert_eq!(positions(&overlapping), positions(&alone));
+        let invalid = build(
+            straight(),
+            with(vec![
+                first,
+                SweepOpening {
+                    t: 0.7..0.8,
+                    outline: vec![Vec2::ZERO, Vec2::X],
+                },
+                SweepOpening::rect(0.9..0.9, 0.5, 1.0),
+            ]),
+        );
+        assert_eq!(positions(&invalid), positions(&alone));
+    }
+
+    #[test]
+    fn openings_change_identity() {
+        let a = Shape::sweep(wall(), straight(), SweepOptions::default());
+        let b = Shape::sweep(
+            wall(),
+            straight(),
+            with(vec![SweepOpening::rect(0.4..0.6, 0.8, 1.4)]),
+        );
+        let c = Shape::sweep(
+            wall(),
+            straight(),
+            with(vec![SweepOpening::rect(0.4..0.6, 0.8, 1.4)]),
+        );
+        assert_ne!(a, b);
+        assert_eq!(b, c);
+    }
+
+    #[test]
+    fn an_opening_at_the_path_end_is_kept_inside() {
+        let mesh = build(
+            straight(),
+            with(vec![SweepOpening::rect(0.0..0.2, 0.0, 1.4)]),
+        );
+        assert_eq!(boundary_edges(&mesh), 0);
+        assert!(positions(&mesh).iter().all(|p| p.is_finite()));
+        assert_eq!(through(&mesh, 1.0, 0.5), 0);
     }
 }

@@ -6,6 +6,8 @@
 - [Styles & Materials](./styles.md)
 - [Composing Shapes, 2D and Ghost Previews](./composition.md)
 - [Rendering Modes](./modes.md)
+- [Choosing a Backend](./backends.md)
+- [Sweeps, Meshes, Heightfields and Height Bands](./sweeps.md)
 - [Curves & Polylines](./curves.md)
 - [Deformation](./deformation.md)
 - [Appearance Animation](./appearance.md)

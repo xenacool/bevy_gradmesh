@@ -23,6 +23,7 @@ use std::hash::{Hash, Hasher};
 
 use crate::RenderState;
 use crate::appearance::AppearanceSnapshot;
+#[cfg(feature = "pbr")]
 use crate::culling::AABB;
 use crate::material::{GradMeshUniformBuffer, Vec4};
 use crate::mix_space::MixSpace;
@@ -93,6 +94,8 @@ impl InstanceProperties {
             ColorMode::Single => 0.0,
             ColorMode::DualDirectional => 1.0,
             ColorMode::DualRadial => 2.0,
+            // Height bands only exist on the material path.
+            ColorMode::HeightBands => 0.0,
         };
         let bm = match blend_mode {
             BlendMode::Opaque => 0.0,

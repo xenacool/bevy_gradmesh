@@ -56,6 +56,791 @@ impl MeshData {
 
 const WHITE: [f32; 4] = [1.0; 4];
 
+// ─── Heightfield ───
+
+/// How far the skirts of a heightfield hang below the edge, as a fraction of
+/// the larger extent.
+const SKIRT_FRACTION: f32 = 0.1;
+
+/// Depth of the skirts [`heightfield_mesh`] adds around the edge.
+pub(crate) fn heightfield_skirt_depth(extent: Vec2) -> f32 {
+    extent.x.abs().max(extent.y.abs()) * SKIRT_FRACTION
+}
+
+/// A grid of `size.x * size.y` height samples over `extent`, centred on the
+/// origin in XZ (`heights[x + y * size.x]` is the sample at column `x`, row `y`,
+/// rows running along +Z).
+///
+/// Normals come from central differences, UVs run 0 to 1 over the grid, and
+/// skirts hang below the four edges so cracks between neighbouring chunks stay
+/// hidden. Invalid input (a side shorter than 2 samples, or a mismatched
+/// `heights` length) returns an empty mesh and logs a warning.
+pub(crate) fn heightfield_mesh(size: bevy::math::UVec2, extent: Vec2, heights: &[f32]) -> Mesh {
+    let (sx, sy) = (size.x as usize, size.y as usize);
+    if sx < 2 || sy < 2 || heights.len() != sx * sy {
+        bevy::log::warn!(
+            "heightfield: size {}x{} needs at least 2x2 samples and {} heights, got {}; building an empty mesh",
+            size.x,
+            size.y,
+            sx * sy,
+            heights.len()
+        );
+        return MeshData::default().into_mesh(false);
+    }
+    let hx = extent.x / (sx - 1) as f32;
+    let hz = extent.y / (sy - 1) as f32;
+    let at = |x: usize, y: usize| heights[x + y * sx];
+    let skirt = heightfield_skirt_depth(extent);
+
+    let mut data = MeshData::default();
+    for y in 0..sy {
+        for x in 0..sx {
+            let (x0, x1) = (x.saturating_sub(1), (x + 1).min(sx - 1));
+            let (y0, y1) = (y.saturating_sub(1), (y + 1).min(sy - 1));
+            let dhdx = (at(x1, y) - at(x0, y)) / ((x1 - x0) as f32 * hx);
+            let dhdz = (at(x, y1) - at(x, y0)) / ((y1 - y0) as f32 * hz);
+            let normal = Vec3::new(-dhdx, 1.0, -dhdz).normalize();
+            let pos = Vec3::new(
+                (x as f32 / (sx - 1) as f32 - 0.5) * extent.x,
+                at(x, y),
+                (y as f32 / (sy - 1) as f32 - 0.5) * extent.y,
+            );
+            let uv = Vec2::new(x as f32 / (sx - 1) as f32, y as f32 / (sy - 1) as f32);
+            data.push(pos, normal, uv, WHITE);
+        }
+    }
+    let idx = |x: usize, y: usize| (x + y * sx) as u32;
+    for y in 0..sy - 1 {
+        for x in 0..sx - 1 {
+            let (a, b, c, d) = (idx(x, y), idx(x, y + 1), idx(x + 1, y), idx(x + 1, y + 1));
+            data.tri(a, b, c);
+            data.tri(c, b, d);
+        }
+    }
+
+    // Skirts: each edge is walked so the strip faces outwards.
+    let edges: [Vec<u32>; 4] = [
+        (0..sx).map(|x| idx(x, 0)).collect(),
+        (0..sx).rev().map(|x| idx(x, sy - 1)).collect(),
+        (0..sy).rev().map(|y| idx(0, y)).collect(),
+        (0..sy).map(|y| idx(sx - 1, y)).collect(),
+    ];
+    for edge in edges {
+        let skirt_start = data.positions.len() as u32;
+        for &e in &edge {
+            let (p, n, uv) = (
+                data.positions[e as usize],
+                data.normals[e as usize],
+                data.uvs[e as usize],
+            );
+            data.push(p - Vec3::Y * skirt, n, uv, WHITE);
+        }
+        for i in 0..edge.len() as u32 - 1 {
+            let (e0, e1) = (edge[i as usize], edge[i as usize + 1]);
+            let (s0, s1) = (skirt_start + i, skirt_start + i + 1);
+            data.tri(e0, e1, s0);
+            data.tri(e1, s1, s0);
+        }
+    }
+    data.into_mesh(false)
+}
+
+// ─── Sweep ───
+
+/// Profile corners sharper than this (cosine of the angle between the
+/// adjacent edge normals, about 40 degrees) stay crisp when swept.
+const SWEEP_SMOOTH_COS: f32 = 0.766;
+
+/// Largest factor a mitred joint may widen the profile by.
+const SWEEP_MAX_MITRE: f32 = 4.0;
+
+/// Height tolerance when comparing opening outlines with profile heights.
+const SWEEP_TOL: f32 = 1e-4;
+
+/// Piecewise-linear lookup of `(ratio, value)` keyframes, clamped at the ends.
+fn sample_keys<T: Copy>(keys: &[(f32, T)], r: f32, lerp: impl Fn(T, T, f32) -> T) -> Option<T> {
+    let (first, last) = (keys.first()?, keys.last()?);
+    if r <= first.0 {
+        return Some(first.1);
+    }
+    for w in keys.windows(2) {
+        if r <= w[1].0 {
+            let span = w[1].0 - w[0].0;
+            let t = if span > 1e-9 { (r - w[0].0) / span } else { 1.0 };
+            return Some(lerp(w[0].1, w[1].1, t));
+        }
+    }
+    Some(last.1)
+}
+
+/// An opening in `(distance along the path, height)` coordinates.
+struct PreparedOpening {
+    outline: Vec<Vec2>,
+    s0: f32,
+    s1: f32,
+}
+
+impl PreparedOpening {
+    /// Lowest and highest outline height at distance `s` (clamped into the
+    /// opening's range).
+    fn span(&self, s: f32) -> (f32, f32) {
+        let s = s.clamp(self.s0, self.s1);
+        let (mut lo, mut hi) = (f32::MAX, f32::MIN);
+        let n = self.outline.len();
+        for i in 0..n {
+            let (a, b) = (self.outline[i], self.outline[(i + 1) % n]);
+            if s < a.x.min(b.x) - 1e-6 || s > a.x.max(b.x) + 1e-6 {
+                continue;
+            }
+            if (b.x - a.x).abs() < 1e-9 {
+                lo = lo.min(a.y.min(b.y));
+                hi = hi.max(a.y.max(b.y));
+            } else {
+                let t = ((s - a.x) / (b.x - a.x)).clamp(0.0, 1.0);
+                let y = a.y + (b.y - a.y) * t;
+                lo = lo.min(y);
+                hi = hi.max(y);
+            }
+        }
+        if lo <= hi { (lo, hi) } else { (0.0, 0.0) }
+    }
+
+    /// Distances where the opening's low or high chain bends or crosses one of
+    /// `levels`, so that every ring cell sees straight chains.
+    fn stations(&self, levels: &[f32]) -> Vec<f32> {
+        let mut xs: Vec<f32> = self.outline.iter().map(|p| p.x).collect();
+        xs.sort_by(f32::total_cmp);
+        xs.dedup_by(|a, b| (*a - *b).abs() < 1e-6);
+        let mut out = xs.clone();
+        for w in xs.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            let (x1, x2) = (a + (b - a) * 0.25, a + (b - a) * 0.75);
+            let (l1, h1) = self.span(x1);
+            let (l2, h2) = self.span(x2);
+            for (y1, y2) in [(l1, l2), (h1, h2)] {
+                let slope = (y2 - y1) / (x2 - x1);
+                if slope.abs() < 1e-9 {
+                    continue;
+                }
+                for &v in levels {
+                    let x = x1 + (v - y1) / slope;
+                    if x > a + 1e-6 && x < b - 1e-6 {
+                        out.push(x);
+                    }
+                }
+            }
+        }
+        out
+    }
+}
+
+/// Turns the user's openings into path-distance coordinates and drops the ones
+/// that cannot be cut (too small, or overlapping an earlier opening).
+fn prepare_openings(
+    openings: &[crate::shape::SweepOpening],
+    total: f32,
+    closed: bool,
+) -> Vec<PreparedOpening> {
+    let margin = if closed { 0.0 } else { total * 1e-3 };
+    let mut out: Vec<PreparedOpening> = Vec::new();
+    for (k, op) in openings.iter().enumerate() {
+        if op.outline.len() < 3 {
+            bevy::log::warn!("sweep: opening {k} needs at least three outline points; ignored");
+            continue;
+        }
+        let (ta, tb) = (op.t.start.min(op.t.end), op.t.start.max(op.t.end));
+        let (sa, sb) = (ta.clamp(0.0, 1.0) * total, tb.clamp(0.0, 1.0) * total);
+        if sb - sa <= total * 1e-4 {
+            bevy::log::warn!("sweep: opening {k} covers no length of the path; ignored");
+            continue;
+        }
+        let outline: Vec<Vec2> = op
+            .outline
+            .iter()
+            .map(|p| {
+                let s = sa + p.x.clamp(0.0, 1.0) * (sb - sa);
+                Vec2::new(s.clamp(margin, total - margin), p.y)
+            })
+            .collect();
+        let s0 = outline.iter().map(|p| p.x).fold(f32::MAX, f32::min);
+        let s1 = outline.iter().map(|p| p.x).fold(f32::MIN, f32::max);
+        if s1 - s0 <= total * 1e-4 {
+            bevy::log::warn!("sweep: opening {k} outline has no width; ignored");
+            continue;
+        }
+        if out.iter().any(|o| s0 < o.s1 - 1e-6 && s1 > o.s0 + 1e-6) {
+            bevy::log::warn!("sweep: opening {k} overlaps an earlier opening; ignored");
+            continue;
+        }
+        out.push(PreparedOpening { outline, s0, s1 });
+    }
+    out
+}
+
+fn path_length(pos: &[Vec3], closed: bool) -> f32 {
+    let mut total: f32 = pos.windows(2).map(|w| w[0].distance(w[1])).sum();
+    if closed && pos.len() > 1 {
+        total += pos[pos.len() - 1].distance(pos[0]);
+    }
+    total
+}
+
+/// Adds a path point at every distance in `stations` that is not a ring yet.
+fn insert_stations(pos: &mut Vec<Vec3>, closed: bool, stations: &mut [f32]) {
+    if stations.is_empty() {
+        return;
+    }
+    let m = pos.len();
+    let mut d = vec![0.0_f32; m];
+    for i in 1..m {
+        d[i] = d[i - 1] + pos[i].distance(pos[i - 1]);
+    }
+    let total = path_length(pos, closed);
+    let eps = total * 1e-5;
+    stations.sort_by(f32::total_cmp);
+    let mut out = Vec::with_capacity(m + stations.len());
+    let mut si = 0;
+    let mut last = f32::MIN;
+    for i in 0..m {
+        out.push(pos[i]);
+        let seg_end = if i + 1 < m {
+            d[i + 1]
+        } else if closed {
+            total
+        } else {
+            continue;
+        };
+        while si < stations.len() && stations[si] <= d[i] + eps {
+            si += 1;
+        }
+        let (a, b) = (pos[i], pos[(i + 1) % m]);
+        while si < stations.len() && stations[si] < seg_end - eps {
+            let s = stations[si];
+            si += 1;
+            if s - last < eps {
+                continue;
+            }
+            last = s;
+            out.push(a.lerp(b, (s - d[i]) / (seg_end - d[i])));
+        }
+    }
+    *pos = out;
+}
+
+/// Everything per ring that placing a profile point needs.
+struct SweepRings {
+    pos: Vec<Vec3>,
+    tans: Vec<Vec3>,
+    frames: Vec<(Vec3, Vec3)>,
+    bends: Vec<Option<(Vec3, f32)>>,
+    scale: Vec<Vec2>,
+    spin: Vec<(f32, f32)>,
+    ratio: Vec<f32>,
+    color: Vec<[f32; 4]>,
+    pts: Vec<Vec2>,
+    edge_n: Vec<Vec2>,
+    u: Vec<f32>,
+    outs: Vec<Vec<u32>>,
+    ins: Vec<Vec<u32>>,
+}
+
+impl SweepRings {
+    fn rotate(&self, i: usize, v: Vec2) -> Vec2 {
+        let (s, c) = self.spin[i];
+        Vec2::new(v.x * c - v.y * s, v.x * s + v.y * c)
+    }
+
+    /// World position of profile point `p` on ring `i`.
+    fn place(&self, i: usize, p: Vec2) -> Vec3 {
+        let q = self.rotate(i, p * self.scale[i]);
+        let (right, up) = self.frames[i];
+        let mut off = right * q.x + up * q.y;
+        if let Some((b, factor)) = self.bends[i] {
+            off += b * (off.dot(b) * (factor - 1.0));
+        }
+        self.pos[i] + off
+    }
+
+    /// World normal for the profile normal `n2` on ring `i`.
+    fn normal(&self, i: usize, n2: Vec2) -> Vec3 {
+        let q = self.rotate(i, (n2 / self.scale[i]).normalize_or(n2));
+        let (right, up) = self.frames[i];
+        (right * q.x + up * q.y).normalize_or(up)
+    }
+
+    /// Vertex of ring `i` on profile edge `e` at height `y`, reusing the
+    /// ring's own vertex when `y` is an end of the edge.
+    fn cut_vertex(&self, data: &mut MeshData, i: usize, e: usize, y: f32) -> u32 {
+        let np = self.pts.len();
+        let e1 = (e + 1) % np;
+        let (a, b) = (self.pts[e], self.pts[e1]);
+        let lam = ((y - a.y) / (b.y - a.y)).clamp(0.0, 1.0);
+        if lam <= 1e-4 {
+            return self.outs[i][e];
+        }
+        if lam >= 1.0 - 1e-4 {
+            return self.ins[i][e1];
+        }
+        let (start, end) = (self.outs[i][e] as usize, self.ins[i][e1] as usize);
+        let normal = data.normals[start]
+            .lerp(data.normals[end], lam)
+            .normalize_or(data.normals[start]);
+        let u_end = if e1 == 0 { 1.0 } else { self.u[e1] };
+        let u = self.u[e] + (u_end - self.u[e]) * lam;
+        data.push(
+            self.place(i, a.lerp(b, lam)),
+            normal,
+            Vec2::new(u, self.ratio[i]),
+            self.color[i],
+        )
+    }
+
+    /// The outermost profile points at height `y`.
+    fn cross_points(&self, y: f32) -> Option<(Vec2, Vec2)> {
+        let n = self.pts.len();
+        let mut hits: Vec<Vec2> = Vec::new();
+        for k in 0..n {
+            let (a, b) = (self.pts[k], self.pts[(k + 1) % n]);
+            if (a.y <= y && b.y >= y) || (a.y >= y && b.y <= y) {
+                if (b.y - a.y).abs() < 1e-9 {
+                    hits.push(a);
+                    hits.push(b);
+                } else {
+                    hits.push(a.lerp(b, (y - a.y) / (b.y - a.y)));
+                }
+            }
+        }
+        let left = hits.iter().copied().min_by(|p, q| p.x.total_cmp(&q.x))?;
+        let right = hits.iter().copied().max_by(|p, q| p.x.total_cmp(&q.x))?;
+        Some((left, right))
+    }
+}
+
+/// Triangle fan over a convex polygon, skipping zero-area triangles.
+fn fan(data: &mut MeshData, poly: &[u32]) {
+    for k in 1..poly.len().saturating_sub(1) {
+        let (a, b, c) = (poly[0], poly[k], poly[k + 1]);
+        let (pa, pb, pc) = (
+            data.positions[a as usize],
+            data.positions[b as usize],
+            data.positions[c as usize],
+        );
+        if (pb - pa).cross(pc - pa).length_squared() > 1e-14 {
+            data.tri(a, b, c);
+        }
+    }
+}
+
+/// A flat quad facing `toward` (the side of the solid's free air).
+fn flat_quad(data: &mut MeshData, corners: [Vec3; 4], toward: Vec3, color: [f32; 4]) {
+    let mut n = (corners[2] - corners[0]).cross(corners[3] - corners[1]);
+    if n.length_squared() < 1e-14 {
+        return;
+    }
+    n = n.normalize();
+    let mut c = corners;
+    if n.dot(toward) < 0.0 {
+        c.reverse();
+        n = -n;
+    }
+    let uvs = [Vec2::ZERO, Vec2::X, Vec2::ONE, Vec2::Y];
+    let base = data.positions.len() as u32;
+    for k in 0..4 {
+        data.push(c[k], n, uvs[k], color);
+    }
+    data.tri(base, base + 1, base + 2);
+    data.tri(base, base + 2, base + 3);
+}
+
+/// Sweeps `profile` along `path` with parallel-transport frames and mitred
+/// joints. See [`Shape::sweep`](crate::Shape::sweep) for the rules.
+pub(crate) fn sweep_mesh(
+    profile: &[Vec2],
+    path: &[Vec3],
+    o: &crate::shape::SweepOptions,
+) -> Mesh {
+    let empty = || MeshData::default().into_mesh(false);
+    let Some(ring) = Ring::new(profile, None, true) else {
+        bevy::log::warn!("sweep: the profile needs at least three distinct points; building an empty mesh");
+        return empty();
+    };
+
+    // Distinct path points.
+    let mut pts: Vec<Vec3> = Vec::with_capacity(path.len());
+    for &p in path {
+        if pts.last().is_none_or(|l| l.distance_squared(p) > 1e-10) {
+            pts.push(p);
+        }
+    }
+    let closed = o.closed;
+    if closed {
+        while pts.len() > 1 && pts[0].distance_squared(pts[pts.len() - 1]) <= 1e-10 {
+            pts.pop();
+        }
+    }
+    let n = pts.len();
+    if n < if closed { 3 } else { 2 } {
+        bevy::log::warn!("sweep: the path needs at least two distinct points (three when closed); building an empty mesh");
+        return empty();
+    }
+
+    // Ring positions, split into pieces when something varies along the path.
+    let tint_keys: Option<Vec<(f32, [f32; 4])>> = o
+        .tint_by_length
+        .as_ref()
+        .filter(|t| !t.is_empty())
+        .map(|t| t.iter().map(|(r, c)| (*r, c.to_linear().to_f32_array())).collect());
+    let scale_keys = o.scale_along.as_deref().filter(|s| !s.is_empty());
+    let pieces = if o.twist != 0.0 || scale_keys.is_some() || tint_keys.is_some() {
+        (o.detail.segments() / 4).max(1) as usize
+    } else {
+        1
+    };
+    let segs = if closed { n } else { n - 1 };
+    let mut pos: Vec<Vec3> = Vec::with_capacity(segs * pieces + 1);
+    for s in 0..segs {
+        let (a, b) = (pts[s], pts[(s + 1) % n]);
+        for k in 0..pieces {
+            pos.push(a.lerp(b, k as f32 / pieces as f32));
+        }
+    }
+    if !closed {
+        pos.push(pts[n - 1]);
+    }
+
+    // Openings add rings wherever their outline or chains change slope.
+    let mut levels: Vec<f32> = ring.pts.iter().map(|p| p.y).collect();
+    levels.sort_by(f32::total_cmp);
+    levels.dedup_by(|a, b| (*a - *b).abs() < 1e-6);
+    let (ymin, ymax) = (levels[0], levels[levels.len() - 1]);
+    let prepared = prepare_openings(&o.openings, path_length(&pos, closed), closed);
+    let mut stations: Vec<f32> = prepared.iter().flat_map(|p| p.stations(&levels)).collect();
+    insert_stations(&mut pos, closed, &mut stations);
+    let m = pos.len();
+
+    let dirs: Vec<Vec3> = (0..if closed { m } else { m - 1 })
+        .map(|i| (pos[(i + 1) % m] - pos[i]).normalize())
+        .collect();
+    let mut dist = vec![0.0_f32; m];
+    for i in 1..m {
+        dist[i] = dist[i - 1] + pos[i].distance(pos[i - 1]);
+    }
+    let total = path_length(&pos, closed);
+    let ratio: Vec<f32> = dist.iter().map(|d| d / total).collect();
+
+    // Joint tangents (bisectors) and the bend axis with its mitre factor.
+    let mut tans: Vec<Vec3> = Vec::with_capacity(m);
+    let mut bends: Vec<Option<(Vec3, f32)>> = Vec::with_capacity(m);
+    for i in 0..m {
+        if !closed && (i == 0 || i == m - 1) {
+            tans.push(if i == 0 { dirs[0] } else { dirs[m - 2] });
+            bends.push(None);
+            continue;
+        }
+        let prev = dirs[(i + dirs.len() - 1) % dirs.len()];
+        let next = dirs[i % dirs.len()];
+        let t = (prev + next).try_normalize().unwrap_or(next);
+        let scale = (1.0 / t.dot(next).max(1.0 / SWEEP_MAX_MITRE)).min(SWEEP_MAX_MITRE);
+        tans.push(t);
+        bends.push((next - prev).try_normalize().map(|b| (b, scale)));
+    }
+
+    // Parallel-transport frames `(right, up)`, `right x up == forward`.
+    let up_hint = o.up.try_normalize().unwrap_or(Vec3::Y);
+    let mut right = up_hint.cross(tans[0]);
+    if right.length_squared() < 1e-6 {
+        right = (if tans[0].y.abs() < 0.9 { Vec3::Y } else { Vec3::X }).cross(tans[0]);
+    }
+    let mut right = right.normalize();
+    let mut frames: Vec<(Vec3, Vec3)> = Vec::with_capacity(m);
+    for i in 0..m {
+        if i > 0 {
+            right = Quat::from_rotation_arc(tans[i - 1], tans[i]) * right;
+        }
+        right = (right - tans[i] * right.dot(tans[i]))
+            .try_normalize()
+            .unwrap_or_else(|| tans[i].any_orthonormal_vector());
+        frames.push((right, tans[i].cross(right)));
+    }
+    if closed {
+        // Parallel transport around a loop returns twisted; spread the
+        // difference over the loop so the last ring meets the first.
+        let end = Quat::from_rotation_arc(tans[m - 1], tans[0]) * frames[m - 1].0;
+        let start = frames[0].0;
+        let angle = end.cross(start).dot(tans[0]).atan2(end.dot(start));
+        for i in 0..m {
+            let rot = Quat::from_axis_angle(tans[i], angle * ratio[i]);
+            frames[i] = (rot * frames[i].0, rot * frames[i].1);
+        }
+    }
+
+    // Profile outline data.
+    let np = ring.len();
+    let mut u = vec![0.0_f32; np];
+    for k in 1..np {
+        u[k] = u[k - 1] + ring.pts[k].distance(ring.pts[k - 1]);
+    }
+    let perimeter = u[np - 1] + ring.pts[np - 1].distance(ring.pts[0]);
+    for v in &mut u {
+        *v /= perimeter;
+    }
+
+    let mut rings = SweepRings {
+        pos,
+        tans,
+        frames,
+        bends,
+        scale: Vec::with_capacity(m),
+        spin: Vec::with_capacity(m),
+        color: Vec::with_capacity(m),
+        ratio,
+        pts: ring.pts.clone(),
+        edge_n: (0..np).map(|k| ring.edge_normal(k)).collect(),
+        u,
+        outs: Vec::with_capacity(m),
+        ins: Vec::with_capacity(m),
+    };
+    for i in 0..m {
+        let r = rings.ratio[i];
+        rings.scale.push(
+            scale_keys
+                .and_then(|k| sample_keys(k, r, |a: Vec2, b: Vec2, t| a.lerp(b, t)))
+                .unwrap_or(Vec2::ONE)
+                .max(Vec2::splat(1e-4)),
+        );
+        rings.spin.push((std::f32::consts::TAU * o.twist * r).sin_cos());
+        rings.color.push(
+            tint_keys
+                .as_deref()
+                .and_then(|k| {
+                    sample_keys(k, r, |a: [f32; 4], b: [f32; 4], t| {
+                        std::array::from_fn(|j| a[j] + (b[j] - a[j]) * t)
+                    })
+                })
+                .unwrap_or(WHITE),
+        );
+    }
+
+    let mut data = MeshData::default();
+    for i in 0..m {
+        let mut out = Vec::with_capacity(np);
+        let mut inn = Vec::with_capacity(np);
+        for k in 0..np {
+            let position = rings.place(i, rings.pts[k]);
+            let (prev_n, next_n) = (rings.edge_n[(k + np - 1) % np], rings.edge_n[k]);
+            let split = prev_n.dot(next_n) <= SWEEP_SMOOTH_COS;
+            let smooth = (prev_n + next_n).normalize_or(next_n);
+            let (r, color) = (rings.ratio[i], rings.color[i]);
+            if split || k == 0 {
+                let (in_n, out_n) = if split { (prev_n, next_n) } else { (smooth, smooth) };
+                let u_in = if k == 0 { 1.0 } else { rings.u[k] };
+                inn.push(data.push(position, rings.normal(i, in_n), Vec2::new(u_in, r), color));
+                out.push(data.push(position, rings.normal(i, out_n), Vec2::new(rings.u[k], r), color));
+            } else {
+                let v = data.push(position, rings.normal(i, smooth), Vec2::new(rings.u[k], r), color);
+                inn.push(v);
+                out.push(v);
+            }
+        }
+        rings.outs.push(out);
+        rings.ins.push(inn);
+    }
+
+    // Strips between consecutive rings, one quad per profile edge. Cells inside
+    // an opening are rebuilt around the hole.
+    let eps_s = total * 1e-4;
+    for i in 0..if closed { m } else { m - 1 } {
+        let j = (i + 1) % m;
+        let (si, sj) = (dist[i], if j == 0 { total } else { dist[j] });
+        let sm = 0.5 * (si + sj);
+        let cut = prepared.iter().position(|op| sm > op.s0 && sm < op.s1);
+        for e in 0..np {
+            let e1 = (e + 1) % np;
+            let (pa, pb) = (rings.pts[e], rings.pts[e1]);
+            let horizontal = (pb.y - pa.y).abs() < 1e-6;
+            let (ylo, yhi) = (pa.y.min(pb.y), pa.y.max(pb.y));
+            let upward = pb.y > pa.y;
+            // Region of the strip between heights `p` and `q` on each ring.
+            let region = |data: &mut MeshData, p_i: f32, q_i: f32, p_j: f32, q_j: f32| {
+                if q_i - p_i < SWEEP_TOL && q_j - p_j < SWEEP_TOL {
+                    return;
+                }
+                let (a_i, b_i) = if upward { (p_i, q_i) } else { (q_i, p_i) };
+                let (a_j, b_j) = if upward { (p_j, q_j) } else { (q_j, p_j) };
+                let poly = [
+                    rings.cut_vertex(data, i, e, a_i),
+                    rings.cut_vertex(data, i, e, b_i),
+                    rings.cut_vertex(data, j, e, b_j),
+                    rings.cut_vertex(data, j, e, a_j),
+                ];
+                fan(data, &poly);
+            };
+            match cut {
+                Some(k) => {
+                    let op = &prepared[k];
+                    if horizontal {
+                        // A flat strip is either wholly inside the hole (gone)
+                        // or untouched.
+                        let (l, h) = op.span(sm);
+                        if pa.y < l - SWEEP_TOL || pa.y > h + SWEEP_TOL {
+                            let (a, b) = (rings.outs[i][e], rings.ins[i][e1]);
+                            let (c, d) = (rings.outs[j][e], rings.ins[j][e1]);
+                            data.tri(a, b, c);
+                            data.tri(b, d, c);
+                        }
+                        continue;
+                    }
+                    let (l_i, h_i) = op.span(si);
+                    let (l_j, h_j) = op.span(sj);
+                    let cl = |v: f32| v.clamp(ylo, yhi);
+                    region(&mut data, ylo, cl(l_i), ylo, cl(l_j));
+                    region(&mut data, cl(h_i), yhi, cl(h_j), yhi);
+                }
+                None => {
+                    // Rings next to an opening share their edge with the jamb,
+                    // so the hole's corner heights join that edge.
+                    let mut on_j: Vec<f32> = Vec::new();
+                    let mut on_i: Vec<f32> = Vec::new();
+                    if !horizontal {
+                        for op in &prepared {
+                            if (sj - op.s0).abs() <= eps_s {
+                                let (l, h) = op.span(op.s0);
+                                on_j.extend([l, h]);
+                            }
+                            if (si - op.s1).abs() <= eps_s {
+                                let (l, h) = op.span(op.s1);
+                                on_i.extend([l, h]);
+                            }
+                        }
+                    }
+                    let inside = |h: &f32| *h > ylo + SWEEP_TOL && *h < yhi - SWEEP_TOL;
+                    on_j.retain(inside);
+                    on_i.retain(inside);
+                    let lam = |h: f32| (h - pa.y) / (pb.y - pa.y);
+                    on_j.sort_by(|a, b| lam(*b).total_cmp(&lam(*a)));
+                    on_i.sort_by(|a, b| lam(*a).total_cmp(&lam(*b)));
+                    on_j.dedup_by(|a, b| (*a - *b).abs() < SWEEP_TOL);
+                    on_i.dedup_by(|a, b| (*a - *b).abs() < SWEEP_TOL);
+                    let (a, b) = (rings.outs[i][e], rings.ins[i][e1]);
+                    let (c, d) = (rings.outs[j][e], rings.ins[j][e1]);
+                    if on_i.is_empty() && on_j.is_empty() {
+                        data.tri(a, b, c);
+                        data.tri(b, d, c);
+                    } else {
+                        // Polygon a -> b -> d -> c, extras on the shared edge;
+                        // fan from a corner that is not on that edge.
+                        let mut poly = vec![a];
+                        for h in &on_i {
+                            poly.push(rings.cut_vertex(&mut data, i, e, *h));
+                        }
+                        poly.extend([b, d]);
+                        for h in &on_j {
+                            poly.push(rings.cut_vertex(&mut data, j, e, *h));
+                        }
+                        poly.push(c);
+                        let start = if on_i.is_empty() { 0 } else { poly.len() - 2 };
+                        poly.rotate_left(start);
+                        fan(&mut data, &poly);
+                    }
+                }
+            }
+        }
+
+        // Sill and lintel of the hole inside this cell.
+        if let Some(k) = cut {
+            let op = &prepared[k];
+            let (l_i, h_i) = op.span(si);
+            let (l_j, h_j) = op.span(sj);
+            let clamp = |v: f32| v.clamp(ymin, ymax);
+            for (a, b, toward) in [(l_i, l_j, 1.0), (h_i, h_j, -1.0)] {
+                let (a, b) = (clamp(a), clamp(b));
+                let at = |v: f32, edge: f32| (v - edge).abs() <= SWEEP_TOL;
+                if (at(a, ymin) && at(b, ymin)) || (at(a, ymax) && at(b, ymax)) {
+                    continue;
+                }
+                let (Some((l0, r0)), Some((l1, r1))) =
+                    (rings.cross_points(a), rings.cross_points(b))
+                else {
+                    continue;
+                };
+                flat_quad(
+                    &mut data,
+                    [
+                        rings.place(i, l0),
+                        rings.place(i, r0),
+                        rings.place(j, r1),
+                        rings.place(j, l1),
+                    ],
+                    rings.frames[i].1 * toward,
+                    rings.color[i],
+                );
+            }
+        }
+    }
+
+    // Jambs: the hole's two ends.
+    for op in &prepared {
+        for (s, sign) in [(op.s0, 1.0), (op.s1, -1.0)] {
+            let Some(r) = (0..m).find(|&r| (dist[r] - s).abs() <= eps_s) else {
+                continue;
+            };
+            let (l, h) = op.span(s);
+            let (l, h) = (l.clamp(ymin, ymax), h.clamp(ymin, ymax));
+            if h - l <= SWEEP_TOL {
+                continue;
+            }
+            let (Some((l0, r0)), Some((l1, r1))) = (rings.cross_points(l), rings.cross_points(h))
+            else {
+                continue;
+            };
+            flat_quad(
+                &mut data,
+                [
+                    rings.place(r, l0),
+                    rings.place(r, r0),
+                    rings.place(r, r1),
+                    rings.place(r, l1),
+                ],
+                rings.tans[r] * sign,
+                rings.color[r],
+            );
+        }
+    }
+
+    // Flat caps over the profile polygon.
+    if !closed && o.caps {
+        let tris = ear_clip(&ring.pts);
+        let (lo, hi) = ring
+            .pts
+            .iter()
+            .fold((Vec2::splat(f32::MAX), Vec2::splat(f32::MIN)), |(l, h), p| {
+                (l.min(*p), h.max(*p))
+            });
+        let size = (hi - lo).max(Vec2::splat(1e-6));
+        for (i, start) in [(0, true), (m - 1, false)] {
+            let normal = if start { -rings.tans[i] } else { rings.tans[i] };
+            let base = data.positions.len() as u32;
+            for k in 0..np {
+                data.push(
+                    rings.place(i, ring.pts[k]),
+                    normal,
+                    (ring.pts[k] - lo) / size,
+                    rings.color[i],
+                );
+            }
+            for t in tris.chunks_exact(3) {
+                if start {
+                    data.tri(base + t[0], base + t[2], base + t[1]);
+                } else {
+                    data.tri(base + t[0], base + t[1], base + t[2]);
+                }
+            }
+        }
+    }
+
+    data.into_mesh(tint_keys.is_some())
+}
+
 // ─── 2D ring helpers ───
 
 fn signed_area(ring: &[Vec2]) -> f32 {

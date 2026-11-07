@@ -1,6 +1,6 @@
 [package]
 name = "bevy_gradmesh"
-version = "0.2.4"
+version = "0.2.5"
 authors = ["Jessica Collins (https://github.com/xenacool)"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
@@ -86,6 +86,14 @@ path = "examples/gradient_2d.rs"
 [[example]]
 name = "sdf_2d"
 path = "examples/sdf_2d.rs"
+
+[[example]]
+name = "sdf_dash_gallery"
+path = "examples/sdf_dash_gallery.rs"
+
+[[example]]
+name = "sweep"
+path = "examples/sweep.rs"
 
 [[example]]
 name = "composed_shapes"

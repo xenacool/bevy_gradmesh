@@ -89,8 +89,10 @@ pub use outline::{arch, blob, rounded_rectangle};
 pub use plugin::{GradMeshMobilePlugin, GradMeshPlugin, MeshCache};
 pub use render_pipeline::{GradMeshBatchItem, InstancedBatch, InstancedBufferData, InstancedStats};
 pub use retained::{GradMeshHandle, RetainedWorld};
-pub use sdf2d::{SdfKind, SdfMaterial2d, SdfMaterial2dPlugin, SdfUniform, unit_quad};
-pub use shape::{Shape, ShapeBounds, ShapeDetail, ShapePart};
+pub use sdf2d::{
+    Dash2d, DashSnap, SdfGradient, SdfKind, SdfMaterial2d, SdfMaterial2dPlugin, SdfUniform, unit_quad,
+};
+pub use shape::{Shape, ShapeBounds, ShapeDetail, ShapePart, SweepOpening, SweepOptions};
 pub use spline::{BakedSpline, CatmullRomSpline, SplineFrame};
 pub use standalone_pipeline::{
     StandaloneBatchData, StandalonePipeline, StandalonePipelineKey, StandaloneRenderPlugin,

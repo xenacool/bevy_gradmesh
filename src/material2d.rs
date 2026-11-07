@@ -81,7 +81,7 @@ impl Style {
     /// (roughness, metallic, emissive) have no effect on the unlit 2D material.
     pub fn build_2d(&self) -> GradMeshMaterial2d {
         GradMeshMaterial2d {
-            uniforms: self.build().extension.uniforms,
+            uniforms: self.build_uniforms(),
             appearance: AppearanceSnapshot::static_appearance().to_vec4(),
             translucent: self.is_translucent(),
         }

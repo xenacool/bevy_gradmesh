@@ -506,6 +506,10 @@ impl RetainedWorld {
     /// into batches, and spawns `InstancedBatchData` entities.
     ///
     /// Returns the spawned entity IDs.
+    ///
+    /// Only available with the `pbr` feature, since the instanced renderer needs
+    /// `bevy_pbr`.
+    #[cfg(feature = "pbr")]
     pub fn flush(
         &mut self,
         commands: &mut Commands,

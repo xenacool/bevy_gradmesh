@@ -401,7 +401,7 @@ fn apply_deformation(
 
 /// GPU uniform for GradMesh material extension.
 ///
-/// 10 Vec4 fields = 160 bytes total, bound at slot 100.
+/// 15 Vec4 fields = 240 bytes total, bound at slot 100.
 struct GradMeshUniform {
     color: vec4<f32>,
     secondary_color: vec4<f32>,
@@ -417,6 +417,10 @@ struct GradMeshUniform {
     stripes_amount: vec4<f32>,
     // Rim light: (linear rgb, power).
     rim: vec4<f32>,
+    // Height-band colours (linear rgba), lowest band first (colour mode 3).
+    bands: array<vec4<f32>, 4>,
+    // Height each band starts at; unused slots hold a huge value.
+    band_heights: vec4<f32>,
 }
 
 @group(3) @binding(100)
@@ -514,6 +518,23 @@ fn local_position(in: VertexOutput) -> vec3<f32> {
     );
 }
 
+/// Colour (linear rgba) of the height band a world-space `y` falls in: a band
+/// holds from its height up to the next one, and the first band holds below.
+fn height_band_color(y: f32) -> vec4<f32> {
+    let h = gradmesh.band_heights;
+    var c = gradmesh.bands[0];
+    if (y >= h.y) {
+        c = gradmesh.bands[1];
+    }
+    if (y >= h.z) {
+        c = gradmesh.bands[2];
+    }
+    if (y >= h.w) {
+        c = gradmesh.bands[3];
+    }
+    return c;
+}
+
 @fragment
 fn fragment(
     in: VertexOutput,
@@ -523,8 +544,14 @@ fn fragment(
 
     let progress = compute_gradient_progress_material(in);
 
+    // Colour mode 3 colours by world height instead of by gradient.
+    let by_height = gradmesh.flags.x > 2.5;
+    let band = height_band_color(in.world_position.y);
+
     var base_color = srgb_to_linear(gradmesh.color.rgb);
-    if (gradmesh.flags.x > 0.5) {
+    if (by_height) {
+        base_color = band.rgb;
+    } else if (gradmesh.flags.x > 0.5) {
         base_color = mix_colors(
             gradmesh.color.rgb,
             gradmesh.secondary_color.rgb,
@@ -596,7 +623,9 @@ fn fragment(
 
     // Gradient alpha blends between both colours along the gradient.
     var alpha_w = gradmesh.color.w;
-    if (gradmesh.flags.x > 0.5) {
+    if (by_height) {
+        alpha_w = band.a;
+    } else if (gradmesh.flags.x > 0.5) {
         alpha_w = mix(gradmesh.color.w, gradmesh.secondary_color.w, progress);
     }
     let blended = apply_blend_mode(out.color.rgb, in.position.xy, gradmesh.flags, alpha_w);

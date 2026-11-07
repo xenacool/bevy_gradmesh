@@ -75,13 +75,13 @@ fn setup(
     spawn(
         &mut commands,
         SdfMaterial2d::disc(80.0).with_colors(warm.0, warm.1),
-        Vec2::new(-450.0, 190.0),
+        Vec2::new(-450.0, 255.0),
         0.0,
     );
     spawn(
         &mut commands,
         SdfMaterial2d::ellipse(Vec2::new(110.0, 65.0)).with_colors(cool.0, cool.1),
-        Vec2::new(-210.0, 190.0),
+        Vec2::new(-210.0, 255.0),
         0.0,
     );
     spawn(
@@ -90,7 +90,7 @@ fn setup(
             .with_corner_radius(36.0)
             .with_colors(warm.0, cool.1)
             .with_gradient_direction(Vec2::new(1.0, -1.0)),
-        Vec2::new(60.0, 190.0),
+        Vec2::new(60.0, 255.0),
         0.0,
     );
     spawn(
@@ -99,7 +99,7 @@ fn setup(
             .with_colors(Color::srgb(1.0, 0.1, 0.3), Color::srgb(0.1, 0.9, 1.0))
             .with_mix_space(MixSpace::Oklch)
             .with_gradient_direction(Vec2::Y),
-        Vec2::new(330.0, 190.0),
+        Vec2::new(330.0, 255.0),
         0.0,
     );
 
@@ -109,7 +109,7 @@ fn setup(
         SdfMaterial2d::disc(80.0)
             .with_rim(12.0)
             .with_color(Color::srgb(0.5, 0.9, 0.6)),
-        Vec2::new(-450.0, -20.0),
+        Vec2::new(-450.0, 90.0),
         0.0,
     );
     spawn(
@@ -118,7 +118,7 @@ fn setup(
             .with_corner_radius(20.0)
             .with_rim(8.0)
             .with_color(Color::srgb(0.95, 0.65, 0.3)),
-        Vec2::new(-210.0, -20.0),
+        Vec2::new(-210.0, 90.0),
         0.0,
     );
     spawn(
@@ -126,7 +126,7 @@ fn setup(
         SdfMaterial2d::ellipse(Vec2::new(110.0, 65.0))
             .with_rim(6.0)
             .with_colors(cool.0, cool.1),
-        Vec2::new(60.0, -20.0),
+        Vec2::new(60.0, 90.0),
         0.0,
     );
     // Thin rim: sub-pixel-ish AA check.
@@ -135,7 +135,7 @@ fn setup(
         SdfMaterial2d::disc(80.0)
             .with_rim(1.5)
             .with_color(Color::WHITE),
-        Vec2::new(330.0, -20.0),
+        Vec2::new(330.0, 90.0),
         0.0,
     );
 
@@ -146,7 +146,7 @@ fn setup(
             .with_rim(14.0)
             .with_arc(0.0, PI * 1.2)
             .with_colors(warm.0, warm.1),
-        Vec2::new(-450.0, -230.0),
+        Vec2::new(-450.0, -75.0),
         0.0,
     );
     spawn(
@@ -154,7 +154,7 @@ fn setup(
         SdfMaterial2d::disc(80.0)
             .with_arc(PI * 0.25, PI * 0.5)
             .with_colors(cool.0, cool.1),
-        Vec2::new(-210.0, -230.0),
+        Vec2::new(-210.0, -75.0),
         0.0,
     );
     spawn(
@@ -163,7 +163,7 @@ fn setup(
             .with_rim(18.0)
             .with_arc(0.0, TAU * 0.35)
             .with_color(Color::srgb(0.9, 0.5, 0.9)),
-        Vec2::new(60.0, -230.0),
+        Vec2::new(60.0, -75.0),
         0.0,
     );
     spawn(
@@ -171,8 +171,45 @@ fn setup(
         SdfMaterial2d::rect(Vec2::new(200.0, 140.0))
             .with_corner_radius(30.0)
             .with_color(Color::srgba(0.4, 0.8, 1.0, 0.6)),
-        Vec2::new(330.0, -230.0),
+        Vec2::new(330.0, -75.0),
         1.0,
+    );
+
+    // Row 4: gradients fitted to the bounds (radial) and around the centre (angular).
+    let sunset = (Color::srgb(1.0, 0.85, 0.2), Color::srgb(0.7, 0.05, 0.4));
+    spawn(
+        &mut commands,
+        SdfMaterial2d::disc(80.0)
+            .with_colors(sunset.0, sunset.1)
+            .with_radial_gradient(),
+        Vec2::new(-450.0, -240.0),
+        0.0,
+    );
+    spawn(
+        &mut commands,
+        SdfMaterial2d::rect(Vec2::new(200.0, 140.0))
+            .with_corner_radius(30.0)
+            .with_colors(cool.1, cool.0)
+            .with_radial_gradient(),
+        Vec2::new(-210.0, -240.0),
+        0.0,
+    );
+    spawn(
+        &mut commands,
+        SdfMaterial2d::disc(80.0)
+            .with_colors(Color::srgb(1.0, 0.1, 0.3), Color::srgb(0.1, 0.9, 1.0))
+            .with_angular_gradient(0.0),
+        Vec2::new(60.0, -240.0),
+        0.0,
+    );
+    spawn(
+        &mut commands,
+        SdfMaterial2d::ellipse(Vec2::new(110.0, 65.0))
+            .with_colors(Color::srgb(1.0, 0.1, 0.3), Color::srgb(0.1, 0.9, 1.0))
+            .with_angular_sweep(PI * 0.5)
+            .with_mix_space(MixSpace::Oklch),
+        Vec2::new(330.0, -240.0),
+        0.0,
     );
 }
 

@@ -194,6 +194,44 @@ fn setup(
         true,
     );
 
+    // Terrain: two neighbouring heightfield chunks over the same hills. The right
+    // chunk is sampled more coarsely, so its edge does not meet the left one's and
+    // the skirts have a real crack to hide.
+    let hills = |x: f32, z: f32| 0.55 + 0.45 * (x * 1.3).sin() * (z * 1.1).cos();
+    let chunk = |centre: Vec2, samples: u32, key: u64| {
+        let extent = Vec2::splat(2.5);
+        let heights: Vec<f32> = (0..samples)
+            .flat_map(|j| (0..samples).map(move |i| (i, j)))
+            .map(|(i, j)| {
+                let u = i as f32 / (samples - 1) as f32 - 0.5;
+                let v = j as f32 / (samples - 1) as f32 - 0.5;
+                hills(centre.x + u * extent.x, centre.y + v * extent.y)
+            })
+            .collect();
+        Shape::heightfield(UVec2::splat(samples), extent, heights.into(), key, d)
+    };
+    // Grass, rock and snow by world height: the bands follow the terrain, so the
+    // two chunks agree on colour at their shared edge.
+    let terrain_style = Style::opaque(Color::WHITE)
+        .with_height_bands(&[
+            (-1.0, Color::srgb(0.30, 0.55, 0.25)),
+            (0.7, Color::srgb(0.50, 0.46, 0.42)),
+            (0.98, Color::srgb(0.95, 0.96, 1.0)),
+        ])
+        .with_perceptual_roughness(0.95);
+    for (centre, samples, key) in [
+        (Vec2::new(5.0, -2.0), 17, 1),
+        (Vec2::new(7.5, -2.0), 6, 2),
+    ] {
+        piece(
+            &mut commands,
+            &chunk(centre, samples, key),
+            &terrain_style,
+            Transform::from_xyz(centre.x, 0.0, centre.y),
+            true,
+        );
+    }
+
     // Ghost preview: translucent and casting no shadow.
     let ghost_style = Style::shaded(Color::srgb(0.5, 0.9, 0.7), 0.5).with_alpha(0.45);
     piece(

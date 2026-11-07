@@ -12,6 +12,7 @@ use bevy::math::Vec3;
 use bevy::reflect::Reflect;
 use bevy::render::render_resource::{AsBindGroup, ShaderType};
 
+#[cfg(feature = "pbr")]
 use crate::mix_space::MixSpace;
 
 /// 16-byte aligned vec4 for GPU uniform buffers.
@@ -94,8 +95,8 @@ impl GradMeshUniform {
 
 /// GPU uniform buffer for the GradMesh material extension.
 ///
-/// All fields are `Vec4` (16 bytes each via `ShaderType`), so the total struct
-/// is 160 bytes. This single struct is bound at slot 100, avoiding conflicts
+/// All fields are `Vec4` (16 bytes each via `ShaderType`; 15 in total), so the total struct
+/// is 240 bytes. This single struct is bound at slot 100, avoiding conflicts
 /// with the base StandardMaterial's bindings (0–99).
 #[derive(Debug, Clone, Copy, Default, Reflect, ShaderType)]
 pub struct GradMeshUniformBuffer {
@@ -115,6 +116,11 @@ pub struct GradMeshUniformBuffer {
     pub stripes_amount: Vec4,
     /// Rim light: `(linear rgb, power)`; `power == 0` disables it.
     pub rim: Vec4,
+    /// Height-band colours (linear rgba), lowest band first. Used when the
+    /// colour mode is `3`; unused slots repeat the last band.
+    pub bands: [Vec4; 4],
+    /// Height each band starts at; unused slots hold `f32::MAX`.
+    pub band_heights: Vec4,
 }
 
 impl GradMeshUniformBuffer {
@@ -136,6 +142,8 @@ impl GradMeshUniformBuffer {
             stripes: Vec4::default(),
             stripes_amount: Vec4::default(),
             rim: Vec4::default(),
+            bands: [Vec4::default(); 4],
+            band_heights: Vec4::default(),
         }
     }
 
@@ -158,6 +166,8 @@ impl GradMeshUniformBuffer {
             stripes: Vec4::default(),
             stripes_amount: Vec4::default(),
             rim: Vec4::default(),
+            bands: [Vec4::default(); 4],
+            band_heights: Vec4::default(),
         }
     }
 }
