@@ -591,7 +591,7 @@ mod tests {
 
     #[test]
     fn retained_handle_validation() {
-        let mut world = RetainedWorld::new();
+        let world = RetainedWorld::new();
 
         // Create a fake handle with wrong world ID
         let bad_handle = GradMeshHandle {

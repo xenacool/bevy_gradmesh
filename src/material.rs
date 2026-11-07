@@ -105,7 +105,7 @@ impl GradMeshUniform {
 /// GPU uniform buffer for the GradMesh material extension.
 ///
 /// All fields are `Vec4` (16 bytes each via `ShaderType`), so the total struct
-/// is 96 bytes. This single struct is bound at slot 100, avoiding conflicts
+/// is 160 bytes. This single struct is bound at slot 100, avoiding conflicts
 /// with the base StandardMaterial's bindings (0–99).
 #[derive(Debug, Clone, Copy, Default, Reflect, ShaderType)]
 pub struct GradMeshUniformBuffer {
@@ -117,6 +117,14 @@ pub struct GradMeshUniformBuffer {
     /// World-space center of the shape, used for object-space gradient computation.
     /// Stored as (x, y, z, 0) — the shape's translation in world coordinates.
     pub world_center: Vec4,
+    /// Procedural noise: `(scale, amount, 0, 0)`; `amount == 0` disables it.
+    pub noise: Vec4,
+    /// Procedural stripes: `(direction.xyz, frequency)`.
+    pub stripes: Vec4,
+    /// Stripe strength: `(amount, 0, 0, 0)`; `amount == 0` disables stripes.
+    pub stripes_amount: Vec4,
+    /// Rim light: `(linear rgb, power)`; `power == 0` disables it.
+    pub rim: Vec4,
 }
 
 impl GradMeshUniformBuffer {
@@ -134,6 +142,10 @@ impl GradMeshUniformBuffer {
             flags,
             dash,
             world_center: Vec4::default(),
+            noise: Vec4::default(),
+            stripes: Vec4::default(),
+            stripes_amount: Vec4::default(),
+            rim: Vec4::default(),
         }
     }
 
@@ -152,6 +164,10 @@ impl GradMeshUniformBuffer {
             flags,
             dash,
             world_center,
+            noise: Vec4::default(),
+            stripes: Vec4::default(),
+            stripes_amount: Vec4::default(),
+            rim: Vec4::default(),
         }
     }
 }

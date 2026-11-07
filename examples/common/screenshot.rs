@@ -91,6 +91,7 @@ impl AutoScreenshotPlugin {
     ///
     /// Complex 3D scenes with many materials may need more frames for all
     /// shaders to compile and render correctly. Default is 1.
+    #[allow(dead_code)]
     pub fn wait_frames(mut self, frames: u32) -> Self {
         self.wait_frames = frames.max(1);
         self

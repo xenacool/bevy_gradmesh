@@ -1,10 +1,10 @@
 //! Mesh builders behind the extruded-polygon, polygon-with-holes, lathe and
-//! compound shapes, plus planar `UV_1` generation.
+//! compound shapes.
 //!
 //! These are plain functions over vertex data; [`Shape`](crate::Shape) wraps them.
 
 use bevy::color::{Color, ColorToComponents};
-use bevy::math::{Mat3, Quat, Rect, Vec2, Vec3};
+use bevy::math::{Mat3, Quat, Vec2, Vec3};
 use bevy::mesh::{Indices, VertexAttributeValues};
 use bevy::render::mesh::{Mesh, PrimitiveTopology};
 use bevy::transform::components::Transform;
@@ -671,7 +671,7 @@ pub(crate) fn bezier_2d_points(control_points: &[Vec2], segments: u32) -> Vec<Ve
         .collect()
 }
 
-// ─── Compound merge and UV_1 ───
+// ─── Compound merge ───
 
 fn read_f32x3(mesh: &Mesh, attr: bevy::mesh::MeshVertexAttribute) -> Option<Vec<Vec3>> {
     match mesh.attribute(attr)? {
@@ -736,25 +736,6 @@ pub(crate) fn merge_meshes(parts: &[(Mesh, Transform, Option<Color>)]) -> Mesh {
         }
     }
     data.into_mesh(any_colors)
-}
-
-/// Adds `UV_1` from a planar projection of the vertex positions onto `rect`
-/// (local X maps to U, local Z to V).
-pub(crate) fn add_planar_uv1(mesh: &mut Mesh, rect: Rect) {
-    let Some(positions) = read_f32x3(mesh, Mesh::ATTRIBUTE_POSITION) else {
-        return;
-    };
-    let size = (rect.max - rect.min).max(Vec2::splat(1e-6));
-    let uvs: Vec<[f32; 2]> = positions
-        .iter()
-        .map(|p| {
-            [
-                (p.x - rect.min.x) / size.x,
-                (p.z - rect.min.y) / size.y,
-            ]
-        })
-        .collect();
-    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_1, uvs);
 }
 
 #[cfg(test)]
@@ -1031,20 +1012,5 @@ mod tests {
         assert!((pts[8] - Vec2::new(2.0, 0.0)).length() < 1e-6);
         assert!((pts[4] - Vec2::new(1.0, 1.0)).length() < 1e-6);
         assert!(bezier_2d_points(&[Vec2::ZERO], 4).is_empty());
-    }
-
-    #[test]
-    fn planar_uv1_projects_xz() {
-        let mut mesh = lathe_mesh(&[Vec2::new(1.0, 0.0), Vec2::new(1.0, 1.0)], 4);
-        add_planar_uv1(&mut mesh, Rect::new(-1.0, -1.0, 1.0, 1.0));
-        let Some(VertexAttributeValues::Float32x2(uv1)) = mesh.attribute(Mesh::ATTRIBUTE_UV_1) else {
-            panic!("missing UV_1");
-        };
-        let pos = mesh_positions(&mesh);
-        assert_eq!(uv1.len(), pos.len());
-        for (p, uv) in pos.iter().zip(uv1) {
-            assert!((uv[0] - (p.x + 1.0) / 2.0).abs() < 1e-6);
-            assert!((uv[1] - (p.z + 1.0) / 2.0).abs() < 1e-6);
-        }
     }
 }

@@ -159,6 +159,43 @@ impl Dash {
     }
 }
 
+/// Procedural tint variation: smooth value noise in the entity's local space.
+///
+/// Gives stone, plaster and thatch some variety without textures or extra
+/// meshes. Set with [`Style::with_noise`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Noise {
+    /// Noise cells per unit of local space (higher is finer grained).
+    pub scale: f32,
+    /// How strongly the noise darkens and brightens the colour (`0.0..=1.0`).
+    pub amount: f32,
+}
+
+/// Procedural stripes: a sine pattern across the entity's local space.
+///
+/// Gives timber grain, thatch and bands without textures. Set with
+/// [`Style::with_stripes`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Stripes {
+    /// Direction the stripes advance in, in local space (normalized).
+    pub direction: Vec3,
+    /// Stripe periods per unit of local space.
+    pub frequency: f32,
+    /// How strongly the stripes darken and brighten the colour (`0.0..=1.0`).
+    pub amount: f32,
+}
+
+/// View-dependent rim light, added as emission towards the silhouette.
+///
+/// Set with [`Style::with_rim`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Rim {
+    /// Rim colour (linear; values above 1 glow).
+    pub color: LinearRgba,
+    /// Falloff exponent: higher values hug the silhouette more tightly.
+    pub power: f32,
+}
+
 /// Material style descriptor.
 ///
 /// Describes how a primitive should be shaded. Use the factory methods
@@ -189,8 +226,12 @@ pub struct Style {
     pub metallic: f32,
     /// Emissive colour override (`None` keeps the constructor's default).
     pub emissive: Option<LinearRgba>,
-    /// Exposure applied to Bevy lightmaps (`None` keeps Bevy's default of `1.0`).
-    pub lightmap_exposure: Option<f32>,
+    /// Procedural noise tint (`GradMeshMaterial` only).
+    pub noise: Option<Noise>,
+    /// Procedural stripe tint (`GradMeshMaterial` only).
+    pub stripes: Option<Stripes>,
+    /// View-dependent rim light (`GradMeshMaterial` only).
+    pub rim: Option<Rim>,
 }
 
 impl Style {
@@ -209,7 +250,9 @@ impl Style {
             perceptual_roughness: None,
             metallic: 0.0,
             emissive: None,
-            lightmap_exposure: None,
+            noise: None,
+            stripes: None,
+            rim: None,
         }
     }
 
@@ -228,7 +271,9 @@ impl Style {
             perceptual_roughness: None,
             metallic: 0.0,
             emissive: None,
-            lightmap_exposure: None,
+            noise: None,
+            stripes: None,
+            rim: None,
         }
     }
 
@@ -253,7 +298,9 @@ impl Style {
             perceptual_roughness: None,
             metallic: 0.0,
             emissive: None,
-            lightmap_exposure: None,
+            noise: None,
+            stripes: None,
+            rim: None,
         }
     }
 
@@ -299,7 +346,9 @@ impl Style {
             perceptual_roughness: None,
             metallic: 0.0,
             emissive: None,
-            lightmap_exposure: None,
+            noise: None,
+            stripes: None,
+            rim: None,
         }
     }
 
@@ -318,7 +367,9 @@ impl Style {
             perceptual_roughness: None,
             metallic: 0.0,
             emissive: None,
-            lightmap_exposure: None,
+            noise: None,
+            stripes: None,
+            rim: None,
         }
     }
 
@@ -337,7 +388,9 @@ impl Style {
             perceptual_roughness: None,
             metallic: 0.0,
             emissive: None,
-            lightmap_exposure: None,
+            noise: None,
+            stripes: None,
+            rim: None,
         }
     }
 
@@ -356,7 +409,9 @@ impl Style {
             perceptual_roughness: None,
             metallic: 0.0,
             emissive: None,
-            lightmap_exposure: None,
+            noise: None,
+            stripes: None,
+            rim: None,
         }
     }
 
@@ -375,7 +430,9 @@ impl Style {
             perceptual_roughness: None,
             metallic: 0.0,
             emissive: None,
-            lightmap_exposure: None,
+            noise: None,
+            stripes: None,
+            rim: None,
         }
     }
 
@@ -394,7 +451,9 @@ impl Style {
             perceptual_roughness: None,
             metallic: 0.0,
             emissive: None,
-            lightmap_exposure: None,
+            noise: None,
+            stripes: None,
+            rim: None,
         }
     }
 
@@ -413,7 +472,9 @@ impl Style {
             perceptual_roughness: None,
             metallic: 0.0,
             emissive: None,
-            lightmap_exposure: None,
+            noise: None,
+            stripes: None,
+            rim: None,
         }
     }
 
@@ -432,7 +493,9 @@ impl Style {
             perceptual_roughness: None,
             metallic: 0.0,
             emissive: None,
-            lightmap_exposure: None,
+            noise: None,
+            stripes: None,
+            rim: None,
         }
     }
 
@@ -451,7 +514,9 @@ impl Style {
             perceptual_roughness: None,
             metallic: 0.0,
             emissive: None,
-            lightmap_exposure: None,
+            noise: None,
+            stripes: None,
+            rim: None,
         }
     }
 
@@ -470,7 +535,9 @@ impl Style {
             perceptual_roughness: None,
             metallic: 0.0,
             emissive: None,
-            lightmap_exposure: None,
+            noise: None,
+            stripes: None,
+            rim: None,
         }
     }
 
@@ -493,7 +560,9 @@ impl Style {
             perceptual_roughness: None,
             metallic: 0.0,
             emissive: None,
-            lightmap_exposure: None,
+            noise: None,
+            stripes: None,
+            rim: None,
         }
     }
 
@@ -547,14 +616,50 @@ impl Style {
         self
     }
 
-    /// Sets the exposure applied when the entity carries a Bevy `Lightmap`.
+    /// Adds procedural noise: smooth tint variation in the entity's local space.
     ///
-    /// Gradient materials honour lightmaps: the baked texture supplies the
-    /// indirect diffuse light and the gradient colours the surface on top. The
-    /// mesh needs `UV_1`; see [`Shape::with_planar_uv1`](crate::Shape::with_planar_uv1).
+    /// `scale` is the number of noise cells per local unit and `amount`
+    /// (`0.0..=1.0`) how far the colour is pushed darker and lighter. Because
+    /// the pattern lives in local space it sticks to the entity as it moves,
+    /// rotates and scales. Applies to [`GradMeshMaterial`]; `Style::lerp` blends it.
     #[must_use]
-    pub fn with_lightmap_exposure(mut self, exposure: f32) -> Self {
-        self.lightmap_exposure = Some(exposure.max(0.0));
+    pub fn with_noise(mut self, scale: f32, amount: f32) -> Self {
+        self.noise = Some(Noise {
+            scale: scale.max(0.0),
+            amount: amount.clamp(0.0, 1.0),
+        });
+        self
+    }
+
+    /// Adds procedural stripes along `direction` (local space, normalized;
+    /// falls back to `Vec3::Y` for a zero vector).
+    ///
+    /// `frequency` is the number of stripe periods per local unit and `amount`
+    /// (`0.0..=1.0`) how far the colour is pushed darker and lighter.
+    /// Applies to [`GradMeshMaterial`]; `Style::lerp` blends it.
+    #[must_use]
+    pub fn with_stripes(mut self, direction: Vec3, frequency: f32, amount: f32) -> Self {
+        self.stripes = Some(Stripes {
+            direction: direction.normalize_or(Vec3::Y),
+            frequency: frequency.max(0.0),
+            amount: amount.clamp(0.0, 1.0),
+        });
+        self
+    }
+
+    /// Adds a view-dependent rim light: `color` is added as emission where the
+    /// surface turns away from the camera, shaped by `power` (clamped to at
+    /// least `0.1`; higher values give a thinner rim).
+    ///
+    /// Use it to highlight a shape (for example the nearest petal of a radial
+    /// menu) without a second mesh. Applies to [`GradMeshMaterial`];
+    /// `Style::lerp` fades it in and out.
+    #[must_use]
+    pub fn with_rim(mut self, color: Color, power: f32) -> Self {
+        self.rim = Some(Rim {
+            color: color.to_linear(),
+            power: power.max(0.1),
+        });
         self
     }
 
@@ -630,11 +735,23 @@ impl Style {
             self.direction.z,
             self.metallic,
             self.perceptual_roughness.unwrap_or(-1.0),
-            self.lightmap_exposure.unwrap_or(-1.0),
         ] {
             v.to_bits().hash(&mut h);
         }
         self.direction_space.hash(&mut h);
+        if let Some(n) = self.noise {
+            [1.0, n.scale, n.amount].map(f32::to_bits).hash(&mut h);
+        }
+        if let Some(st) = self.stripes {
+            [2.0, st.direction.x, st.direction.y, st.direction.z, st.frequency, st.amount]
+                .map(f32::to_bits)
+                .hash(&mut h);
+        }
+        if let Some(r) = self.rim {
+            [3.0, r.color.red, r.color.green, r.color.blue, r.color.alpha, r.power]
+                .map(f32::to_bits)
+                .hash(&mut h);
+        }
         self.space.hash(&mut h);
         std::mem::discriminant(&self.shape_type).hash(&mut h);
         if let Some(d) = self.dash {
@@ -729,6 +846,85 @@ impl Style {
             _ => near.dash,
         };
 
+        // Surface detail fades in and out: a missing effect counts as the other
+        // endpoint's effect with zero strength.
+        let noise = if t <= 0.0 {
+            self.noise
+        } else if t >= 1.0 {
+            other.noise
+        } else {
+            match (self.noise, other.noise) {
+                (None, None) => None,
+                (a, b) => {
+                    let fill = |n: Option<Noise>, o: Option<Noise>| {
+                        n.unwrap_or(Noise {
+                            scale: o.map_or(1.0, |o| o.scale),
+                            amount: 0.0,
+                        })
+                    };
+                    let (a, b) = (fill(a, b), fill(b, a));
+                    Some(Noise {
+                        scale: mix(a.scale, b.scale),
+                        amount: mix(a.amount, b.amount),
+                    })
+                }
+            }
+        };
+        let stripes = if t <= 0.0 {
+            self.stripes
+        } else if t >= 1.0 {
+            other.stripes
+        } else {
+            match (self.stripes, other.stripes) {
+                (None, None) => None,
+                (a, b) => {
+                    let fill = |n: Option<Stripes>, o: Option<Stripes>| {
+                        n.unwrap_or(Stripes {
+                            direction: o.map_or(Vec3::Y, |o| o.direction),
+                            frequency: o.map_or(1.0, |o| o.frequency),
+                            amount: 0.0,
+                        })
+                    };
+                    let (a, b) = (fill(a, b), fill(b, a));
+                    Some(Stripes {
+                        direction: a
+                            .direction
+                            .lerp(b.direction, t)
+                            .normalize_or(near.stripes.map_or(a.direction, |s| s.direction)),
+                        frequency: mix(a.frequency, b.frequency),
+                        amount: mix(a.amount, b.amount),
+                    })
+                }
+            }
+        };
+        let rim = if t <= 0.0 {
+            self.rim
+        } else if t >= 1.0 {
+            other.rim
+        } else {
+            match (self.rim, other.rim) {
+                (None, None) => None,
+                (a, b) => {
+                    let fill = |n: Option<Rim>, o: Option<Rim>| {
+                        n.unwrap_or(Rim {
+                            color: LinearRgba::BLACK,
+                            power: o.map_or(1.0, |o| o.power),
+                        })
+                    };
+                    let (a, b) = (fill(a, b), fill(b, a));
+                    Some(Rim {
+                        color: LinearRgba {
+                            red: mix(a.color.red, b.color.red),
+                            green: mix(a.color.green, b.color.green),
+                            blue: mix(a.color.blue, b.color.blue),
+                            alpha: mix(a.color.alpha, b.color.alpha),
+                        },
+                        power: mix(a.power, b.power),
+                    })
+                }
+            }
+        };
+
         Self {
             blend_mode: near.blend_mode.clone(),
             color_mode: near.color_mode,
@@ -742,10 +938,9 @@ impl Style {
             perceptual_roughness,
             metallic: mix(self.metallic, other.metallic),
             emissive,
-            lightmap_exposure: match (self.lightmap_exposure, other.lightmap_exposure) {
-                (None, None) => None,
-                (a, b) => Some(mix(a.unwrap_or(1.0), b.unwrap_or(1.0))),
-            },
+            noise,
+            stripes,
+            rim,
         }
     }
 
@@ -782,6 +977,22 @@ impl Style {
         if self.direction_space == DirectionSpace::Local {
             uniforms.direction.w = 1.0;
         }
+        if let Some(n) = self.noise {
+            uniforms.noise = crate::material::Vec4::new(n.scale, n.amount, 0.0, 0.0);
+        }
+        if let Some(st) = self.stripes {
+            uniforms.stripes = crate::material::Vec4::new(
+                st.direction.x,
+                st.direction.y,
+                st.direction.z,
+                st.frequency,
+            );
+            uniforms.stripes_amount = crate::material::Vec4::new(st.amount, 0.0, 0.0, 0.0);
+        }
+        if let Some(r) = self.rim {
+            uniforms.rim =
+                crate::material::Vec4::new(r.color.red, r.color.green, r.color.blue, r.power);
+        }
         if self.color_mode != ColorMode::Single && self.is_translucent() {
             let a = self.color.alpha();
             let sa = self.secondary_color.map_or(a, |c| c.alpha());
@@ -800,9 +1011,6 @@ impl Style {
         material.base.metallic = self.metallic;
         if let Some(emissive) = self.emissive {
             material.base.emissive = emissive;
-        }
-        if let Some(exposure) = self.lightmap_exposure {
-            material.base.lightmap_exposure = exposure;
         }
         material
     }
@@ -1042,13 +1250,6 @@ mod tests {
         let from_default = Style::opaque(Color::WHITE).lerp(&b, 0.5).build();
         assert!((from_default.base.perceptual_roughness - 0.85).abs() < 1e-6);
         assert_eq!(a.lerp(&b, 0.0).metallic, 1.0);
-    }
-
-    #[test]
-    fn lightmap_exposure_is_written_to_the_material() {
-        assert_eq!(Style::opaque(Color::WHITE).build().base.lightmap_exposure, 1.0);
-        let m = Style::opaque(Color::WHITE).with_lightmap_exposure(4000.0).build();
-        assert_eq!(m.base.lightmap_exposure, 4000.0);
     }
 
     #[test]

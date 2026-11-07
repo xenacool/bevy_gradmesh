@@ -69,8 +69,8 @@ per-frame sync of an unchanged node allocates nothing.
 ## Style additions
 
 - `Style::shaded(color, dark_factor)`: lit `color`, shadow side `color * dark_factor` (linear RGB).
-- `with_perceptual_roughness`, `with_metallic`, `with_emissive`, `with_lightmap_exposure`: written to
-  the `StandardMaterial` base and blended by `Style::lerp`.
+- `with_perceptual_roughness`, `with_metallic`, `with_emissive`: written to the `StandardMaterial`
+  base and blended by `Style::lerp`.
 - `with_alpha`: multiplies both gradient colours' alpha; `Style::lerp` fades it.
 
 ### Gradient direction space
@@ -86,12 +86,29 @@ Translucent gradient materials still render in Bevy's shadow pass (alpha-tested 
 full shadow. Bevy decides shadow casting per entity: when `style.casts_shadows()` is `false`, add
 `NotShadowCaster` to the entity (see the `composed_shapes` example).
 
-### Lightmaps
+### Surface detail and rim glow
 
-Gradient materials honour Bevy lightmaps: the shared PBR path samples the baked texture from `UV_1` and
-the gradient colours the surface on top. Add `UV_1` with `Shape::with_planar_uv1(rect)` (planar
-projection of the local XZ plane), spawn the entity with Bevy's `Lightmap` component, and tune the
-brightness with `Style::with_lightmap_exposure`.
+`GradMeshMaterial` can vary the tint without textures:
+
+- `Style::with_noise(scale, amount)`: smooth value noise, `scale` cells per local unit.
+- `Style::with_stripes(direction, frequency, amount)`: bands along a local direction.
+- `Style::with_rim(color, power)`: view-dependent emission towards the silhouette, for example to
+  highlight the nearest petal of a radial menu.
+
+Noise and stripes live in the entity's local space, so they stay attached as it moves, turns and
+scales. All three are blended by `Style::lerp`.
+
+### Rounded roofs and gems
+
+`Shape::rounded_cone` and `Shape::rounded_pyramid` take a `roundness` from `0.0` (identical to `cone` and
+`pyramid`) to `1.0`. `Shape::regular_prism` already takes one. The rounded solid stays inside the sharp
+one, so footprints and heights are kept.
+
+### Bounds and kind
+
+`Shape::bounds()` and `Shape::bounds_2d()` return a `ShapeBounds` measured from the built vertices, and
+`Shape::is_round()` tells spheres, ellipsoids, discs, ellipses and rings from other shapes, so hit tests
+can approximate them with an ellipsoid.
 
 ### Picking
 

@@ -16,7 +16,8 @@ BevyGradmesh provides a clean API for generating procedural 3D primitives with p
 - **Compound shapes**: `Shape::compound` merges several shapes with transforms and tints into one mesh and one draw call
 - **Lathe**: `Shape::lathe` revolves a `(radius, height)` profile around Y
 - **Flat curves**: `Shape::polyline_2d` and `Shape::bezier_2d` with thickness
-- **Lightmap UVs**: `Shape::with_planar_uv1` adds a planar `UV_1` for Bevy `Lightmap`s
+- **Rounded roofs and gems**: `Shape::rounded_cone` and `Shape::rounded_pyramid` (and `regular_prism`) take a `roundness`
+- **Bounds**: `Shape::bounds`, `Shape::bounds_2d` and `Shape::is_round` read a shape's size and kind
 - **Detail levels**: Control mesh resolution from minimal (8 segments) to extreme (32 segments)
 
 ### 2D
@@ -42,7 +43,7 @@ BevyGradmesh provides a clean API for generating procedural 3D primitives with p
 - **Style helpers**: `Style::shaded(color, dark_factor)` for a one-colour gradient, `Style::with_alpha` for ghost previews, and `PartialEq` on `Style`, `Dash` and `AppearanceSnapshot`
 - **Gradient direction space**: world space by default; `Style::with_direction_space(DirectionSpace::Local)` makes the gradient follow the entity's rotation (for example Y-up meshes placed in a Z-up scene)
 - **Deduplication**: `MeshCache::get_or_build_handle` returns one `Handle<Mesh>` per equal `Shape`, and `GradMeshMaterialPool::get_or_add` one material per equal `Style`
-- **Lightmaps**: gradient materials honour Bevy lightmaps (the baked texture lights the surface, the gradient colours it); tune with `Style::with_lightmap_exposure`
+- **Surface detail**: `Style::with_noise` and `Style::with_stripes` vary the tint in local space; `Style::with_rim` adds a view-dependent rim glow
 - **Vertex tints**: per-vertex colours (compound part tints, `extruded_polygon_colored`) multiply the gradient
 - **Custom shader passthrough**: Attach any Bevy shader via `BlendMode::Custom`
 

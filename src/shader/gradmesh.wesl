@@ -401,7 +401,7 @@ fn apply_deformation(
 
 /// GPU uniform for GradMesh material extension.
 ///
-/// 6 Vec4 fields = 96 bytes total, bound at slot 100.
+/// 10 Vec4 fields = 160 bytes total, bound at slot 100.
 struct GradMeshUniform {
     color: vec4<f32>,
     secondary_color: vec4<f32>,
@@ -409,6 +409,14 @@ struct GradMeshUniform {
     flags: vec4<f32>,
     dash: vec4<f32>,
     world_center: vec4<f32>,
+    // Procedural noise: (scale, amount, 0, 0).
+    noise: vec4<f32>,
+    // Procedural stripes: (direction.xyz, frequency).
+    stripes: vec4<f32>,
+    // (stripe amount, 0, 0, 0).
+    stripes_amount: vec4<f32>,
+    // Rim light: (linear rgb, power).
+    rim: vec4<f32>,
 }
 
 @group(3) @binding(100)
@@ -462,6 +470,50 @@ fn compute_gradient_progress_material(in: VertexOutput) -> f32 {
     return 0.5;
 }
 
+// ─── Procedural surface detail ───
+
+/// Cheap 3D hash in [0, 1).
+fn hash13(p3: vec3<f32>) -> f32 {
+    var p = fract(p3 * 0.1031);
+    p += dot(p, p.zyx + 31.32);
+    return fract((p.x + p.y) * p.z);
+}
+
+/// Smooth trilinear value noise in [0, 1].
+fn value_noise(p: vec3<f32>) -> f32 {
+    let i = floor(p);
+    let f = fract(p);
+    let u = f * f * (3.0 - 2.0 * f);
+    let n000 = hash13(i);
+    let n100 = hash13(i + vec3<f32>(1.0, 0.0, 0.0));
+    let n010 = hash13(i + vec3<f32>(0.0, 1.0, 0.0));
+    let n110 = hash13(i + vec3<f32>(1.0, 1.0, 0.0));
+    let n001 = hash13(i + vec3<f32>(0.0, 0.0, 1.0));
+    let n101 = hash13(i + vec3<f32>(1.0, 0.0, 1.0));
+    let n011 = hash13(i + vec3<f32>(0.0, 1.0, 1.0));
+    let n111 = hash13(i + vec3<f32>(1.0, 1.0, 1.0));
+    return mix(
+        mix(mix(n000, n100, u.x), mix(n010, n110, u.x), u.y),
+        mix(mix(n001, n101, u.x), mix(n011, n111, u.x), u.y),
+        u.z,
+    );
+}
+
+/// Fragment position in the entity's local space (undoes rotation and scale),
+/// so procedural patterns stick to the entity as it moves, turns and resizes.
+fn local_position(in: VertexOutput) -> vec3<f32> {
+    let m = mesh_functions::get_world_from_local(in.instance_index);
+    let p = in.world_position.xyz - m[3].xyz;
+    let cx = m[0].xyz;
+    let cy = m[1].xyz;
+    let cz = m[2].xyz;
+    return vec3<f32>(
+        dot(p, cx) / max(dot(cx, cx), 0.00000001),
+        dot(p, cy) / max(dot(cy, cy), 0.00000001),
+        dot(p, cz) / max(dot(cz, cz), 0.00000001),
+    );
+}
+
 @fragment
 fn fragment(
     in: VertexOutput,
@@ -487,6 +539,21 @@ fn fragment(
     base_color = base_color * in.color.rgb;
 }
 
+    // Procedural noise and stripes vary the tint in the entity's local space.
+    if (gradmesh.noise.y > 0.0 || gradmesh.stripes_amount.x > 0.0) {
+        let local_pos = local_position(in);
+        var factor = 1.0;
+        if (gradmesh.noise.y > 0.0) {
+            let n = value_noise(local_pos * max(gradmesh.noise.x, 0.0001));
+            factor = factor * (1.0 + gradmesh.noise.y * (n * 2.0 - 1.0));
+        }
+        if (gradmesh.stripes_amount.x > 0.0) {
+            let phase = dot(local_pos, gradmesh.stripes.xyz) * gradmesh.stripes.w * TAU;
+            factor = factor * (1.0 + gradmesh.stripes_amount.x * sin(phase));
+        }
+        base_color = base_color * max(factor, 0.0);
+    }
+
     // Apply dash pattern if enabled (requires UV attributes on the mesh)
 @if(VERTEX_UVS_A) {
     let dash = gradmesh.dash;
@@ -504,6 +571,16 @@ fn fragment(
 }
 
     pbr_input.material.base_color = vec4<f32>(base_color, pbr_input.material.base_color.a);
+
+    // Rim light: emission that grows towards the silhouette.
+    if (gradmesh.rim.w > 0.0) {
+        let n_dot_v = clamp(dot(normalize(pbr_input.N), normalize(pbr_input.V)), 0.0, 1.0);
+        let rim_factor = pow(1.0 - n_dot_v, gradmesh.rim.w);
+        pbr_input.material.emissive = vec4<f32>(
+            pbr_input.material.emissive.rgb + gradmesh.rim.rgb * rim_factor,
+            pbr_input.material.emissive.a,
+        );
+    }
 
     pbr_input.material.base_color = alpha_discard(
         pbr_input.material.flags,

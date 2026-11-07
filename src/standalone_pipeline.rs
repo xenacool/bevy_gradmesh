@@ -23,7 +23,7 @@
 //! It uses `SpecializedMeshPipeline` with an empty key so all batches share
 //! a single pipeline specialization.
 //!
-//! ```
+//! ```text
 //! StandalonePipeline
 //! ├── Single render pipeline (no specialization per material)
 //! ├── Reuses Opaque3d binned render phase

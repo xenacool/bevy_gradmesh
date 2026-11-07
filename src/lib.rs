@@ -81,10 +81,12 @@ pub use plugin::{GradMeshPlugin, MeshCache};
 pub use render_pipeline::{GradMeshBatchItem, InstancedBatch, InstancedBufferData, InstancedStats};
 pub use retained::{GradMeshHandle, RetainedWorld};
 pub use outline::{arch, blob, rounded_rectangle};
-pub use shape::{Shape, ShapeDetail, ShapePart};
+pub use shape::{Shape, ShapeBounds, ShapeDetail, ShapePart};
 pub use spline::{BakedSpline, CatmullRomSpline, SplineFrame};
 pub use standalone_pipeline::{
     StandaloneBatchData, StandalonePipeline, StandalonePipelineKey, StandaloneRenderPlugin,
     render_standalone_batches,
 };
-pub use style::{BlendMode, ColorMode, Dash, DashType, DirectionSpace, ShapeType, Style};
+pub use style::{
+    BlendMode, ColorMode, Dash, DashType, DirectionSpace, Noise, Rim, ShapeType, Stripes, Style,
+};

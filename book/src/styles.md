@@ -47,6 +47,21 @@ nearer end. `Shape::lerp(&other, t)` interpolates the parameters of two shapes
 of the same kind and returns the nearer shape otherwise. Every distinct blended
 shape is a distinct mesh, so for smooth animation prefer scaling a fixed shape.
 
+Closed polygons (`arbitrary_polygon`, `extruded_polygon`, holes included) also
+morph when their vertex counts differ: both outlines are grown to the larger
+count by splitting their longest edges, the second is flipped to the first's
+winding and rotated to the start that moves points the least, and per-vertex
+colours blend along (a missing list counts as white). Open point lists such as
+polylines and curves of different lengths still snap to the nearer shape.
+
+## Reading Shape Bounds
+
+`Shape::bounds()` returns a `ShapeBounds` (`min`, `max`, `center()`, `size()`,
+`half_extents()`, `rect_xy()`) measured from the generated vertices, so it is
+exact for every shape kind. `Shape::bounds_2d()` does the same for
+`Shape::build_2d()`. Each call builds the mesh once; cache the result if you
+read it every frame.
+
 ## Dual-Radial Shading
 
 Gradient radiates from the center outward:

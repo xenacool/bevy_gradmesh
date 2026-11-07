@@ -1,5 +1,6 @@
 //! Composed 3D pieces: compound meshes, extruded polygons with holes, lathes,
-//! PBR styles, a rotated piece with a local gradient and a translucent ghost.
+//! PBR styles, rounded roofs and gems, procedural noise and stripes, a rim glow,
+//! a rotated piece with a local gradient and a translucent ghost.
 //!
 //! Run with: `cargo run --example composed_shapes`
 
@@ -105,14 +106,16 @@ fn setup(
             24,
             d,
         )),
-        ShapePart::new(Shape::cone(1.3, 1.4, d))
+        ShapePart::new(Shape::rounded_cone(1.3, 1.4, 0.45, d))
             .with_transform(Transform::from_xyz(0.0, 3.9, 0.0))
             .with_tint(Color::srgb(1.0, 0.7, 0.7)),
     ]);
     piece(
         &mut commands,
         &tower,
-        &Style::shaded(Color::srgb(0.88, 0.86, 0.82), 0.45).with_perceptual_roughness(0.9),
+        &Style::shaded(Color::srgb(0.88, 0.86, 0.82), 0.45)
+            .with_perceptual_roughness(0.9)
+            .with_stripes(Vec3::Y, 2.5, 0.08),
         Transform::from_xyz(-5.0, 0.0, 0.0),
         true,
     );
@@ -128,7 +131,9 @@ fn setup(
     piece(
         &mut commands,
         &wall,
-        &Style::shaded(Color::srgb(0.93, 0.85, 0.72), 0.5).with_perceptual_roughness(0.85),
+        &Style::shaded(Color::srgb(0.93, 0.85, 0.72), 0.5)
+            .with_perceptual_roughness(0.85)
+            .with_noise(4.0, 0.18),
         Transform::from_xyz(-0.8, 1.7, 0.0),
         true,
     );
@@ -180,10 +185,11 @@ fn setup(
     );
     piece(
         &mut commands,
-        &Shape::pyramid(6, 0.5, 0.7, ShapeDetail::Medium),
+        &Shape::rounded_pyramid(6, 0.5, 0.7, 0.5, ShapeDetail::High),
         &Style::shaded(Color::srgb(0.6, 0.8, 1.0), 0.3)
             .with_metallic(1.0)
-            .with_perceptual_roughness(0.2),
+            .with_perceptual_roughness(0.2)
+            .with_rim(Color::srgb(0.4, 0.7, 1.0), 3.0),
         Transform::from_xyz(4.4, 0.7, 1.0).with_rotation(Quat::from_rotation_x(std::f32::consts::PI)),
         true,
     );

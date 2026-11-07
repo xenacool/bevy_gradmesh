@@ -63,6 +63,57 @@ impl std::hash::Hash for Shape {
     }
 }
 
+/// Axis-aligned bounding box of a shape's geometry, in the shape's local space.
+///
+/// Returned by [`Shape::bounds`] and [`Shape::bounds_2d`]. Empty shapes (for
+/// example a polyline with fewer than two points) have a zero-sized box at the
+/// origin.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct ShapeBounds {
+    /// Smallest corner.
+    pub min: Vec3,
+    /// Largest corner.
+    pub max: Vec3,
+}
+
+impl From<ShapeBounds> for (Vec3, Vec3) {
+    fn from(b: ShapeBounds) -> Self {
+        (b.min, b.max)
+    }
+}
+
+impl ShapeBounds {
+    /// Bounds of a set of points; a zero box at the origin when empty.
+    pub fn from_points(points: impl IntoIterator<Item = Vec3>) -> Self {
+        let mut it = points.into_iter();
+        let Some(first) = it.next() else {
+            return Self::default();
+        };
+        let (min, max) = it.fold((first, first), |(lo, hi), p| (lo.min(p), hi.max(p)));
+        Self { min, max }
+    }
+
+    /// Midpoint of the box.
+    pub fn center(&self) -> Vec3 {
+        (self.min + self.max) * 0.5
+    }
+
+    /// Full extent along each axis.
+    pub fn size(&self) -> Vec3 {
+        self.max - self.min
+    }
+
+    /// Half of [`ShapeBounds::size`].
+    pub fn half_extents(&self) -> Vec3 {
+        self.size() * 0.5
+    }
+
+    /// Footprint on the XY plane, for flat shapes and `Mesh2d` layout.
+    pub fn rect_xy(&self) -> Rect {
+        Rect::from_corners(self.min.truncate(), self.max.truncate())
+    }
+}
+
 /// One piece of a [`Shape::compound`]: a shape placed by a transform, with an
 /// optional vertex tint.
 ///
@@ -191,6 +242,7 @@ enum ShapeKind {
     Cone {
         radius: f32,
         height: f32,
+        roundness: f32,
     },
     Capsule {
         radius: f32,
@@ -216,6 +268,7 @@ enum ShapeKind {
         sides: u32,
         radius: f32,
         height: f32,
+        roundness: f32,
     },
     // 2D shapes (billboarded flat quads)
     Rectangle {
@@ -300,8 +353,6 @@ enum ShapeKind {
     Compound { parts: Vec<ShapePart> },
     /// Profile of (radius, height) points revolved around Y.
     Lathe { profile: Vec<Vec2>, segments: u32 },
-    /// Wraps another shape and adds a planar `UV_1`.
-    PlanarUv1 { inner: Box<Shape>, rect: Rect },
     /// Flat thick polyline in the XY plane.
     Polyline2D {
         points: Vec<Vec2>,
@@ -372,12 +423,18 @@ impl PartialEq for ShapeKind {
                 Self::Cone {
                     radius: r1,
                     height: h1,
+                    roundness: rn1,
                 },
                 Self::Cone {
                     radius: r2,
                     height: h2,
+                    roundness: rn2,
                 },
-            ) => r1.to_bits() == r2.to_bits() && h1.to_bits() == h2.to_bits(),
+            ) => {
+                r1.to_bits() == r2.to_bits()
+                    && h1.to_bits() == h2.to_bits()
+                    && rn1.to_bits() == rn2.to_bits()
+            }
             (
                 Self::Capsule {
                     radius: r1,
@@ -441,13 +498,20 @@ impl PartialEq for ShapeKind {
                     sides: s1,
                     radius: r1,
                     height: h1,
+                    roundness: rn1,
                 },
                 Self::Pyramid {
                     sides: s2,
                     radius: r2,
                     height: h2,
+                    roundness: rn2,
                 },
-            ) => s1 == s2 && r1.to_bits() == r2.to_bits() && h1.to_bits() == h2.to_bits(),
+            ) => {
+                s1 == s2
+                    && r1.to_bits() == r2.to_bits()
+                    && h1.to_bits() == h2.to_bits()
+                    && rn1.to_bits() == rn2.to_bits()
+            }
             (Self::Rectangle { size: s1 }, Self::Rectangle { size: s2 }) => {
                 s1.x.to_bits() == s2.x.to_bits() && s1.y.to_bits() == s2.y.to_bits()
             }
@@ -681,19 +745,6 @@ impl PartialEq for ShapeKind {
                 },
             ) => eq_vec2s(p1, p2) && s1 == s2,
             (
-                Self::PlanarUv1 {
-                    inner: i1,
-                    rect: r1,
-                },
-                Self::PlanarUv1 {
-                    inner: i2,
-                    rect: r2,
-                },
-            ) => {
-                i1 == i2
-                    && eq_vec2s(&[r1.min, r1.max], &[r2.min, r2.max])
-            }
-            (
                 Self::Polyline2D {
                     points: p1,
                     thickness: t1,
@@ -741,9 +792,14 @@ impl std::hash::Hash for ShapeKind {
                 height.to_bits().hash(state);
                 roundness.to_bits().hash(state);
             }
-            Self::Cone { radius, height } => {
+            Self::Cone {
+                radius,
+                height,
+                roundness,
+            } => {
                 radius.to_bits().hash(state);
                 height.to_bits().hash(state);
+                roundness.to_bits().hash(state);
             }
             Self::Capsule { radius, height } => {
                 radius.to_bits().hash(state);
@@ -779,10 +835,12 @@ impl std::hash::Hash for ShapeKind {
                 sides,
                 radius,
                 height,
+                roundness,
             } => {
                 sides.hash(state);
                 radius.to_bits().hash(state);
                 height.to_bits().hash(state);
+                roundness.to_bits().hash(state);
             }
             Self::Rectangle { size } => hash_vec2(size, state),
             Self::RectangleRim { size, rim_width } => {
@@ -925,11 +983,6 @@ impl std::hash::Hash for ShapeKind {
                 hash_vec2s(profile, state);
                 segments.hash(state);
             }
-            Self::PlanarUv1 { inner, rect } => {
-                inner.hash(state);
-                hash_vec2(&rect.min, state);
-                hash_vec2(&rect.max, state);
-            }
             Self::Polyline2D {
                 points,
                 thickness,
@@ -989,8 +1042,21 @@ impl Shape {
 
     /// Creates a cone with the given base radius and height.
     pub fn cone(radius: f32, height: f32, detail: ShapeDetail) -> Self {
+        Self::rounded_cone(radius, height, 0.0, detail)
+    }
+
+    /// Creates a cone whose apex and base rim are rounded.
+    ///
+    /// `roundness` runs from `0.0` (sharp, same as [`Shape::cone`]) to `1.0`
+    /// (as round as the cone allows: an inscribed, ice-cream-drop shape). The
+    /// rounded solid stays inside the sharp cone.
+    pub fn rounded_cone(radius: f32, height: f32, roundness: f32, detail: ShapeDetail) -> Self {
         Self {
-            kind: ShapeKind::Cone { radius, height },
+            kind: ShapeKind::Cone {
+                radius,
+                height,
+                roundness,
+            },
             detail,
         }
     }
@@ -1048,11 +1114,27 @@ impl Shape {
 
     /// Creates a pyramid with the given number of sides, base radius, and height.
     pub fn pyramid(sides: u32, radius: f32, height: f32, detail: ShapeDetail) -> Self {
+        Self::rounded_pyramid(sides, radius, height, 0.0, detail)
+    }
+
+    /// Creates a pyramid whose apex, base rim and corner edges are rounded.
+    ///
+    /// `roundness` runs from `0.0` (sharp, same as [`Shape::pyramid`]) to `1.0`
+    /// (as round as the pyramid allows). The rounded solid stays inside the
+    /// sharp pyramid, so soft roofs and gems keep their footprint.
+    pub fn rounded_pyramid(
+        sides: u32,
+        radius: f32,
+        height: f32,
+        roundness: f32,
+        detail: ShapeDetail,
+    ) -> Self {
         Self {
             kind: ShapeKind::Pyramid {
                 sides,
                 radius,
                 height,
+                roundness,
             },
             detail,
         }
@@ -1368,22 +1450,6 @@ impl Shape {
         }
     }
 
-    /// Adds `UV_1` from a planar projection of the vertex positions onto `rect`
-    /// (the mesh's local XZ plane: X maps to U, Z to V), so Bevy's `Lightmap`
-    /// component has coordinates to sample. See also
-    /// [`Style::with_lightmap_exposure`](crate::Style::with_lightmap_exposure).
-    #[must_use]
-    pub fn with_planar_uv1(self, rect: Rect) -> Self {
-        let detail = self.detail;
-        Self {
-            kind: ShapeKind::PlanarUv1 {
-                inner: Box::new(self),
-                rect,
-            },
-            detail,
-        }
-    }
-
     /// Creates a flat polyline `thickness` wide in the XY plane (facing +Z) with
     /// mitred joints, for 2D curves, guide lines and connection noodles. Use
     /// [`Shape::build_2d`] with `Mesh2d`.
@@ -1431,6 +1497,38 @@ impl Shape {
         crate::outline::blob(radius, wobble, seed)
     }
 
+    /// Axis-aligned bounds of the geometry [`Shape::build`] produces, in local
+    /// space (before any `Transform`).
+    ///
+    /// The bounds are measured from the generated vertices, so they are exact
+    /// for every shape kind (rounded edges, partial tori, compounds, lathes and
+    /// curves included) but cost one mesh build; cache the result when reading
+    /// it every frame.
+    pub fn bounds(&self) -> ShapeBounds {
+        mesh_bounds(&self.build())
+    }
+
+    /// Whether the shape's outline is round: spheres, ellipsoids, discs,
+    /// ellipses and rings (and their rims). Useful for ray tests that
+    /// approximate such shapes with an ellipsoid inside [`Shape::bounds`].
+    pub fn is_round(&self) -> bool {
+        matches!(
+            self.kind,
+            ShapeKind::Sphere { .. }
+                | ShapeKind::Ellipsoid { .. }
+                | ShapeKind::Disc { .. }
+                | ShapeKind::DiscRim { .. }
+                | ShapeKind::Ellipse { .. }
+                | ShapeKind::EllipseRim { .. }
+                | ShapeKind::Ring { .. }
+        )
+    }
+
+    /// Like [`Shape::bounds`], for the flat geometry of [`Shape::build_2d`].
+    pub fn bounds_2d(&self) -> ShapeBounds {
+        mesh_bounds(&self.build_2d())
+    }
+
     /// Builds flat geometry for `Mesh2d`: in the XY plane, facing +Z, with
     /// gradient UVs and no billboarding. Pair it with
     /// [`GradMeshMaterial2d`](crate::GradMeshMaterial2d) (see [`Style::build_2d`](crate::Style::build_2d))
@@ -1459,7 +1557,6 @@ impl Shape {
                     .collect();
                 geometry::merge_meshes(&built)
             }
-            ShapeKind::PlanarUv1 { inner, .. } => inner.build_2d(),
             _ => self.build(),
         }
     }
@@ -1475,7 +1572,17 @@ impl Shape {
                 height,
                 roundness,
             } => build_cylinder(*radius, *height, *roundness, self.detail),
-            ShapeKind::Cone { radius, height } => build_cone(*radius, *height, self.detail),
+            ShapeKind::Cone {
+                radius,
+                height,
+                roundness,
+            } => {
+                if *roundness > 0.0 {
+                    build_rounded_cone(*radius, *height, *roundness, self.detail)
+                } else {
+                    build_cone(*radius, *height, self.detail)
+                }
+            }
             ShapeKind::Capsule { radius, height } => build_capsule(*radius, *height, self.detail),
             ShapeKind::Hemisphere { radius, capped } => {
                 build_hemisphere(*radius, *capped, self.detail)
@@ -1496,7 +1603,14 @@ impl Shape {
                 sides,
                 radius,
                 height,
-            } => build_pyramid(*sides, *radius, *height, self.detail),
+                roundness,
+            } => {
+                if *roundness > 0.0 {
+                    build_rounded_pyramid(*sides, *radius, *height, *roundness, self.detail)
+                } else {
+                    build_pyramid(*sides, *radius, *height, self.detail)
+                }
+            }
             // 2D shapes
             ShapeKind::Rectangle { size } => build_rectangle(*size, self.detail),
             ShapeKind::RectangleRim { size, rim_width } => {
@@ -1587,11 +1701,6 @@ impl Shape {
                 *thickness,
                 false,
             ),
-            ShapeKind::PlanarUv1 { inner, rect } => {
-                let mut mesh = inner.build();
-                geometry::add_planar_uv1(&mut mesh, *rect);
-                mesh
-            }
         }
     }
 }
@@ -2437,13 +2546,211 @@ fn build_torus(radius: f32, thickness: f32, start: f32, span: f32, detail: Shape
     build_mesh(vertices, normals, uvs, indices)
 }
 
+/// Sweeps a rounded profile around a regular polygon (or a circle when
+/// `smooth`), producing the inscribed solid "core ⊕ ball of radius `rho`".
+///
+/// `core` lists the profile's corner points as `(apothem radius, y)` from the
+/// bottom axis point to the top axis point, counter-clockwise in the (r, y)
+/// half plane. Every corner of the core becomes an arc of the final profile
+/// and, for polygons, every vertical polygon corner becomes an arc too, so
+/// the surface is smooth where edges used to be sharp.
+fn build_rounded_loft(
+    sides: usize,
+    smooth: bool,
+    core: &[(f32, f32)],
+    rho: f32,
+    detail: ShapeDetail,
+) -> Mesh {
+    use std::f32::consts::TAU;
+
+    let arc_steps = bevel_steps(detail) as usize;
+    let cos_half = if smooth {
+        1.0
+    } else {
+        (PI / sides as f32).cos()
+    };
+
+    // Drop coincident neighbours so degenerate cores (full roundness) work.
+    let mut pts: Vec<(f32, f32)> = Vec::with_capacity(core.len());
+    for &p in core {
+        if pts
+            .last()
+            .is_none_or(|q| (q.0 - p.0).hypot(q.1 - p.1) > 1e-5)
+        {
+            pts.push(p);
+        }
+    }
+    let edge_normals: Vec<(f32, f32)> = pts
+        .windows(2)
+        .map(|w| {
+            let (dx, dy) = (w[1].0 - w[0].0, w[1].1 - w[0].1);
+            let len = dx.hypot(dy);
+            (dy / len, -dx / len)
+        })
+        .collect();
+
+    // Profile: (circumradius, y, normal radial, normal y) bottom to top.
+    let mut profile: Vec<(f32, f32, f32, f32)> = Vec::new();
+    for (k, &(x, y)) in pts.iter().enumerate() {
+        let n_in = if k == 0 {
+            (0.0, -1.0)
+        } else {
+            edge_normals[k - 1]
+        };
+        let n_out = if k + 1 == pts.len() {
+            (0.0, 1.0)
+        } else {
+            edge_normals[k]
+        };
+        let a_in = n_in.1.atan2(n_in.0);
+        let a_out = n_out.1.atan2(n_out.0);
+        let mut delta = (a_out - a_in).rem_euclid(TAU);
+        if delta > TAU - 1e-4 {
+            delta = 0.0;
+        }
+        let steps = if delta < 1e-4 {
+            0
+        } else {
+            ((delta / (PI * 0.5)) * arc_steps as f32).ceil().max(1.0) as usize
+        };
+        for s in 0..=steps {
+            let a = a_in + delta * s as f32 / steps.max(1) as f32;
+            profile.push((x / cos_half, y, a.cos(), a.sin()));
+        }
+    }
+
+    // Ring layout: (corner angle, normal angle, u).
+    let mut ring: Vec<(f32, f32)> = Vec::new();
+    if smooth {
+        for i in 0..sides {
+            let a = i as f32 * TAU / sides as f32;
+            ring.push((a, a));
+        }
+    } else {
+        let half = PI / sides as f32;
+        for i in 0..sides {
+            let a = i as f32 * TAU / sides as f32;
+            for j in 0..=arc_steps {
+                ring.push((a, a - half + 2.0 * half * j as f32 / arc_steps as f32));
+            }
+        }
+    }
+    let ring_len = ring.len();
+    let seam = ring[0];
+    ring.push(seam);
+
+    let mut vertices = Vec::with_capacity(profile.len() * ring.len());
+    let mut normals = Vec::with_capacity(vertices.capacity());
+    let mut uvs = Vec::with_capacity(vertices.capacity());
+    let (mut y_min, mut y_max) = (f32::MAX, f32::MIN);
+    for &(_, y, _, ny) in &profile {
+        y_min = y_min.min(y + rho * ny);
+        y_max = y_max.max(y + rho * ny);
+    }
+    let y_span = (y_max - y_min).max(1e-6);
+    for &(c, y, nr, ny) in &profile {
+        for (e, &(a, theta)) in ring.iter().enumerate() {
+            let (ct, st) = (theta.cos(), theta.sin());
+            let pos = Vec3::new(
+                c * a.cos() + rho * nr * ct,
+                y + rho * ny,
+                c * a.sin() + rho * nr * st,
+            );
+            vertices.push(pos);
+            normals.push(Vec3::new(nr * ct, ny, nr * st).normalize_or(Vec3::Y));
+            uvs.push(Vec2::new(
+                e as f32 / ring_len as f32,
+                (pos.y - y_min) / y_span,
+            ));
+        }
+    }
+
+    let stride = ring.len();
+    let mut indices: Vec<u32> = Vec::new();
+    // Slivers whose area is float noise (collapsed rings at the poles) are
+    // dropped; the threshold scales with the size of the solid.
+    let reach = profile.iter().fold(y_span, |m, p| m.max(p.0 + rho));
+    let min_area_sq = 1e-10 * reach.powi(4);
+    let mut push_tri = |a: usize, b: usize, c: usize| {
+        let area = (vertices[b] - vertices[a])
+            .cross(vertices[c] - vertices[a])
+            .length_squared();
+        if area > min_area_sq {
+            indices.extend_from_slice(&[a as u32, b as u32, c as u32]);
+        }
+    };
+    for k in 0..profile.len().saturating_sub(1) {
+        for e in 0..stride - 1 {
+            let lo = k * stride + e;
+            let hi = (k + 1) * stride + e;
+            push_tri(hi, hi + 1, lo);
+            push_tri(lo, hi + 1, lo + 1);
+        }
+    }
+
+    build_mesh(vertices, normals, uvs, indices)
+}
+
+/// Core of a rounded tapering solid (cone or pyramid) in apothem space: the
+/// profile triangle with its base and sloped side moved inwards by `rho`.
+/// Returns `(core, rho)`.
+fn tapered_core(apothem: f32, height: f32, roundness: f32) -> (Vec<(f32, f32)>, f32) {
+    let s = apothem.hypot(height);
+    let rho_max = height * apothem / (apothem + s);
+    let rho = roundness.clamp(0.0, 1.0) * rho_max;
+    let half = height / 2.0;
+    let base_x = (apothem - rho * (s + apothem) / height).max(0.0);
+    let apex_y = (half - rho * s / apothem).max(-half + rho);
+    (
+        vec![(0.0, -half + rho), (base_x, -half + rho), (0.0, apex_y)],
+        rho,
+    )
+}
+
+fn build_rounded_cone(radius: f32, height: f32, roundness: f32, detail: ShapeDetail) -> Mesh {
+    let (core, rho) = tapered_core(radius, height, roundness);
+    build_rounded_loft(detail.segments() as usize, true, &core, rho, detail)
+}
+
+fn build_rounded_pyramid(
+    sides: u32,
+    radius: f32,
+    height: f32,
+    roundness: f32,
+    detail: ShapeDetail,
+) -> Mesh {
+    let sides = sides.max(3) as usize;
+    let apothem = radius * (PI / sides as f32).cos();
+    let (core, rho) = tapered_core(apothem, height, roundness);
+    build_rounded_loft(sides, false, &core, rho, detail)
+}
+
+fn build_rounded_prism(
+    sides: u32,
+    radius: f32,
+    height: f32,
+    roundness: f32,
+    detail: ShapeDetail,
+) -> Mesh {
+    let sides = sides.max(3) as usize;
+    let apothem = radius * (PI / sides as f32).cos();
+    let half = height / 2.0;
+    let rho = roundness.clamp(0.0, 1.0) * apothem.min(half);
+    let (cx, cy) = ((apothem - rho).max(0.0), (half - rho).max(0.0));
+    let core = [(0.0, -cy), (cx, -cy), (cx, cy), (0.0, cy)];
+    build_rounded_loft(sides, false, &core, rho, detail)
+}
+
 fn build_regular_prism(
     sides: u32,
     radius: f32,
     height: f32,
-    _roundness: f32,
-    _detail: ShapeDetail,
+    roundness: f32,
+    detail: ShapeDetail,
 ) -> Mesh {
+    if roundness > 0.0 {
+        return build_rounded_prism(sides, radius, height, roundness, detail);
+    }
     let sides = sides.max(3) as usize;
     let mut vertices = Vec::new();
     let mut normals = Vec::new();
@@ -3352,6 +3659,16 @@ fn build_tapered_cylinder(
     build_mesh(vertices, normals, uvs, indices)
 }
 
+fn mesh_bounds(mesh: &Mesh) -> ShapeBounds {
+    use bevy::render::mesh::VertexAttributeValues;
+    match mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
+        Some(VertexAttributeValues::Float32x3(p)) => {
+            ShapeBounds::from_points(p.iter().map(|p| Vec3::from_array(*p)))
+        }
+        _ => ShapeBounds::default(),
+    }
+}
+
 fn lerp_f32(a: f32, b: f32, t: f32) -> f32 {
     a * (1.0 - t) + b * t
 }
@@ -3376,6 +3693,143 @@ fn pick<T>(t: f32, a: T, b: T) -> T {
 /// Interpolates two equally long point lists; `None` when the lengths differ.
 fn lerp_points<P: Copy>(a: &[P], b: &[P], t: f32, f: fn(P, P, f32) -> P) -> Option<Vec<P>> {
     (a.len() == b.len()).then(|| a.iter().zip(b).map(|(a, b)| f(*a, *b, t)).collect())
+}
+
+type Rgba = [f32; 4];
+
+fn lerp_rgba(a: Rgba, b: Rgba, t: f32) -> Rgba {
+    std::array::from_fn(|i| lerp_f32(a[i], b[i], t))
+}
+
+fn signed_area(p: &[Vec2]) -> f32 {
+    let n = p.len();
+    (0..n).map(|i| p[i].perp_dot(p[(i + 1) % n])).sum::<f32>() * 0.5
+}
+
+/// Describes `n` points on a closed ring of `m <= n` vertices as
+/// `(vertex, fraction towards the next vertex)`. Every original vertex is kept;
+/// the extra points go onto the edges with the longest pieces.
+fn ring_samples(p: &[Vec2], n: usize) -> Vec<(usize, f32)> {
+    let m = p.len();
+    let lens: Vec<f32> = (0..m).map(|i| p[i].distance(p[(i + 1) % m])).collect();
+    let mut pieces = vec![1usize; m];
+    for _ in m..n {
+        let mut best = 0;
+        let mut best_len = -1.0;
+        for i in 0..m {
+            let len = lens[i] / pieces[i] as f32;
+            if len > best_len {
+                best_len = len;
+                best = i;
+            }
+        }
+        pieces[best] += 1;
+    }
+    let mut out = Vec::with_capacity(n);
+    for (i, &k) in pieces.iter().enumerate() {
+        out.extend((0..k).map(|j| (i, j as f32 / k as f32)));
+    }
+    out
+}
+
+fn sample_ring<T: Copy>(v: &[T], samples: &[(usize, f32)], f: fn(T, T, f32) -> T) -> Vec<T> {
+    let m = v.len();
+    samples
+        .iter()
+        .map(|&(i, frac)| {
+            if frac == 0.0 {
+                v[i]
+            } else {
+                f(v[i], v[(i + 1) % m], frac)
+            }
+        })
+        .collect()
+}
+
+/// Pairing of two closed rings with different vertex counts: both are grown to
+/// the larger count, `b` is flipped to match the winding of `a` and rotated to
+/// the start that moves the points the least.
+struct RingMorph {
+    a: Vec<(usize, f32)>,
+    b: Vec<(usize, f32)>,
+    reverse_b: bool,
+}
+
+impl RingMorph {
+    fn new(a: &[Vec2], b: &[Vec2]) -> Option<Self> {
+        if a.len() < 3 || b.len() < 3 {
+            return None;
+        }
+        let n = a.len().max(b.len());
+        let reverse_b = signed_area(a) * signed_area(b) < 0.0;
+        let b_pts = Self::orient(b, reverse_b);
+        let sa = ring_samples(a, n);
+        let mut sb = ring_samples(&b_pts, n);
+        let pa = sample_ring(a, &sa, lerp_vec2);
+        let pb = sample_ring(&b_pts, &sb, lerp_vec2);
+        let cost = |shift: usize| -> f32 {
+            (0..n)
+                .map(|k| pa[k].distance_squared(pb[(k + shift) % n]))
+                .sum()
+        };
+        let shift = (0..n).min_by(|&x, &y| cost(x).total_cmp(&cost(y)))?;
+        sb.rotate_left(shift);
+        Some(Self {
+            a: sa,
+            b: sb,
+            reverse_b,
+        })
+    }
+
+    fn orient<T: Copy>(v: &[T], reverse: bool) -> Vec<T> {
+        if reverse {
+            v.iter().rev().copied().collect()
+        } else {
+            v.to_vec()
+        }
+    }
+
+    fn blend<T: Copy>(&self, a: &[T], b: &[T], t: f32, f: fn(T, T, f32) -> T) -> Vec<T> {
+        let pa = sample_ring(a, &self.a, f);
+        let pb = sample_ring(&Self::orient(b, self.reverse_b), &self.b, f);
+        pa.iter().zip(&pb).map(|(a, b)| f(*a, *b, t)).collect()
+    }
+}
+
+/// Morphs two closed polygons whose vertex counts differ, with optional
+/// per-vertex colours (a missing colour list counts as white). `None` when a
+/// ring has fewer than three vertices or a colour list does not match its
+/// vertices.
+fn morph_rings(
+    a: &[Vec2],
+    ca: Option<&[Rgba]>,
+    b: &[Vec2],
+    cb: Option<&[Rgba]>,
+    t: f32,
+) -> Option<(Vec<Vec2>, Option<Vec<Rgba>>)> {
+    let morph = RingMorph::new(a, b)?;
+    let vertices = morph.blend(a, b, t, lerp_vec2);
+    let colors = if ca.is_none() && cb.is_none() {
+        None
+    } else {
+        let ca = ca.map_or_else(|| vec![[1.0; 4]; a.len()], <[Rgba]>::to_vec);
+        let cb = cb.map_or_else(|| vec![[1.0; 4]; b.len()], <[Rgba]>::to_vec);
+        if ca.len() != a.len() || cb.len() != b.len() {
+            return None;
+        }
+        Some(morph.blend(&ca, &cb, t, lerp_rgba))
+    };
+    Some((vertices, colors))
+}
+
+/// Blends two closed rings: index by index when the counts match, otherwise by
+/// growing both to the larger count (see [`RingMorph`]).
+fn lerp_rings(a: &[Vec2], b: &[Vec2], t: f32) -> Option<Vec<Vec2>> {
+    if a.len() == b.len() {
+        lerp_points(a, b, t, lerp_vec2)
+    } else {
+        morph_rings(a, None, b, None, t).map(|(v, _)| v)
+    }
 }
 
 impl ShapeKind {
@@ -3422,14 +3876,17 @@ impl ShapeKind {
                 K::Cone {
                     radius: r1,
                     height: h1,
+                    roundness: o1,
                 },
                 K::Cone {
                     radius: r2,
                     height: h2,
+                    roundness: o2,
                 },
             ) => K::Cone {
                 radius: l(r1, r2),
                 height: l(h1, h2),
+                roundness: l(o1, o2),
             },
             (
                 K::Capsule {
@@ -3500,16 +3957,19 @@ impl ShapeKind {
                     sides: n1,
                     radius: r1,
                     height: h1,
+                    roundness: o1,
                 },
                 K::Pyramid {
                     sides: n2,
                     radius: r2,
                     height: h2,
+                    roundness: o2,
                 },
             ) => K::Pyramid {
                 sides: pick(t, *n1, *n2),
                 radius: l(r1, r2),
                 height: l(h1, h2),
+                roundness: l(o1, o2),
             },
             (K::Rectangle { size: a }, K::Rectangle { size: b }) => K::Rectangle {
                 size: lerp_vec2(*a, *b, t),
@@ -3586,6 +4046,20 @@ impl ShapeKind {
                 radius: lerp_vec2(*r1, *r2, t),
                 rim_width: l(w1, w2),
             },
+            (
+                K::ArbitraryPolygon {
+                    vertices: v1,
+                    colors: c1,
+                },
+                K::ArbitraryPolygon {
+                    vertices: v2,
+                    colors: c2,
+                },
+            ) if v1.len() != v2.len() => {
+                let (vertices, colors) =
+                    morph_rings(v1, c1.as_deref(), v2, c2.as_deref(), t)?;
+                K::ArbitraryPolygon { vertices, colors }
+            }
             (
                 K::ArbitraryPolygon {
                     vertices: v1,
@@ -3719,28 +4193,23 @@ impl ShapeKind {
                 if h1.len() != h2.len() {
                     return None;
                 }
-                let outer = lerp_points(o1, o2, t, lerp_vec2)?;
                 let holes = h1
                     .iter()
                     .zip(h2)
-                    .map(|(a, b)| lerp_points(a, b, t, lerp_vec2))
+                    .map(|(a, b)| lerp_rings(a, b, t))
                     .collect::<Option<Vec<_>>>()?;
-                let colors = match (c1, c2) {
-                    (None, None) => None,
-                    (Some(a), Some(b)) if a.len() == b.len() => Some(
-                        a.iter()
-                            .zip(b)
-                            .map(|(x, y)| {
-                                [
-                                    lerp_f32(x[0], y[0], t),
-                                    lerp_f32(x[1], y[1], t),
-                                    lerp_f32(x[2], y[2], t),
-                                    lerp_f32(x[3], y[3], t),
-                                ]
-                            })
-                            .collect(),
-                    ),
-                    _ => return None,
+                let (outer, colors) = if o1.len() != o2.len() {
+                    morph_rings(o1, c1.as_deref(), o2, c2.as_deref(), t)?
+                } else {
+                    (lerp_points(o1, o2, t, lerp_vec2)?, {
+                        match (c1, c2) {
+                            (None, None) => None,
+                            (Some(a), Some(b)) if a.len() == b.len() => {
+                                Some(a.iter().zip(b).map(|(x, y)| lerp_rgba(*x, *y, t)).collect())
+                            }
+                            _ => return None,
+                        }
+                    })
                 };
                 K::ExtrudedPolygon {
                     outer,
@@ -3804,8 +4273,16 @@ impl Shape {
     ///   (radius, height, size, roundness, rim width, angles, point positions).
     /// * Integer counts (`sides`, `points`, `segments`), flags (`capped`,
     ///   `closed`) and the [`ShapeDetail`] snap to whichever endpoint is nearer.
-    /// * Shapes of **different kinds**, or point lists of different lengths,
-    ///   cannot be blended and yield the nearer endpoint.
+    /// * Closed polygons ([`Shape::arbitrary_polygon`] and
+    ///   [`Shape::extruded_polygon`], including holes) with **different vertex
+    ///   counts** morph too: both outlines are grown to the larger count by
+    ///   splitting their longest edges, the second outline is flipped to the
+    ///   winding of the first and rotated to the start that moves points the
+    ///   least. Per-vertex colours blend alongside (a missing list counts as
+    ///   white). Polygons with fewer than three vertices cannot be morphed.
+    /// * Shapes of **different kinds**, open point lists (polylines, curves,
+    ///   lathe profiles) of different lengths, or polygons with a different
+    ///   number of holes cannot be blended and yield the nearer endpoint.
     ///
     /// `t == 0.0` returns a copy of `self` and `t == 1.0` a copy of `other`.
     ///
@@ -4782,12 +5259,6 @@ mod extended_shape_tests {
         let lathe = Shape::lathe(vec![Vec2::X, Vec2::Y], 8, D);
         assert_eq!(lathe, Shape::lathe(vec![Vec2::X, Vec2::Y], 8, D));
         assert_ne!(lathe, Shape::lathe(vec![Vec2::X, Vec2::Y], 9, D));
-        let rect = Rect::new(-1.0, -1.0, 1.0, 1.0);
-        assert_eq!(
-            Shape::sphere(1.0, D).with_planar_uv1(rect),
-            Shape::sphere(1.0, D).with_planar_uv1(rect)
-        );
-        assert_ne!(Shape::sphere(1.0, D).with_planar_uv1(rect), Shape::sphere(1.0, D));
     }
 
     #[test]
@@ -4833,7 +5304,6 @@ mod extended_shape_tests {
             door_wall(),
             tower(),
             Shape::lathe(vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.5), Vec2::new(0.0, 1.0)], 12, D),
-            Shape::cuboid(Vec3::ONE, 0.0, D).with_planar_uv1(Rect::new(-1.0, -1.0, 1.0, 1.0)),
             Shape::polyline_2d(vec![Vec2::ZERO, Vec2::new(1.0, 0.5), Vec2::new(2.0, 0.0)], 0.1, false),
             Shape::polyline_2d(Shape::rounded_rectangle(Vec2::splat(2.0), 0.3, 3), 0.1, true),
             Shape::bezier_2d(vec![Vec2::ZERO, Vec2::new(1.0, 2.0), Vec2::new(2.0, 0.0)], 0.1, D),
@@ -4908,9 +5378,15 @@ mod extended_shape_tests {
             mid,
             Shape::extruded_polygon(Shape::rounded_rectangle(Vec2::splat(3.0), 0.3, 2), 0.4, 0.5, D)
         );
-        // Mismatched outlines snap to the nearer endpoint.
+        // Outlines with different vertex counts now morph between the two.
         let c = Shape::extruded_polygon(Shape::arch(1.0, 1.0, 4), 0.2, 0.0, D);
-        assert_eq!(a.lerp(&c, 0.25), a);
+        let morphed = a.lerp(&c, 0.25);
+        assert_ne!(morphed, a);
+        assert_ne!(morphed, c);
+        // Outlines that cannot be paired up (fewer than three vertices) snap.
+        let degenerate = Shape::extruded_polygon(vec![Vec2::ZERO, Vec2::X], 0.2, 0.0, D);
+        assert_eq!(a.lerp(&degenerate, 0.25), a);
+        assert_eq!(a.lerp(&degenerate, 0.75), degenerate);
     }
 
     #[test]
@@ -4939,18 +5415,330 @@ mod extended_shape_tests {
         let b = Shape::lathe(vec![Vec2::X, Vec2::new(1.0, 1.0)], ShapeDetail::Low.segments(), D).build();
         assert_eq!(a.count_vertices(), b.count_vertices());
     }
+}
+
+#[cfg(test)]
+mod morph_and_bounds_tests {
+    use super::*;
+
+    const D: ShapeDetail = ShapeDetail::Medium;
+
+    fn square(half: f32) -> Vec<Vec2> {
+        vec![
+            Vec2::new(-half, -half),
+            Vec2::new(half, -half),
+            Vec2::new(half, half),
+            Vec2::new(-half, half),
+        ]
+    }
+
+    fn triangle() -> Vec<Vec2> {
+        vec![Vec2::new(0.0, -1.0), Vec2::new(1.0, 1.0), Vec2::new(-1.0, 1.0)]
+    }
+
+    fn outline(shape: &Shape) -> (&Vec<Vec2>, &Option<Vec<[f32; 4]>>) {
+        match &shape.kind {
+            ShapeKind::ArbitraryPolygon { vertices, colors } => (vertices, colors),
+            ShapeKind::ExtrudedPolygon { outer, colors, .. } => (outer, colors),
+            other => panic!("not a polygon: {other:?}"),
+        }
+    }
 
     #[test]
-    fn planar_uv1_is_added_without_changing_the_inner_shape() {
-        let rect = Rect::new(-2.0, -2.0, 2.0, 2.0);
-        let mesh = Shape::cuboid(Vec3::new(2.0, 2.0, 2.0), 0.0, D)
-            .with_planar_uv1(rect)
-            .build();
-        assert!(mesh.contains_attribute(Mesh::ATTRIBUTE_UV_1));
-        assert!(!Shape::cuboid(Vec3::new(2.0, 2.0, 2.0), 0.0, D).build().contains_attribute(Mesh::ATTRIBUTE_UV_1));
+    fn bounds_of_a_cuboid_are_exact() {
+        let b = Shape::cuboid(Vec3::new(2.0, 4.0, 6.0), 0.0, D).bounds();
+        assert!((b.min - Vec3::new(-1.0, -2.0, -3.0)).abs().max_element() < 1e-4);
+        assert!((b.max - Vec3::new(1.0, 2.0, 3.0)).abs().max_element() < 1e-4);
+        assert!((b.size() - Vec3::new(2.0, 4.0, 6.0)).abs().max_element() < 1e-4);
+        assert!(b.center().abs().max_element() < 1e-4);
+        assert!((b.half_extents() - Vec3::new(1.0, 2.0, 3.0)).abs().max_element() < 1e-4);
+    }
+
+    #[test]
+    fn bounds_follow_the_generated_geometry() {
+        let sphere = Shape::sphere(2.0, ShapeDetail::High).bounds();
+        assert!(sphere.size().min_element() > 3.8 && sphere.size().max_element() <= 4.0001);
+        let rounded = Shape::cuboid(Vec3::splat(2.0), 0.5, D).bounds();
+        assert!(rounded.size().max_element() <= 2.0001);
+        let moved = Shape::compound(vec![
+            ShapePart::new(Shape::cuboid(Vec3::ONE, 0.0, D)),
+            ShapePart::new(Shape::cuboid(Vec3::ONE, 0.0, D))
+                .with_transform(Transform::from_xyz(3.0, 0.0, 0.0)),
+        ])
+        .bounds();
+        assert!((moved.min.x + 0.5).abs() < 1e-4 && (moved.max.x - 3.5).abs() < 1e-4);
+    }
+
+    #[test]
+    fn bounds_2d_gives_the_flat_footprint() {
+        let b = Shape::rectangle(Vec2::new(4.0, 2.0), D).bounds_2d();
+        assert!((b.rect_xy().size() - Vec2::new(4.0, 2.0)).abs().max_element() < 1e-4);
+        assert!(b.size().z.abs() < 1e-4);
+        let empty = Shape::arbitrary_polygon(vec![Vec2::ZERO, Vec2::X], D).bounds();
+        assert_eq!(empty, ShapeBounds::default());
+    }
+
+    #[test]
+    fn polygons_with_different_counts_morph() {
+        let a = Shape::arbitrary_polygon(triangle(), D);
+        let b = Shape::arbitrary_polygon(square(1.0), D);
+        assert_eq!(a.lerp(&b, 0.0), a);
+        assert_eq!(a.lerp(&b, 1.0), b);
+        let mid = a.lerp(&b, 0.5);
+        let (verts, colors) = outline(&mid);
+        assert_eq!(verts.len(), 4);
+        assert!(colors.is_none());
+        assert_ne!(mid, a);
+        assert_ne!(mid, b);
+        let low = a.lerp(&b, 0.25);
+        assert_eq!(outline(&low).0.len(), 4);
+        assert!(!mid.build().attribute(Mesh::ATTRIBUTE_POSITION).unwrap().is_empty());
+    }
+
+    #[test]
+    fn subdivided_outline_morphs_to_the_same_outline() {
+        let sq = square(1.0);
+        let dense: Vec<Vec2> = (0..4)
+            .flat_map(|i| [sq[i], (sq[i] + sq[(i + 1) % 4]) * 0.5])
+            .collect();
+        let a = Shape::arbitrary_polygon(sq, D);
+        let b = Shape::arbitrary_polygon(dense, D);
+        let mid = a.lerp(&b, 0.5);
+        let verts = outline(&mid).0.clone();
+        assert_eq!(verts.len(), 8);
+        assert!((signed_area(&verts) - 4.0).abs() < 1e-4);
+        assert!(verts.iter().all(|p| p.abs().max_element() > 0.999));
+    }
+
+    #[test]
+    fn opposite_winding_and_start_do_not_twist_the_morph() {
+        let a = triangle();
+        let mut b = square(1.0);
+        b.reverse();
+        b.rotate_left(2);
+        let (verts, _) = morph_rings(&a, None, &b, None, 0.5).unwrap();
+        assert_eq!(verts.len(), 4);
+        let area_a = signed_area(&a);
+        let area_b = signed_area(&square(1.0));
+        let area = signed_area(&verts);
+        assert!(area.signum() == area_a.signum());
+        assert!(area > area_a.abs().min(area_b.abs()) * 0.8);
+        assert!(area < area_a.abs().max(area_b.abs()) * 1.2);
+    }
+
+    #[test]
+    fn colours_blend_and_missing_colours_count_as_white() {
+        let red = [1.0, 0.0, 0.0, 1.0];
+        let a = Shape::arbitrary_polygon_colored(triangle(), vec![red; 3], D);
+        let b = Shape::arbitrary_polygon(square(1.0), D);
+        let mid = a.lerp(&b, 0.5);
+        let colors = outline(&mid).1.clone().expect("colours survive the morph");
+        assert_eq!(colors.len(), 4);
+        for c in colors {
+            assert!((c[0] - 1.0).abs() < 1e-5 && (c[1] - 0.5).abs() < 1e-5);
+        }
+    }
+
+    #[test]
+    fn extruded_polygons_and_holes_morph_across_counts() {
+        let hole_a = vec![Shape::blob(0.2, 0.0, 1)];
+        let hole_b = vec![square(0.2)];
+        let a = Shape::extruded_polygon_with_holes(triangle(), hole_a.clone(), 0.2, 0.0, D);
+        let b = Shape::extruded_polygon_with_holes(square(1.0), hole_b, 0.4, 0.0, D);
+        let mid = a.lerp(&b, 0.5);
+        match &mid.kind {
+            ShapeKind::ExtrudedPolygon {
+                outer,
+                holes,
+                depth,
+                ..
+            } => {
+                assert_eq!(outer.len(), 4);
+                assert_eq!(holes.len(), 1);
+                assert!(holes[0].len() >= 4);
+                assert!((depth - 0.3).abs() < 1e-5);
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        let no_hole = Shape::extruded_polygon(square(1.0), 0.4, 0.0, D);
+        assert_eq!(a.lerp(&no_hole, 0.4), a);
+        assert_eq!(a.lerp(&no_hole, 0.6), no_hole);
+    }
+
+    #[test]
+    fn degenerate_polygons_and_open_lists_still_snap() {
+        let a = Shape::arbitrary_polygon(vec![Vec2::ZERO, Vec2::X], D);
+        let b = Shape::arbitrary_polygon(square(1.0), D);
+        assert_eq!(a.lerp(&b, 0.4), a);
+        assert_eq!(a.lerp(&b, 0.6), b);
+        let p = Shape::polyline3d(vec![Vec3::ZERO, Vec3::X], 0.1, false, 8, D);
+        let q = Shape::polyline3d(vec![Vec3::ZERO, Vec3::X, Vec3::Y], 0.1, false, 8, D);
+        assert_eq!(p.lerp(&q, 0.4), p);
+    }
+}
+
+#[cfg(test)]
+mod rounded_solid_tests {
+    use super::*;
+
+    const D: ShapeDetail = ShapeDetail::Medium;
+
+    fn positions(mesh: &Mesh) -> Vec<Vec3> {
+        match mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
+            Some(bevy::render::mesh::VertexAttributeValues::Float32x3(p)) => {
+                p.iter().map(|p| Vec3::from_array(*p)).collect()
+            }
+            _ => panic!("no positions"),
+        }
+    }
+
+    fn normals(mesh: &Mesh) -> Vec<Vec3> {
+        match mesh.attribute(Mesh::ATTRIBUTE_NORMAL) {
+            Some(bevy::render::mesh::VertexAttributeValues::Float32x3(p)) => {
+                p.iter().map(|p| Vec3::from_array(*p)).collect()
+            }
+            _ => panic!("no normals"),
+        }
+    }
+
+    fn indices(mesh: &Mesh) -> Vec<u32> {
+        mesh.indices().unwrap().iter().map(|i| i as u32).collect()
+    }
+
+    /// Triangles whose winding disagrees with their vertex normals.
+    fn inward_triangles(mesh: &Mesh) -> (usize, usize) {
+        let (p, n, idx) = (positions(mesh), normals(mesh), indices(mesh));
+        let mut bad = 0;
+        for t in idx.chunks(3) {
+            let (a, b, c) = (t[0] as usize, t[1] as usize, t[2] as usize);
+            let face = (p[b] - p[a]).cross(p[c] - p[a]);
+            if face.length_squared() < 1e-14 {
+                continue;
+            }
+            if face.dot(n[a] + n[b] + n[c]) < 0.0 {
+                bad += 1;
+            }
+        }
+        (bad, idx.len() / 3)
+    }
+
+    fn assert_sound(mesh: &Mesh, what: &str) {
+        let p = positions(mesh);
+        assert!(!p.is_empty(), "{what}: empty");
+        assert!(p.iter().all(|v| v.is_finite()), "{what}: non-finite");
+        assert!(normals(mesh).iter().all(|v| v.is_finite()), "{what}: bad normals");
+        let (bad, total) = inward_triangles(mesh);
+        assert!(total > 0, "{what}: no triangles");
+        assert_eq!(bad, 0, "{what}: {bad}/{total} triangles face inwards");
+    }
+
+    #[test]
+    fn zero_roundness_is_the_sharp_shape() {
+        assert_eq!(Shape::cone(1.0, 2.0, D), Shape::rounded_cone(1.0, 2.0, 0.0, D));
         assert_eq!(
-            mesh.count_vertices(),
-            Shape::cuboid(Vec3::new(2.0, 2.0, 2.0), 0.0, D).build().count_vertices()
+            Shape::pyramid(4, 1.0, 2.0, D),
+            Shape::rounded_pyramid(4, 1.0, 2.0, 0.0, D)
         );
+        let sharp = Shape::cone(1.0, 2.0, D).build();
+        assert_eq!(
+            positions(&sharp),
+            positions(&Shape::rounded_cone(1.0, 2.0, 0.0, D).build())
+        );
+    }
+
+    #[test]
+    fn roundness_changes_identity_and_blends() {
+        let a = Shape::rounded_cone(1.0, 2.0, 0.0, D);
+        let b = Shape::rounded_cone(1.0, 2.0, 1.0, D);
+        assert_ne!(a, b);
+        assert_eq!(a.lerp(&b, 0.5), Shape::rounded_cone(1.0, 2.0, 0.5, D));
+        let p = Shape::rounded_pyramid(4, 1.0, 2.0, 0.2, D);
+        let q = Shape::rounded_pyramid(4, 1.0, 2.0, 0.6, D);
+        assert_eq!(p.lerp(&q, 0.5), Shape::rounded_pyramid(4, 1.0, 2.0, 0.4, D));
+    }
+
+    #[test]
+    fn rounded_solids_face_outwards_for_every_roundness() {
+        for r in [0.1, 0.25, 0.5, 0.75, 1.0] {
+            assert_sound(&Shape::rounded_cone(1.0, 2.0, r, D).build(), &format!("cone {r}"));
+            for sides in [3, 4, 6] {
+                assert_sound(
+                    &Shape::rounded_pyramid(sides, 1.0, 1.5, r, D).build(),
+                    &format!("pyramid {sides} {r}"),
+                );
+                assert_sound(
+                    &Shape::regular_prism(sides, 1.0, 1.5, r, D).build(),
+                    &format!("prism {sides} {r}"),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rounded_solids_stay_inside_the_sharp_shape() {
+        let sharp = Shape::cone(1.0, 2.0, D).bounds();
+        let soft = Shape::rounded_cone(1.0, 2.0, 0.6, D).bounds();
+        assert!(soft.max.y < sharp.max.y - 0.05, "apex should be blunted");
+        assert!(soft.min.y >= sharp.min.y - 1e-4);
+        assert!(soft.max.x <= sharp.max.x + 1e-4);
+        let sharp = Shape::pyramid(4, 1.0, 2.0, D).bounds();
+        let soft = Shape::rounded_pyramid(4, 1.0, 2.0, 0.6, D).bounds();
+        assert!(soft.max.y < sharp.max.y - 0.05);
+        assert!(soft.min.y >= sharp.min.y - 1e-4);
+        assert!(soft.max.x <= sharp.max.x + 1e-4 && soft.max.z <= sharp.max.z + 1e-4);
+        let sharp = Shape::regular_prism(6, 1.0, 2.0, 0.0, D).bounds();
+        let soft = Shape::regular_prism(6, 1.0, 2.0, 0.5, D).bounds();
+        assert!((soft.max.y - sharp.max.y).abs() < 1e-4, "height is kept");
+        assert!(soft.max.x <= sharp.max.x + 1e-4);
+    }
+
+    #[test]
+    fn prism_roundness_is_no_longer_ignored() {
+        let sharp = Shape::regular_prism(4, 1.0, 2.0, 0.0, D).build();
+        let soft = Shape::regular_prism(4, 1.0, 2.0, 0.5, D).build();
+        assert_ne!(positions(&sharp), positions(&soft));
+        // The sharp prism has corners on its rim; the rounded one pulls them in.
+        let reach = |m: &Mesh| positions(m).iter().map(|p| p.length()).fold(0.0, f32::max);
+        assert!(reach(&soft) < reach(&sharp) - 0.05);
+    }
+
+    #[test]
+    fn full_roundness_pyramid_is_a_blob_without_degenerate_output() {
+        let mesh = Shape::rounded_pyramid(5, 1.0, 1.0, 1.0, D).build();
+        assert_sound(&mesh, "full pyramid");
+        for n in normals(&mesh) {
+            assert!((n.length() - 1.0).abs() < 1e-3);
+        }
+    }
+
+    #[test]
+    fn rounded_solids_are_pickable() {
+        for shape in [
+            Shape::rounded_cone(1.0, 2.0, 0.5, D),
+            Shape::rounded_pyramid(4, 1.0, 2.0, 0.5, D),
+            Shape::regular_prism(6, 1.0, 2.0, 0.5, D),
+        ] {
+            let mesh = shape.build();
+            let n = positions(&mesh).len() as u32;
+            assert!(indices(&mesh).iter().all(|i| *i < n));
+            assert!(mesh.attribute(Mesh::ATTRIBUTE_UV_0).is_some());
+        }
+    }
+
+    #[test]
+    fn is_round_matches_the_outline_kind() {
+        assert!(Shape::sphere(1.0, D).is_round());
+        assert!(Shape::ellipsoid(Vec3::new(1.0, 2.0, 3.0), D).is_round());
+        assert!(Shape::disc(1.0, D).is_round());
+        assert!(Shape::ring(1.0, 0.5, D).is_round());
+        assert!(!Shape::cuboid(Vec3::ONE, 0.0, D).is_round());
+        assert!(!Shape::rectangle(Vec2::ONE, D).is_round());
+        assert!(!Shape::rounded_cone(1.0, 2.0, 0.5, D).is_round());
+    }
+
+    #[test]
+    fn bounds_convert_to_a_corner_pair() {
+        let (lo, hi): (Vec3, Vec3) = Shape::cuboid(Vec3::new(2.0, 4.0, 6.0), 0.0, D).bounds().into();
+        assert!((hi - lo - Vec3::new(2.0, 4.0, 6.0)).abs().max_element() < 1e-4);
     }
 }

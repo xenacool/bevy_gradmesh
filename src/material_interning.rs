@@ -40,6 +40,14 @@ pub struct GradMeshMaterialKey {
     pub flags: Vec4,
     /// Dash pattern parameters.
     pub dash: Vec4,
+    /// Procedural noise parameters.
+    pub noise: Vec4,
+    /// Procedural stripe direction and frequency.
+    pub stripes: Vec4,
+    /// Procedural stripe amount.
+    pub stripes_amount: Vec4,
+    /// Rim light colour and power.
+    pub rim: Vec4,
 }
 
 impl GradMeshMaterialKey {
@@ -51,6 +59,10 @@ impl GradMeshMaterialKey {
             direction: uniforms.direction,
             flags: uniforms.flags,
             dash: uniforms.dash,
+            noise: uniforms.noise,
+            stripes: uniforms.stripes,
+            stripes_amount: uniforms.stripes_amount,
+            rim: uniforms.rim,
         }
     }
 
@@ -61,17 +73,20 @@ impl GradMeshMaterialKey {
 
     /// Build a `GradMeshMaterial` from this key.
     pub fn build(&self) -> GradMeshMaterial {
+        let mut uniforms = GradMeshUniformBuffer::new(
+            self.color,
+            self.secondary_color,
+            self.direction,
+            self.flags,
+            self.dash,
+        );
+        uniforms.noise = self.noise;
+        uniforms.stripes = self.stripes;
+        uniforms.stripes_amount = self.stripes_amount;
+        uniforms.rim = self.rim;
         GradMeshMaterial {
             base: crate::material::opaque(1.0, 1.0, 1.0).base,
-            extension: GradMeshExtension {
-                uniforms: GradMeshUniformBuffer::new(
-                    self.color,
-                    self.secondary_color,
-                    self.direction,
-                    self.flags,
-                    self.dash,
-                ),
-            },
+            extension: GradMeshExtension { uniforms },
         }
     }
 
@@ -109,6 +124,10 @@ impl PartialEq for GradMeshMaterialKey {
             && Self::approx_eq(&self.direction, &other.direction)
             && Self::approx_eq(&self.flags, &other.flags)
             && Self::approx_eq(&self.dash, &other.dash)
+            && Self::approx_eq(&self.noise, &other.noise)
+            && Self::approx_eq(&self.stripes, &other.stripes)
+            && Self::approx_eq(&self.stripes_amount, &other.stripes_amount)
+            && Self::approx_eq(&self.rim, &other.rim)
     }
 }
 
@@ -137,6 +156,12 @@ impl Hash for GradMeshMaterialKey {
         self.dash.y.to_bits().hash(state);
         self.dash.z.to_bits().hash(state);
         self.dash.w.to_bits().hash(state);
+        for v in [&self.noise, &self.stripes, &self.stripes_amount, &self.rim] {
+            v.x.to_bits().hash(state);
+            v.y.to_bits().hash(state);
+            v.z.to_bits().hash(state);
+            v.w.to_bits().hash(state);
+        }
     }
 }
 
@@ -321,6 +346,10 @@ mod tests {
             direction: Vec4::new(0.0, 1.0, 0.0, 0.0),
             flags: Vec4::new(1.0, 0.0, 0.0, 0.0),
             dash: Vec4::new(0.0, 0.0, 0.0, 0.0),
+            noise: Vec4::default(),
+            stripes: Vec4::default(),
+            stripes_amount: Vec4::default(),
+            rim: Vec4::default(),
         };
         let key2 = GradMeshMaterialKey {
             color: Vec4::new(1.0, 0.0, 0.0, 1.0),
@@ -328,6 +357,10 @@ mod tests {
             direction: Vec4::new(0.0, 1.0, 0.0, 0.0),
             flags: Vec4::new(1.0, 0.0, 0.0, 0.0),
             dash: Vec4::new(0.0, 0.0, 0.0, 0.0),
+            noise: Vec4::default(),
+            stripes: Vec4::default(),
+            stripes_amount: Vec4::default(),
+            rim: Vec4::default(),
         };
         assert_eq!(key1, key2);
     }
@@ -340,6 +373,10 @@ mod tests {
             direction: Vec4::new(0.0, 1.0, 0.0, 0.0),
             flags: Vec4::new(1.0, 0.0, 0.0, 0.0),
             dash: Vec4::new(0.0, 0.0, 0.0, 0.0),
+            noise: Vec4::default(),
+            stripes: Vec4::default(),
+            stripes_amount: Vec4::default(),
+            rim: Vec4::default(),
         };
         let key2 = GradMeshMaterialKey {
             color: Vec4::new(0.0, 0.0, 1.0, 1.0),
@@ -347,6 +384,10 @@ mod tests {
             direction: Vec4::new(0.0, 1.0, 0.0, 0.0),
             flags: Vec4::new(1.0, 0.0, 0.0, 0.0),
             dash: Vec4::new(0.0, 0.0, 0.0, 0.0),
+            noise: Vec4::default(),
+            stripes: Vec4::default(),
+            stripes_amount: Vec4::default(),
+            rim: Vec4::default(),
         };
         assert_ne!(key1, key2);
     }
@@ -359,6 +400,10 @@ mod tests {
             direction: Vec4::new(0.0, 1.0, 0.0, 0.0),
             flags: Vec4::new(1.0, 0.0, 0.0, 0.0),
             dash: Vec4::new(0.0, 0.0, 0.0, 0.0),
+            noise: Vec4::default(),
+            stripes: Vec4::default(),
+            stripes_amount: Vec4::default(),
+            rim: Vec4::default(),
         };
         let key2 = GradMeshMaterialKey {
             color: Vec4::new(1.0 + 1e-5, 0.0 + 1e-5, 0.0 + 1e-5, 1.0),
@@ -366,6 +411,10 @@ mod tests {
             direction: Vec4::new(0.0, 1.0, 0.0, 0.0),
             flags: Vec4::new(1.0, 0.0, 0.0, 0.0),
             dash: Vec4::new(0.0, 0.0, 0.0, 0.0),
+            noise: Vec4::default(),
+            stripes: Vec4::default(),
+            stripes_amount: Vec4::default(),
+            rim: Vec4::default(),
         };
         // Small floating-point differences should still be equal
         assert_eq!(key1, key2);
@@ -382,6 +431,10 @@ mod tests {
             direction: Vec4::new(0.0, 1.0, 0.0, 0.0),
             flags: Vec4::new(1.0, 0.0, 0.0, 0.0),
             dash: Vec4::new(0.0, 0.0, 0.0, 0.0),
+            noise: Vec4::default(),
+            stripes: Vec4::default(),
+            stripes_amount: Vec4::default(),
+            rim: Vec4::default(),
         };
 
         let handle1 = pool.get_or_insert(&key, &mut assets);
@@ -404,6 +457,10 @@ mod tests {
             direction: Vec4::new(0.0, 1.0, 0.0, 0.0),
             flags: Vec4::new(1.0, 0.0, 0.0, 0.0),
             dash: Vec4::new(0.0, 0.0, 0.0, 0.0),
+            noise: Vec4::default(),
+            stripes: Vec4::default(),
+            stripes_amount: Vec4::default(),
+            rim: Vec4::default(),
         };
         let key2 = GradMeshMaterialKey {
             color: Vec4::new(0.0, 0.0, 1.0, 1.0),
@@ -411,6 +468,10 @@ mod tests {
             direction: Vec4::new(0.0, 1.0, 0.0, 0.0),
             flags: Vec4::new(1.0, 0.0, 0.0, 0.0),
             dash: Vec4::new(0.0, 0.0, 0.0, 0.0),
+            noise: Vec4::default(),
+            stripes: Vec4::default(),
+            stripes_amount: Vec4::default(),
+            rim: Vec4::default(),
         };
 
         let handle1 = pool.get_or_insert(&key1, &mut assets);
@@ -431,6 +492,10 @@ mod tests {
             direction: Vec4::new(0.0, 1.0, 0.0, 0.0),
             flags: Vec4::new(1.0, 0.0, 0.0, 0.0),
             dash: Vec4::new(0.0, 0.0, 0.0, 0.0),
+            noise: Vec4::default(),
+            stripes: Vec4::default(),
+            stripes_amount: Vec4::default(),
+            rim: Vec4::default(),
         };
 
         assert_eq!(pool.hit_rate(), 0.0);
@@ -472,6 +537,10 @@ mod tests {
             direction: Vec4::new(0.0, 1.0, 0.0, 0.0),
             flags: Vec4::new(1.0, 0.0, 0.0, 0.0),
             dash: Vec4::new(0.0, 0.0, 0.0, 0.0),
+            noise: Vec4::default(),
+            stripes: Vec4::default(),
+            stripes_amount: Vec4::default(),
+            rim: Vec4::default(),
         };
 
         pool.get_or_insert(&key, &mut assets);
