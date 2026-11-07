@@ -16,12 +16,18 @@
 //! recorder.end();
 //! ```
 
+#[cfg(feature = "pbr")]
 use bevy::ecs::prelude::*;
+#[cfg(feature = "pbr")]
 use bevy::math::{Quat, Vec3};
+#[cfg(feature = "pbr")]
 use bevy::prelude::{Mesh3d, MeshMaterial3d};
+#[cfg(feature = "pbr")]
 use bevy::render::mesh::Mesh;
+#[cfg(feature = "pbr")]
 use bevy::transform::components::{GlobalTransform, Transform};
 
+#[cfg(feature = "pbr")]
 use crate::{
     GradMeshMaterial, Shape, ShapeDetail, additive, dual_directional, opaque, transparent,
 };
@@ -94,6 +100,7 @@ pub enum BillboardMode {
     FaceCamera,
 }
 
+#[cfg(feature = "pbr")]
 /// State stack entry for push/pop operations.
 #[derive(Debug, Clone)]
 struct StateEntry {
@@ -102,6 +109,7 @@ struct StateEntry {
     scale: Vec3,
 }
 
+#[cfg(feature = "pbr")]
 impl Default for StateEntry {
     fn default() -> Self {
         Self {
@@ -112,6 +120,7 @@ impl Default for StateEntry {
     }
 }
 
+#[cfg(feature = "pbr")]
 /// Immediate mode recorder for per-frame drawing.
 ///
 /// Use `begin()` at the start of each frame, draw shapes, then call `end()`
@@ -126,6 +135,7 @@ pub struct ImmediateRecorder {
     root: Option<Entity>,
 }
 
+#[cfg(feature = "pbr")]
 impl ImmediateRecorder {
     /// Create a new immediate recorder.
     pub fn new() -> Self {
@@ -633,27 +643,32 @@ impl ImmediateRecorder {
     }
 }
 
+#[cfg(feature = "pbr")]
 impl Default for ImmediateRecorder {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg(feature = "pbr")]
 /// Convenience function: create an opaque material for immediate drawing.
 pub fn imm_opaque(r: f32, g: f32, b: f32) -> GradMeshMaterial {
     opaque(r, g, b)
 }
 
+#[cfg(feature = "pbr")]
 /// Convenience function: create a transparent material for immediate drawing.
 pub fn imm_transparent(r: f32, g: f32, b: f32, alpha: f32) -> GradMeshMaterial {
     transparent(r, g, b, alpha)
 }
 
+#[cfg(feature = "pbr")]
 /// Convenience function: create an additive material for immediate drawing.
 pub fn imm_additive(r: f32, g: f32, b: f32) -> GradMeshMaterial {
     additive(r, g, b)
 }
 
+#[cfg(feature = "pbr")]
 /// Convenience function: create a dual-directional material for immediate drawing.
 pub fn imm_dual_directional(
     dark: [f32; 3],
@@ -663,7 +678,7 @@ pub fn imm_dual_directional(
     dual_directional(dark, light, direction)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "pbr"))]
 mod tests {
     use super::*;
 

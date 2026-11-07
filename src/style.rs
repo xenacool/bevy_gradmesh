@@ -8,6 +8,7 @@ use bevy::math::Vec3;
 use bevy::prelude::Shader;
 use bevy_material::AlphaMode;
 
+#[cfg(feature = "pbr")]
 use crate::material::{
     GradMeshMaterial, additive, color_burn, color_dodge, darken, dashed, dither, dual_directional,
     dual_radial, dual_radial_alpha, lighten, linear_burn, multiplicative, opaque, screen,
@@ -679,7 +680,11 @@ impl Style {
     /// entity when it returns `false`.
     #[must_use]
     pub fn with_alpha(mut self, alpha: f32) -> Self {
-        let alpha = if alpha.is_nan() { 1.0 } else { alpha.clamp(0.0, 1.0) };
+        let alpha = if alpha.is_nan() {
+            1.0
+        } else {
+            alpha.clamp(0.0, 1.0)
+        };
         self.color = self.color.with_alpha(self.color.alpha() * alpha);
         if let Some(secondary) = self.secondary_color {
             self.secondary_color = Some(secondary.with_alpha(secondary.alpha() * alpha));
@@ -743,14 +748,28 @@ impl Style {
             [1.0, n.scale, n.amount].map(f32::to_bits).hash(&mut h);
         }
         if let Some(st) = self.stripes {
-            [2.0, st.direction.x, st.direction.y, st.direction.z, st.frequency, st.amount]
-                .map(f32::to_bits)
-                .hash(&mut h);
+            [
+                2.0,
+                st.direction.x,
+                st.direction.y,
+                st.direction.z,
+                st.frequency,
+                st.amount,
+            ]
+            .map(f32::to_bits)
+            .hash(&mut h);
         }
         if let Some(r) = self.rim {
-            [3.0, r.color.red, r.color.green, r.color.blue, r.color.alpha, r.power]
-                .map(f32::to_bits)
-                .hash(&mut h);
+            [
+                3.0,
+                r.color.red,
+                r.color.green,
+                r.color.blue,
+                r.color.alpha,
+                r.power,
+            ]
+            .map(f32::to_bits)
+            .hash(&mut h);
         }
         self.space.hash(&mut h);
         std::mem::discriminant(&self.shape_type).hash(&mut h);
@@ -805,11 +824,10 @@ impl Style {
         let color = self.space.mix(self.color, other.color, t);
         let secondary_color = match (self.secondary_color, other.secondary_color) {
             (None, None) => None,
-            (a, b) => Some(self.space.mix(
-                a.unwrap_or(self.color),
-                b.unwrap_or(other.color),
-                t,
-            )),
+            (a, b) => Some(
+                self.space
+                    .mix(a.unwrap_or(self.color), b.unwrap_or(other.color), t),
+            ),
         };
         let direction = self
             .direction
@@ -957,6 +975,7 @@ impl Style {
     /// Builds a `GradMeshMaterial` from this style and registers it in the asset server.
     ///
     /// Returns a handle to the newly created material.
+    #[cfg(feature = "pbr")]
     pub fn build_material(
         &self,
         materials: &mut Assets<GradMeshMaterial>,
@@ -970,6 +989,7 @@ impl Style {
     /// Roughness, metallic and emissive are written to the `StandardMaterial`
     /// base, translucent gradients use alpha blending, and the direction space is
     /// encoded for the shader.
+    #[cfg(feature = "pbr")]
     pub fn build(&self) -> GradMeshMaterial {
         let mut material = self.build_base();
 
@@ -1015,6 +1035,7 @@ impl Style {
         material
     }
 
+    #[cfg(feature = "pbr")]
     fn build_base(&self) -> GradMeshMaterial {
         // Extract color components using to_srgba() which handles all Color variants
         let srgba = self.color.to_srgba();
@@ -1154,17 +1175,17 @@ mod tests {
         let b = Style::dual_directional_up(Color::srgb(0.0, 1.0, 0.0), Color::srgb(1.0, 1.0, 0.0));
         let mid = a.lerp(&b, 0.5);
         assert_eq!(mid.space, MixSpace::Oklch);
-        assert_eq!(
-            mid.color,
-            MixSpace::Oklch.mix(a.color, b.color, 0.5),
-        );
+        assert_eq!(mid.color, MixSpace::Oklch.mix(a.color, b.color, 0.5),);
         let close = |x: Color, y: Color| {
             let (x, y) = (x.to_srgba(), y.to_srgba());
             (x.red - y.red).abs() + (x.green - y.green).abs() + (x.blue - y.blue).abs() < 1e-3
         };
         let (l0, l1) = (a.lerp(&b, 0.0), a.lerp(&b, 1.0));
         assert!(close(l0.color, a.color));
-        assert!(close(l1.secondary_color.unwrap(), b.secondary_color.unwrap()));
+        assert!(close(
+            l1.secondary_color.unwrap(),
+            b.secondary_color.unwrap()
+        ));
     }
 
     #[test]
@@ -1260,7 +1281,10 @@ mod tests {
         let local = world.with_direction_space(DirectionSpace::Local);
         let u = local.build().extension.uniforms;
         assert_eq!(u.direction.w, 1.0);
-        assert_eq!((u.direction.x, u.direction.y, u.direction.z), (0.0, 0.0, 1.0));
+        assert_eq!(
+            (u.direction.x, u.direction.y, u.direction.z),
+            (0.0, 0.0, 1.0)
+        );
     }
 
     #[test]
@@ -1281,13 +1305,20 @@ mod tests {
         assert!((faded.color.alpha() - 0.25).abs() < 1e-6);
         let opaque = Style::shaded(Color::WHITE, 0.5);
         let mid = opaque.lerp(&s, 0.5);
-        assert!((mid.color.alpha() - 0.75).abs() < 1e-3, "{}", mid.color.alpha());
+        assert!(
+            (mid.color.alpha() - 0.75).abs() < 1e-3,
+            "{}",
+            mid.color.alpha()
+        );
 
         // Single-colour opaque styles switch to the transparent blend mode.
         let single = Style::opaque(Color::WHITE).with_alpha(0.4);
         assert_eq!(single.blend_mode, BlendMode::Transparent);
         assert!((single.build().extension.uniforms.color.w - 0.4).abs() < 1e-6);
-        assert_eq!(Style::opaque(Color::WHITE).with_alpha(1.0).blend_mode, BlendMode::Opaque);
+        assert_eq!(
+            Style::opaque(Color::WHITE).with_alpha(1.0).blend_mode,
+            BlendMode::Opaque
+        );
         assert!(Style::opaque(Color::WHITE).casts_shadows());
     }
 

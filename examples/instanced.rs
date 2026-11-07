@@ -67,7 +67,7 @@ fn setup(
     ));
     commands.insert_resource(GlobalAmbientLight {
         color: Color::srgb(0.5, 0.5, 0.6),
-        brightness: 200.0,
+        brightness: 900.0,
         affects_lightmapped_meshes: false,
     });
 

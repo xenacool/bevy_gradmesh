@@ -1,6 +1,6 @@
 [package]
 name = "bevy_gradmesh"
-version = "0.2.3"
+version = "0.2.4"
 authors = ["Jessica Collins (https://github.com/xenacool)"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
@@ -24,8 +24,13 @@ similar_names = "allow"
 too_many_lines = "allow"
 too_many_arguments = "allow"
 
+[features]
+default = ["pbr"]
+# PBR-based paths (ExtendedMaterial, instanced PBR pipeline). Disable for mobile / PBR-free builds.
+pbr = ["bevy/bevy_pbr"]
+
 [dependencies]
-bevy = { version = "0.20", default-features = false, features = ["bevy_pbr", "bevy_render", "bevy_sprite_render", "bevy_log", "bevy_text", "bevy_ui", "debug", "default_font"] }
+bevy = { version = "0.20", default-features = false, features = ["bevy_render", "bevy_sprite_render", "bevy_log", "bevy_text", "bevy_ui", "debug", "default_font"] }
 bevy_asset = "0.20"
 bevy_material = "0.20"
 bytemuck = "1.21"

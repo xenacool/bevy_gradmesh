@@ -20,7 +20,9 @@
 use std::collections::HashMap;
 
 use crate::deformation::Deformation;
+#[cfg(feature = "pbr")]
 use crate::material::GradMeshExtension;
+#[cfg(feature = "pbr")]
 use crate::material_interning::{GradMeshMaterialPool, warn_excessive_materials};
 use crate::render_pipeline::InstancedStats;
 use crate::shape::Shape;
@@ -28,6 +30,7 @@ use crate::standalone_pipeline::StandaloneRenderPlugin;
 use bevy::app::Plugin;
 use bevy::asset::{Assets, Handle};
 use bevy::ecs::prelude::*;
+#[cfg(feature = "pbr")]
 use bevy::pbr::{ExtendedMaterial, MaterialPlugin, StandardMaterial};
 use bevy::render::mesh::Mesh;
 
@@ -238,29 +241,62 @@ fn tick_deformation(mut deformation: ResMut<Deformation>, time: Res<bevy::time::
     deformation.tick(time.delta().as_secs_f32());
 }
 
+/// Registers everything that does not need `bevy_pbr`: the shared mesh cache,
+/// the deformation clock, the standalone pipeline and the 2D material paths.
+fn build_common(app: &mut bevy::app::App) {
+    app.add_plugins(StandaloneRenderPlugin)
+        .init_resource::<MeshCache>()
+        .init_resource::<InstancedStats>()
+        .init_resource::<Deformation>()
+        .add_systems(bevy::app::Update, tick_deformation);
+
+    // The 2D materials need Bevy's 2D mesh renderer; only register them when
+    // that renderer is present (otherwise add `GradMesh2dPlugin` manually).
+    if app.is_plugin_added::<bevy::sprite_render::Mesh2dRenderPlugin>() {
+        app.add_plugins(crate::material2d::GradMesh2dPlugin);
+        app.add_plugins(crate::sdf2d::SdfMaterial2dPlugin);
+    }
+}
+
+impl GradMeshPlugin {
+    /// Entry point for mobile and other PBR-free apps.
+    ///
+    /// Registers only the standalone pipeline and the 2D paths (`Mesh2d`
+    /// gradients and SDF shapes). It never touches `StandardMaterial`, so it
+    /// works with Bevy's `PbrPlugin` disabled and, with the `pbr` crate feature
+    /// off, without `bevy_pbr` being compiled at all.
+    #[must_use]
+    pub fn for_mobile() -> GradMeshMobilePlugin {
+        GradMeshMobilePlugin
+    }
+}
+
+/// The PBR-free plugin returned by [`GradMeshPlugin::for_mobile`].
+#[derive(Default, Clone, Copy, Debug)]
+pub struct GradMeshMobilePlugin;
+
+impl Plugin for GradMeshMobilePlugin {
+    fn build(&self, app: &mut bevy::app::App) {
+        build_common(app);
+    }
+}
+
 impl Plugin for GradMeshPlugin {
     fn build(&self, app: &mut bevy::app::App) {
-        // Embed the shaders so they're available when plugins load them
-        bevy::asset::embedded_asset!(app, "shader/gradmesh.wesl");
-        bevy::asset::embedded_asset!(app, "shader/instanced.wesl");
+        build_common(app);
 
-        app.add_plugins(MaterialPlugin::<
-            ExtendedMaterial<StandardMaterial, GradMeshExtension>,
-        >::default())
-            .add_plugins(crate::instanced_render::InstancedRenderPlugin)
-            .add_plugins(StandaloneRenderPlugin)
-            .init_resource::<MeshCache>()
-            .init_resource::<InstancedStats>()
-            .init_resource::<Deformation>()
-            .init_resource::<GradMeshMaterialPool>()
-            .add_systems(bevy::app::Update, tick_deformation)
-            .add_systems(bevy::app::Update, warn_excessive_materials);
+        #[cfg(feature = "pbr")]
+        {
+            // Embed the shaders so they're available when plugins load them
+            bevy::asset::embedded_asset!(app, "shader/gradmesh.wesl");
+            bevy::asset::embedded_asset!(app, "shader/instanced.wesl");
 
-        // The 2D material needs Bevy's 2D mesh renderer; only register it when
-        // that renderer is present (otherwise add `GradMesh2dPlugin` manually).
-        if app.is_plugin_added::<bevy::sprite_render::Mesh2dRenderPlugin>() {
-            app.add_plugins(crate::material2d::GradMesh2dPlugin);
-            app.add_plugins(crate::sdf2d::SdfMaterial2dPlugin);
+            app.add_plugins(MaterialPlugin::<
+                ExtendedMaterial<StandardMaterial, GradMeshExtension>,
+            >::default())
+                .add_plugins(crate::instanced_render::InstancedRenderPlugin)
+                .init_resource::<GradMeshMaterialPool>()
+                .add_systems(bevy::app::Update, warn_excessive_materials);
         }
     }
 }

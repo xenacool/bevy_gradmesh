@@ -72,7 +72,12 @@ fn setup(
     let cool = (Color::srgb(0.25, 0.4, 1.0), Color::srgb(0.4, 1.0, 0.85));
 
     // Row 1: filled disc, ellipse, rounded rect, circle with a gradient in Oklch.
-    spawn(&mut commands, SdfMaterial2d::disc(80.0).with_colors(warm.0, warm.1), Vec2::new(-450.0, 190.0), 0.0);
+    spawn(
+        &mut commands,
+        SdfMaterial2d::disc(80.0).with_colors(warm.0, warm.1),
+        Vec2::new(-450.0, 190.0),
+        0.0,
+    );
     spawn(
         &mut commands,
         SdfMaterial2d::ellipse(Vec2::new(110.0, 65.0)).with_colors(cool.0, cool.1),
@@ -99,43 +104,85 @@ fn setup(
     );
 
     // Row 2: rims.
-    spawn(&mut commands, SdfMaterial2d::disc(80.0).with_rim(12.0).with_color(Color::srgb(0.5, 0.9, 0.6)), Vec2::new(-450.0, -20.0), 0.0);
     spawn(
         &mut commands,
-        SdfMaterial2d::rect(Vec2::new(200.0, 140.0)).with_corner_radius(20.0).with_rim(8.0).with_color(Color::srgb(0.95, 0.65, 0.3)),
+        SdfMaterial2d::disc(80.0)
+            .with_rim(12.0)
+            .with_color(Color::srgb(0.5, 0.9, 0.6)),
+        Vec2::new(-450.0, -20.0),
+        0.0,
+    );
+    spawn(
+        &mut commands,
+        SdfMaterial2d::rect(Vec2::new(200.0, 140.0))
+            .with_corner_radius(20.0)
+            .with_rim(8.0)
+            .with_color(Color::srgb(0.95, 0.65, 0.3)),
         Vec2::new(-210.0, -20.0),
         0.0,
     );
     spawn(
         &mut commands,
-        SdfMaterial2d::ellipse(Vec2::new(110.0, 65.0)).with_rim(6.0).with_colors(cool.0, cool.1),
+        SdfMaterial2d::ellipse(Vec2::new(110.0, 65.0))
+            .with_rim(6.0)
+            .with_colors(cool.0, cool.1),
         Vec2::new(60.0, -20.0),
         0.0,
     );
     // Thin rim: sub-pixel-ish AA check.
-    spawn(&mut commands, SdfMaterial2d::disc(80.0).with_rim(1.5).with_color(Color::WHITE), Vec2::new(330.0, -20.0), 0.0);
-
-    // Row 3: arcs (animated by `animate`).
-    spawn(&mut commands, SdfMaterial2d::disc(80.0).with_rim(14.0).with_arc(0.0, PI * 1.2).with_colors(warm.0, warm.1), Vec2::new(-450.0, -230.0), 0.0);
-    spawn(&mut commands, SdfMaterial2d::disc(80.0).with_arc(PI * 0.25, PI * 0.5).with_colors(cool.0, cool.1), Vec2::new(-210.0, -230.0), 0.0);
-    spawn(&mut commands, SdfMaterial2d::disc(80.0).with_rim(18.0).with_arc(0.0, TAU * 0.35).with_color(Color::srgb(0.9, 0.5, 0.9)), Vec2::new(60.0, -230.0), 0.0);
     spawn(
         &mut commands,
-        SdfMaterial2d::rect(Vec2::new(200.0, 140.0)).with_corner_radius(30.0).with_color(Color::srgba(0.4, 0.8, 1.0, 0.6)),
+        SdfMaterial2d::disc(80.0)
+            .with_rim(1.5)
+            .with_color(Color::WHITE),
+        Vec2::new(330.0, -20.0),
+        0.0,
+    );
+
+    // Row 3: arcs (animated by `animate`).
+    spawn(
+        &mut commands,
+        SdfMaterial2d::disc(80.0)
+            .with_rim(14.0)
+            .with_arc(0.0, PI * 1.2)
+            .with_colors(warm.0, warm.1),
+        Vec2::new(-450.0, -230.0),
+        0.0,
+    );
+    spawn(
+        &mut commands,
+        SdfMaterial2d::disc(80.0)
+            .with_arc(PI * 0.25, PI * 0.5)
+            .with_colors(cool.0, cool.1),
+        Vec2::new(-210.0, -230.0),
+        0.0,
+    );
+    spawn(
+        &mut commands,
+        SdfMaterial2d::disc(80.0)
+            .with_rim(18.0)
+            .with_arc(0.0, TAU * 0.35)
+            .with_color(Color::srgb(0.9, 0.5, 0.9)),
+        Vec2::new(60.0, -230.0),
+        0.0,
+    );
+    spawn(
+        &mut commands,
+        SdfMaterial2d::rect(Vec2::new(200.0, 140.0))
+            .with_corner_radius(30.0)
+            .with_color(Color::srgba(0.4, 0.8, 1.0, 0.6)),
         Vec2::new(330.0, -230.0),
         1.0,
     );
 }
 
 /// Animates the rim arc, span and corner radius by editing material floats only.
-fn animate(
-    time: Res<Time>,
-    mut materials: ResMut<Assets<SdfMaterial2d>>,
-    query: Query<&Animated>,
-) {
+fn animate(time: Res<Time>, mut materials: ResMut<Assets<SdfMaterial2d>>, query: Query<&Animated>) {
     let t = time.elapsed_secs();
     for Animated(handle) in &query {
-        let Some(mut m) = materials.get_mut(handle) else { continue };
+        let Some(mut m) = materials.get_mut(handle) else {
+            continue;
+        };
         // Only shapes that already have a partial arc keep rotating.
         if m.uniform.shape.w < TAU - 0.01 {
             m.uniform.shape.z = t;

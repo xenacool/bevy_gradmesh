@@ -37,9 +37,9 @@
 
 use std::mem::size_of;
 
+use bevy::core_pipeline::core_3d::CORE_3D_DEPTH_FORMAT;
 use bevy::core_pipeline::core_3d::{Opaque3d, Opaque3dBatchSetKey, Opaque3dBinKey};
 use bevy::ecs::system::{SystemParamItem, lifetimeless::*};
-use bevy::core_pipeline::core_3d::CORE_3D_DEPTH_FORMAT;
 use bevy::mesh::{MeshVertexBufferLayoutRef, VertexBufferLayout};
 use bevy::prelude::*;
 use bevy::render::extract_component::{ExtractComponent, ExtractComponentPlugin};
@@ -317,7 +317,11 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetStandaloneViewBindGro
         view_bind_group: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
-        pass.set_bind_group(I, &view_bind_group.into_inner().0, &[view_uniform_offset.offset]);
+        pass.set_bind_group(
+            I,
+            &view_bind_group.into_inner().0,
+            &[view_uniform_offset.offset],
+        );
         RenderCommandResult::Success
     }
 }

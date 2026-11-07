@@ -477,9 +477,8 @@ fn init_instanced_pipeline(
         return;
     };
     use bevy::asset::AssetPath;
-    let path = AssetPath::from_path_buf(
-        bevy::asset::embedded_path!("shader/instanced.wesl"),
-    ).with_source("embedded");
+    let path = AssetPath::from_path_buf(bevy::asset::embedded_path!("shader/instanced.wesl"))
+        .with_source("embedded");
     let shader = asset_server.load(path);
     commands.insert_resource(InstancedPipeline::new(mesh_pipeline.clone(), shader));
 }

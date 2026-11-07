@@ -42,11 +42,12 @@ pub mod culling;
 pub mod deformation;
 mod geometry;
 pub mod immediate;
+#[cfg(feature = "pbr")]
 pub mod instanced_render;
 pub mod lod;
 pub mod material;
 pub mod material2d;
-pub mod sdf2d;
+#[cfg(feature = "pbr")]
 pub mod material_interning;
 pub mod mix_space;
 pub mod outline;
@@ -54,6 +55,7 @@ pub mod plugin;
 pub mod polyline_gpu;
 pub mod render_pipeline;
 pub mod retained;
+pub mod sdf2d;
 pub mod shape;
 pub mod spline;
 pub mod standalone_pipeline;
@@ -62,27 +64,32 @@ pub mod style;
 pub use appearance::{AppearanceSnapshot, AppearanceType};
 pub use batch::{Batch, BatchKey, BatchRecorder, InstanceProperties, InstanceTransform};
 pub use deformation::{Deformation, DeformationParams, DeformationType};
+pub use immediate::{BillboardMode, DepthTest, DepthWrite, RenderState};
+#[cfg(feature = "pbr")]
 pub use immediate::{
-    BillboardMode, DepthTest, DepthWrite, ImmediateRecorder, RenderState, imm_additive,
-    imm_dual_directional, imm_opaque, imm_transparent,
+    ImmediateRecorder, imm_additive, imm_dual_directional, imm_opaque, imm_transparent,
 };
+#[cfg(feature = "pbr")]
 pub use instanced_render::{InstancedBatchData, InstancedRenderPlugin};
 pub use lod::{LOD_EXTREME, LOD_HIGH, LOD_LOW, LOD_MEDIUM, LOD_MINIMAL, LodConfig, LodResult};
+#[cfg(feature = "pbr")]
 pub use material::{
-    GradMeshExtension, GradMeshMaterial, GradMeshUniform, GradMeshUniformBuffer, Vec4, additive,
-    dashed, dither, dual_directional, dual_radial, dual_radial_alpha, gradmesh_to_standard,
-    multiplicative, opaque, screen, transparent, with_gradient_bounds, with_mix_space,
+    GradMeshExtension, GradMeshMaterial, additive, dashed, dither, dual_directional, dual_radial,
+    dual_radial_alpha, gradmesh_to_standard, multiplicative, opaque, screen, transparent,
+    with_gradient_bounds, with_mix_space,
 };
-pub use material2d::{GradMesh2dPlugin, GradMeshMaterial2d};
-pub use sdf2d::{SdfKind, SdfMaterial2d, SdfMaterial2dPlugin, SdfUniform, unit_quad};
+pub use material::{GradMeshUniform, GradMeshUniformBuffer, Vec4};
+#[cfg(feature = "pbr")]
 pub use material_interning::{
     GradMeshMaterialKey, GradMeshMaterialPool, MATERIAL_WARNING_THRESHOLD, warn_excessive_materials,
 };
+pub use material2d::{GradMesh2dPlugin, GradMeshMaterial2d};
 pub use mix_space::MixSpace;
-pub use plugin::{GradMeshPlugin, MeshCache};
+pub use outline::{arch, blob, rounded_rectangle};
+pub use plugin::{GradMeshMobilePlugin, GradMeshPlugin, MeshCache};
 pub use render_pipeline::{GradMeshBatchItem, InstancedBatch, InstancedBufferData, InstancedStats};
 pub use retained::{GradMeshHandle, RetainedWorld};
-pub use outline::{arch, blob, rounded_rectangle};
+pub use sdf2d::{SdfKind, SdfMaterial2d, SdfMaterial2dPlugin, SdfUniform, unit_quad};
 pub use shape::{Shape, ShapeBounds, ShapeDetail, ShapePart};
 pub use spline::{BakedSpline, CatmullRomSpline, SplineFrame};
 pub use standalone_pipeline::{

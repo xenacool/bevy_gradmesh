@@ -7,7 +7,12 @@
 // Note: Float comparisons use epsilon thresholds. Boolean flags stored as 0.0/1.0
 // are compared with > 0.5 to avoid precision issues.
 
-import bevy_pbr::render::view_transformations::position_world_to_clip;
+import bevy_pbr::render::{
+    mesh_view_bindings::{view, globals},
+    pbr_functions::{apply_pbr_lighting, calculate_view, main_pass_post_lighting_processing},
+    pbr_types::pbr_input_new,
+    view_transformations::position_world_to_clip,
+};
 
 // ─── OKLAB color space conversion ───
 
@@ -437,7 +442,7 @@ fn instanced_vertex(input: InstancedVertex) -> InstancedVertexOutput {
         input.position.xyz,
         input.normal,
         input.instance_deformation,
-        0.0 // Time will be passed via uniform in the future
+        globals.time
     );
 
     // Transform deformed vertex position by instance matrix
@@ -502,8 +507,27 @@ fn instanced_fragment(
     }
 }
 
-    // Apply blend mode
-    let result = apply_blend_mode(base_color, in.clip_position.xy, in.flags, in.color.w);
+    // Light the gradient colour with Bevy's PBR lighting (directional, point and
+    // spot lights, ambient light) so shapes read as 3D rather than flat colour.
+    var pbr_input = pbr_input_new();
+    pbr_input.frag_coord = in.clip_position;
+    pbr_input.world_position = in.world_position;
+    pbr_input.is_orthographic = view.clip_from_view[3].w == 1.0;
+    pbr_input.V = calculate_view(in.world_position, pbr_input.is_orthographic);
+    var normal = normalize(in.world_normal);
+    if (!is_front) {
+        normal = -normal;
+    }
+    pbr_input.world_normal = normal;
+    pbr_input.N = normal;
+    pbr_input.material.base_color = vec4<f32>(base_color, in.color.w);
+    pbr_input.material.perceptual_roughness = 0.7;
+
+    let lit = apply_pbr_lighting(pbr_input);
+
+    // Apply blend mode on the lit colour, then fog / tonemapping.
+    var result = apply_blend_mode(lit.rgb, in.clip_position.xy, in.flags, in.color.w);
+    result = main_pass_post_lighting_processing(pbr_input, result);
 
     return result;
 }

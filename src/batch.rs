@@ -761,6 +761,7 @@ impl BatchRecorder {
 
     // ─── Rendering ───
 
+    #[cfg(feature = "pbr")]
     /// Spawns entities with `InstancedBatchData` components from the collected
     /// batches.  Each batch becomes one entity that the GPU instanced render
     /// pipeline draws with a single `draw_indexed` call.
