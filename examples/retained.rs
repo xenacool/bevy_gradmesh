@@ -1,4 +1,4 @@
-//! Retained world example — demonstrates the `RetainedWorld` API for persistent, updatable shapes.
+//! Retained world example - demonstrates the `RetainedWorld` API for persistent, updatable shapes.
 //!
 //! Shows how to create shapes that persist across frames and can be updated
 //! efficiently via handles, without recreating entities each frame.

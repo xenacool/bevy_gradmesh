@@ -1,4 +1,4 @@
-//! Arbitrary shapes example — demonstrates custom polygon, star, ring, wedge, and tapered cylinder.
+//! Arbitrary shapes example - demonstrates custom polygon, star, ring, wedge, and tapered cylinder.
 //!
 //! Shows shapes that go beyond the standard primitives: user-defined polygons
 //! with per-vertex colors, star shapes, annular rings, pie-slice wedges,
@@ -86,7 +86,7 @@ fn setup(
         ))
     };
 
-    // ─── Row 1: Star shapes (y = 0.5) ───
+    // --- Row 1: Star shapes (y = 0.5) ---
     // 5-pointed star
     let star5 = meshes.add(
         Shape::star(5, 0.45, 0.18, ShapeDetail::High)
@@ -126,7 +126,7 @@ fn setup(
     ));
     spawn_label(&mut commands, "Deep Star", Vec3::new(3.0, 1.2, 0.0));
 
-    // ─── Row 2: Ring & Wedge (y = 2.2) ───
+    // --- Row 2: Ring & Wedge (y = 2.2) ---
     // Full ring
     let ring = meshes.add(
         Shape::ring(0.45, 0.25, ShapeDetail::High)
@@ -166,7 +166,7 @@ fn setup(
     ));
     spawn_label(&mut commands, "Quarter Wedge", Vec3::new(3.0, 2.9, 0.0));
 
-    // ─── Row 3: Tapered Cylinder (y = 3.9) ───
+    // --- Row 3: Tapered Cylinder (y = 3.9) ---
     // Cup shape (narrow top, wide bottom)
     let cup = meshes.add(
         Shape::tapered_cylinder(0.2, 0.4, 0.7, ShapeDetail::High)
@@ -216,7 +216,7 @@ fn setup(
     ));
     spawn_label(&mut commands, "Barrel", Vec3::new(3.0, 4.6, 0.0));
 
-    // ─── Row 4: Arbitrary Polygons (y = 5.6) ───
+    // --- Row 4: Arbitrary Polygons (y = 5.6) ---
     // Arrow shape
     let arrow_verts = vec![
         Vec2::new(0.0, 0.5),   // tip

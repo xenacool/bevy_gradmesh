@@ -60,7 +60,7 @@ fn update(mut retained: ResMut<RetainedWorld>, handle: Res<GradMeshHandle>) {
 
 ## Batched Mode
 
-Groups instances into batches for GPU instancing — thousands of shapes in far fewer draw calls.
+Groups instances into batches for GPU instancing - thousands of shapes in far fewer draw calls.
 
 ```rust
 use bevy_gradmesh::{BatchRecorder, AppearanceSnapshot};

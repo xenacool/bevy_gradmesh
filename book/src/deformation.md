@@ -62,7 +62,7 @@ fn draw(mut recorder: ResMut<BatchRecorder>) {
 1. Each instance carries a `DeformationParams` vec4 in its GPU buffer
 2. The vertex shader reads this attribute and displaces vertices in local space
 3. The global `Deformation` resource provides elapsed time for animation
-4. All computation happens on the GPU — no CPU overhead per frame
+4. All computation happens on the GPU - no CPU overhead per frame
 
 ## Performance
 

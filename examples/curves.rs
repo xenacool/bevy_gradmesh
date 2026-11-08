@@ -1,4 +1,4 @@
-//! Bézier curves example — demonstrates curve primitives as tubes.
+//! Bézier curves example - demonstrates curve primitives as tubes.
 //!
 //! Shows linear, quadratic, and cubic Bézier curves rendered as tube geometry.
 //!
@@ -72,7 +72,7 @@ fn setup(
     mut meshes: ResMut<Assets<bevy::render::mesh::Mesh>>,
     mut materials: ResMut<Assets<GradMeshMaterial>>,
 ) {
-    // Camera — angled view that fills the frame
+    // Camera - angled view that fills the frame
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(0.0, 9.5, 13.0).looking_at(Vec3::new(0.0, 1.2, 0.0), Vec3::Y),
@@ -176,7 +176,7 @@ fn setup(
         Vec3::new(0.0, 2.0, 0.0),
     );
 
-    // ─── 3D helix: sampled from cos/sin so it is a true helix ───
+    // --- 3D helix: sampled from cos/sin so it is a true helix ---
     let turns = 3.0_f32;
     let radius = 1.0_f32;
     let height = 3.6_f32;

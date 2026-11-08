@@ -1,4 +1,4 @@
-//! Style showcase example — demonstrates all blend modes, color modes, and dash patterns.
+//! Style showcase example - demonstrates all blend modes, color modes, and dash patterns.
 //!
 //! Uses the `Style` builder API to create materials, showcasing varied shapes
 //! (spheres, discs, cuboids) against a backdrop plane.
@@ -51,7 +51,7 @@ fn setup(
     mut meshes: ResMut<Assets<bevy::render::mesh::Mesh>>,
     mut materials: ResMut<Assets<GradMeshMaterial>>,
 ) {
-    // Camera — angled top-down view to see all rows clearly
+    // Camera - angled top-down view to see all rows clearly
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(0.0, 12.0, 11.5).looking_at(Vec3::new(0.0, 0.4, 0.4), Vec3::Y),
@@ -97,7 +97,7 @@ fn setup(
     let z2 = row_spacing * 0.5;
     let z3 = row_spacing * 1.5;
 
-    // ─── Row 1: Color Modes ───
+    // --- Row 1: Color Modes ---
     let r1_xs = [
         -col_spacing * 2.2,
         -col_spacing * 1.1,
@@ -165,7 +165,7 @@ fn setup(
         "Dual Radial (OKLCH)",
     );
 
-    // ─── Row 2: Blend Modes ───
+    // --- Row 2: Blend Modes ---
     let r2_xs = [
         -col_spacing * 2.5,
         -col_spacing * 1.5,
@@ -242,7 +242,7 @@ fn setup(
         "Dither",
     );
 
-    // ─── Row 3: Dash Patterns ───
+    // --- Row 3: Dash Patterns ---
     let r3_xs = r2_xs;
 
     // Normal dash on disc rim
@@ -257,7 +257,7 @@ fn setup(
         "Dash Normal",
     );
 
-    // Chevron dash on disc rim — V-shapes visible across rim width
+    // Chevron dash on disc rim - V-shapes visible across rim width
     add_shape_tilted(
         &mut commands,
         &mut materials,
@@ -314,7 +314,7 @@ fn setup(
         "Rect Rounded",
     );
 
-    // ─── Row 4: Material Presets ───
+    // --- Row 4: Material Presets ---
     let r4_xs = r2_xs;
 
     // Skin tone

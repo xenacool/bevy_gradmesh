@@ -92,7 +92,7 @@ pub enum DepthWrite {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BillboardMode {
     #[default]
-    /// No billboarding — shape faces +Z.
+    /// No billboarding - shape faces +Z.
     None,
     /// Shape faces the camera, Y-axis locked up.
     FaceCameraY,
@@ -620,11 +620,11 @@ impl ImmediateRecorder {
         match billboard {
             BillboardMode::None => {}
             BillboardMode::FaceCameraY => {
-                // Face camera but keep Y up — will be updated by a system
+                // Face camera but keep Y up - will be updated by a system
                 transform.rotation *= Quat::from_rotation_x(std::f32::consts::PI / 2.0);
             }
             BillboardMode::FaceCamera => {
-                // Full billboard — will be updated by a system
+                // Full billboard - will be updated by a system
                 transform.rotation *= Quat::from_rotation_x(std::f32::consts::PI / 2.0);
             }
         }

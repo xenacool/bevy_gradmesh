@@ -5,7 +5,7 @@
 BevyGradmesh automatically culls instances outside the camera's view frustum. Each batch stores a mesh AABB, and per-instance transforms are tested against 6 frustum planes extracted from the view-projection matrix.
 
 ```rust
-// Culling is automatic — no configuration needed
+// Culling is automatic - no configuration needed
 // Check stats to see how many instances were culled
 fn log_culling(stats: Res<InstancedStats>) {
     info!("Culled: {}/{} ({:.1}%)",
@@ -71,7 +71,7 @@ let collider = Collider::convex_hull_from_mesh(&mesh);
 1. **Use batched mode** for large numbers of similar shapes
 2. **Enable LOD** for scenes with varying camera distances
 3. **Check dirty tracking** to minimize GPU uploads
-4. **Use appropriate detail levels** — don't use Extreme for distant objects
+4. **Use appropriate detail levels** - don't use Extreme for distant objects
 5. **Monitor InstancedStats** each frame during development
 
 ## Limitations

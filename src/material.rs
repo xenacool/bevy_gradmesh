@@ -106,7 +106,7 @@ pub struct GradMeshUniformBuffer {
     pub flags: Vec4,
     pub dash: Vec4,
     /// World-space center of the shape, used for object-space gradient computation.
-    /// Stored as (x, y, z, 0) — the shape's translation in world coordinates.
+    /// Stored as (x, y, z, 0) - the shape's translation in world coordinates.
     pub world_center: Vec4,
     /// Procedural noise: `(scale, amount, 0, 0)`; `amount == 0` disables it.
     pub noise: Vec4,

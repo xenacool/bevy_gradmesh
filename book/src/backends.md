@@ -89,7 +89,7 @@ The crate has a `pbr` cargo feature that is on by default. It gates `material.rs
 For a PBR-free app, switch default features off and add the mobile plugin:
 
 ```toml
-bevy_gradmesh = { version = "0.2", default-features = false }
+bevy_gradmesh = { version = "0.3", default-features = false }
 ```
 
 ```rust

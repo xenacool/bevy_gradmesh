@@ -1,4 +1,4 @@
-//! Colour-space example — the same two colours blended in each `MixSpace`.
+//! Colour-space example - the same two colours blended in each `MixSpace`.
 //!
 //! Each row blends in one space; each column uses one colour pair. Blue to
 //! yellow turns grey in the middle in sRGB and linear RGB; OKLAB keeps the

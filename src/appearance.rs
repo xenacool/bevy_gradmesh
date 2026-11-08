@@ -1,4 +1,4 @@
-//! Appearance Snapshots — per-instance color/gradient animation.
+//! Appearance Snapshots - per-instance color/gradient animation.
 //!
 //! Enables runtime color animation without per-frame CPU updates by encoding
 //! animation parameters as a `vec4` per instance. The vertex shader resolves
@@ -21,7 +21,7 @@ use crate::material::Vec4;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AppearanceType {
     #[default]
-    /// No animation — static color.
+    /// No animation - static color.
     Static,
     /// Pulse between primary and secondary color.
     ColorPulse,
@@ -68,7 +68,7 @@ pub struct AppearanceSnapshot {
 }
 
 impl AppearanceSnapshot {
-    /// No animation — static color.
+    /// No animation - static color.
     pub fn static_appearance() -> Self {
         Self::default()
     }

@@ -6,7 +6,7 @@
 //!
 //! # Architecture
 //!
-//! 1. **GPU Buffers**: Each batch has two storage buffers — one for transforms
+//! 1. **GPU Buffers**: Each batch has two storage buffers - one for transforms
 //!    (`InstanceTransform`, 64 bytes per instance) and one for properties
 //!    (`InstanceProperties`, 80 bytes per instance).
 //! 2. **Custom Shader**: `instanced.wesl` reads per-instance attributes and
@@ -21,7 +21,7 @@ use bevy::ecs::prelude::*;
 use crate::batch::{InstanceProperties, InstanceTransform};
 use crate::deformation::DeformationParams;
 
-// ─── GPU Buffer Data ───
+// --- GPU Buffer Data ---
 
 /// CPU-side buffer data for a single batch, ready for GPU upload.
 #[derive(Debug, Clone)]
@@ -87,7 +87,7 @@ impl InstancedBufferData {
     }
 }
 
-// ─── Statistics ───
+// --- Statistics ---
 
 /// Performance statistics for instanced rendering.
 ///
@@ -106,7 +106,7 @@ impl InstancedBufferData {
 #[derive(Resource, Debug, Clone, Default)]
 #[non_exhaustive]
 pub struct InstancedStats {
-    // ── Per view, summed over views ──
+    // -- Per view, summed over views --
     /// Views that queued instanced batches last frame.
     pub view_count: usize,
     /// Instances that survived culling last frame.
@@ -130,7 +130,7 @@ pub struct InstancedStats {
     pub lod_distribution: [usize; 5],
     /// Instances currently dither cross-fading between two LOD levels.
     pub lod_transitioning_instances: usize,
-    // ── Per frame ──
+    // -- Per frame --
     /// Batches whose LOD level changed last frame (counted on the first view
     /// only), which is how often the scene visibly pops.
     pub lod_changed_batches: usize,
@@ -144,7 +144,7 @@ pub struct InstancedStats {
     /// Steady growth here, with a flat `gpu_upload_bytes`, means a batch
     /// changes size every frame.
     pub buffer_reallocations: usize,
-    // ── Main world: mesh cache ──
+    // -- Main world: mesh cache --
     /// [`MeshCache`](crate::MeshCache) hits since it was created or cleared.
     pub cache_hits: u64,
     /// [`MeshCache`](crate::MeshCache) misses since it was created or cleared.
@@ -158,7 +158,7 @@ pub struct InstancedStats {
     /// Microseconds spent building those meshes. This is the cost of animating
     /// a shape with `Shape::lerp` or rebuilding a heightfield.
     pub mesh_build_micros: u64,
-    // ── Main world: materials ──
+    // -- Main world: materials --
     /// Pooled materials that something still refers to. A count that keeps
     /// climbing means handles are being kept alive.
     pub live_materials: usize,

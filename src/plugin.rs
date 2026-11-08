@@ -1,6 +1,6 @@
 //! BevyGradmesh Bevy Plugin.
 //!
-//! Provides `GradMeshPlugin` — a single entry point that registers the gradient
+//! Provides `GradMeshPlugin` - a single entry point that registers the gradient
 //! material extension and inserts a shared mesh cache resource.
 //!
 //! # Example
@@ -162,7 +162,7 @@ impl MeshCache {
     }
 }
 
-/// BevyGradmesh plugin — registers the gradient material and mesh cache.
+/// BevyGradmesh plugin - registers the gradient material and mesh cache.
 ///
 /// Add this to your `App` instead of manually adding `MaterialPlugin`.
 ///

@@ -35,7 +35,7 @@ pub enum BlendMode {
     LinearBurn,
     ColorBurn,
     Darken,
-    /// Custom shader passthrough — uses the provided shader for fragment rendering.
+    /// Custom shader passthrough - uses the provided shader for fragment rendering.
     Custom(Handle<Shader>),
 }
 
@@ -75,11 +75,11 @@ pub enum DashType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ShapeType {
     #[default]
-    /// No shape hint — uses generic diagonal UV progress.
+    /// No shape hint - uses generic diagonal UV progress.
     Generic,
-    /// Disc/circle — uses angular progress around center.
+    /// Disc/circle - uses angular progress around center.
     Disc,
-    /// Rectangle — uses perimeter tracing around edges.
+    /// Rectangle - uses perimeter tracing around edges.
     Rectangle,
 }
 

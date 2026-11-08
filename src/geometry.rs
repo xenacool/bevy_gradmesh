@@ -56,7 +56,7 @@ impl MeshData {
 
 const WHITE: [f32; 4] = [1.0; 4];
 
-// ─── Heightfield ───
+// --- Heightfield ---
 
 /// How far the skirts of a heightfield hang below the edge, as a fraction of
 /// the larger extent.
@@ -286,7 +286,7 @@ pub(crate) fn heightfield_mesh(
     data.into_mesh(false)
 }
 
-// ─── Sweep ───
+// --- Sweep ---
 
 /// Profile corners sharper than this (cosine of the angle between the
 /// adjacent edge normals, about 40 degrees) stay crisp when swept.
@@ -1047,7 +1047,7 @@ pub(crate) fn sweep_mesh(
     data.into_mesh(tint_keys.is_some())
 }
 
-// ─── 2D ring helpers ───
+// --- 2D ring helpers ---
 
 fn signed_area(ring: &[Vec2]) -> f32 {
     (0..ring.len())
@@ -1153,7 +1153,7 @@ impl Ring {
     }
 }
 
-// ─── Triangulation with holes ───
+// --- Triangulation with holes ---
 
 fn same(a: Vec2, b: Vec2) -> bool {
     a.distance_squared(b) < 1e-10
@@ -1322,7 +1322,7 @@ fn ear_clip(pts: &[Vec2]) -> Vec<u32> {
     out
 }
 
-// ─── Polygon / extruded polygon ───
+// --- Polygon / extruded polygon ---
 
 fn empty_mesh() -> Mesh {
     MeshData::default().into_mesh(false)
@@ -1469,7 +1469,7 @@ pub(crate) fn polygon_mesh(
 }
 
 
-// ─── Lathe ───
+// --- Lathe ---
 
 /// Revolves `profile` (`x` = radius, `y` = height) around the Y axis.
 ///
@@ -1568,7 +1568,7 @@ pub(crate) fn lathe_mesh(profile: &[Vec2], segments: u32) -> Mesh {
     data.into_mesh(false)
 }
 
-// ─── Flat curves ───
+// --- Flat curves ---
 
 /// Thick flat polyline in the XY plane (facing +Z) with mitred joints.
 ///
@@ -1662,7 +1662,7 @@ pub(crate) fn bezier_2d_points(control_points: &[Vec2], segments: u32) -> Vec<Ve
         .collect()
 }
 
-// ─── Compound merge ───
+// --- Compound merge ---
 
 fn read_f32x3(mesh: &Mesh, attr: bevy::mesh::MeshVertexAttribute) -> Option<Vec<Vec3>> {
     match mesh.attribute(attr)? {

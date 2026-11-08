@@ -1,4 +1,4 @@
-//! Polyline example — demonstrates 3D polylines as first-class primitives.
+//! Polyline example - demonstrates 3D polylines as first-class primitives.
 //!
 //! Shows open and closed polylines with different thicknesses and styles.
 //!
@@ -75,7 +75,7 @@ fn setup(
     mut meshes: ResMut<Assets<bevy::render::mesh::Mesh>>,
     mut materials: ResMut<Assets<GradMeshMaterial>>,
 ) {
-    // Camera — angled view that fills the frame
+    // Camera - angled view that fills the frame
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(0.0, 7.5, 11.0).looking_at(Vec3::new(0.0, 1.0, 0.0), Vec3::Y),
@@ -103,7 +103,7 @@ fn setup(
         Transform::from_translation(Vec3::new(0.0, -0.01, 0.0)),
     ));
 
-    // ─── Open zigzag: butter → pink along the path (X), mitred joints ───
+    // --- Open zigzag: butter → pink along the path (X), mitred joints ---
     let origin = Vec3::new(-4.0, 0.9, -2.6);
     let pts = zigzag_points(-2.6, 2.6, 6, 0.9);
     let mesh = meshes.add(Shape::polyline3d(pts, 0.11, false, 12, ShapeDetail::Medium).build());
@@ -114,7 +114,7 @@ fn setup(
     ));
     spawn_label(&mut commands, "Open Zigzag", origin + Vec3::new(0.0, 1.4, 0.0));
 
-    // ─── Closed hexagon: lifted well clear of the ground, rose → pink vertically ───
+    // --- Closed hexagon: lifted well clear of the ground, rose → pink vertically ---
     let origin = Vec3::new(4.0, 1.9, -2.6);
     let pts = hexagon_points(1.3);
     let mesh = meshes.add(Shape::polyline3d(pts, 0.1, true, 12, ShapeDetail::Medium).build());
@@ -125,7 +125,7 @@ fn setup(
     ));
     spawn_label(&mut commands, "Closed Loop", origin + Vec3::new(0.0, 1.8, 0.0));
 
-    // ─── Thick zigzag: lilac → sky ───
+    // --- Thick zigzag: lilac → sky ---
     let origin = Vec3::new(-4.0, 0.9, 2.4);
     let pts = zigzag_points(-2.6, 2.6, 4, 1.0);
     let mesh = meshes.add(Shape::polyline3d(pts, 0.22, false, 16, ShapeDetail::Medium).build());
@@ -136,7 +136,7 @@ fn setup(
     ));
     spawn_label(&mut commands, "Thick Line", origin + Vec3::new(0.0, 1.5, 0.0));
 
-    // ─── Thin detailed zigzag: deep plum → pink ───
+    // --- Thin detailed zigzag: deep plum → pink ---
     let origin = Vec3::new(4.0, 0.9, 2.4);
     let pts = zigzag_points(-2.6, 2.6, 8, 0.55);
     let mesh = meshes.add(Shape::polyline3d(pts, 0.05, false, 8, ShapeDetail::Medium).build());
@@ -147,7 +147,7 @@ fn setup(
     ));
     spawn_label(&mut commands, "Thin Line", origin + Vec3::new(0.0, 1.2, 0.0));
 
-    // ─── 3D spiral: teal → butter bottom to top ───
+    // --- 3D spiral: teal → butter bottom to top ---
     let origin = Vec3::new(0.0, 1.8, 0.0);
     let pts = spiral_points(4, 1.2, 3.2);
     let mesh = meshes.add(Shape::polyline3d(pts, 0.07, false, 10, ShapeDetail::Medium).build());

@@ -7,11 +7,11 @@
 //!
 //! This module provides two mechanisms to deduplicate materials:
 //!
-//! 1. **`GradMeshMaterialKey`** — a hashable struct representing the uniform
+//! 1. **`GradMeshMaterialKey`** - a hashable struct representing the uniform
 //!    parameters of a `GradMeshMaterial`.  Use `get_or_insert()` to find an
 //!    existing material or create a new one.
 //!
-//! 2. **`GradMeshMaterialPool`** — a Bevy `Resource` that manages a cache of
+//! 2. **`GradMeshMaterialPool`** - a Bevy `Resource` that manages a cache of
 //!    deduplicated materials automatically.  Add it via `GradMeshPlugin` or
 //!    manually with `app.init_resource::<GradMeshMaterialPool>()`.
 
@@ -360,7 +360,7 @@ impl GradMeshMaterialPool {
     }
 }
 
-// ─── Material count monitoring ───
+// --- Material count monitoring ---
 
 /// Default warning threshold for the number of live materials.
 ///

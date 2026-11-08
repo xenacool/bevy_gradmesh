@@ -56,9 +56,9 @@ fn setup(
 
 The core API has three main types:
 
-1. **`Shape`** — Describes a procedural primitive. Call `.build()` to get a Bevy `Mesh`.
-2. **`Style`** — Describes gradient material properties. Call `.build_material()` to get a `StandardMaterial`.
-3. **`GradMeshPlugin`** — Registers the custom material and mesh cache with Bevy.
+1. **`Shape`** - Describes a procedural primitive. Call `.build()` to get a Bevy `Mesh`.
+2. **`Style`** - Describes gradient material properties. Call `.build_material()` to get a `StandardMaterial`.
+3. **`GradMeshPlugin`** - Registers the custom material and mesh cache with Bevy.
 
 ## Detail Levels
 

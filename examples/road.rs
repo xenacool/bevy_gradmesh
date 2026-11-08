@@ -130,7 +130,7 @@ fn setup(
         xs.iter()
             .map(|&x| Vec3::new(x, 0.5 + 0.5 * (x / 9.0 * std::f32::consts::FRAC_PI_2).sin(), -2.4 + 1.4 * (x * k).sin()))
             .collect::<Vec<_>>(),
-    )
+    ).unwrap()
     .with_channel(&xs.iter().map(|&x| 1.6 + 0.3 * (x * k * 0.5).cos()).collect::<Vec<_>>())
     .with_channel(&xs.iter().map(|&x| 0.3 * (x * k).sin()).collect::<Vec<_>>());
     let widest = 1.9;

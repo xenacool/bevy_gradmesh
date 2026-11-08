@@ -1,4 +1,4 @@
-//! Instanced rendering demo — showcases the `BatchRecorder` API with many shapes.
+//! Instanced rendering demo - showcases the `BatchRecorder` API with many shapes.
 //!
 //! Demonstrates how the batch recorder groups thousands of shapes into batches
 //! for reduced draw calls. Uses the GPU instanced render pipeline for single
@@ -165,7 +165,7 @@ fn draw_instanced(
 
     let _batches = recorder.0.end();
 
-    // Render batches via GPU instanced pipeline — single draw_indexed per batch
+    // Render batches via GPU instanced pipeline - single draw_indexed per batch
     let spawned_entities = recorder.0.render_batches(&mut commands, meshes, None);
 
     // Tag spawned entities for next frame's cleanup

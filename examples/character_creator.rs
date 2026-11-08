@@ -1,4 +1,4 @@
-//! Comprehensive character creator showcase — demonstrates all BevyGradmesh facial features.
+//! Comprehensive character creator showcase - demonstrates all BevyGradmesh facial features.
 //!
 //! Shows multiple character variants side-by-side, each with different combinations
 //! of eye shapes, eyebrow styles, nose shapes, mouth shapes, blush, hair, facial hair,
@@ -67,13 +67,13 @@ fn setup(
     mut meshes: ResMut<Assets<bevy::render::mesh::Mesh>>,
     mut materials: ResMut<Assets<GradMeshMaterial>>,
 ) {
-    // Camera — centered to see all 7 characters
+    // Camera - centered to see all 7 characters
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(0.0, 6.0, 10.5).looking_at(Vec3::new(0.0, 0.6, -1.4), Vec3::Y),
     ));
 
-    // Lighting — soft directional + ambient, tuned so characters aren't blown out
+    // Lighting - soft directional + ambient, tuned so characters aren't blown out
     commands.spawn(DirectionalLight {
         illuminance: 3_000.0,
         ..default()
@@ -83,7 +83,7 @@ fn setup(
         ..default()
     });
 
-    // Ground plane — large enough for all 7 characters
+    // Ground plane - large enough for all 7 characters
     let ground_mesh =
         meshes.add(Shape::rectangle(Vec2::new(20.0, 12.0), ShapeDetail::Minimal).build());
     commands.spawn((
@@ -93,7 +93,7 @@ fn setup(
             .with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0)),
     ));
 
-    // Character 1: Classic — classic eyes, arch eyebrows, button nose, smile, no blush, short parted hair, no facial hair, no glasses
+    // Character 1: Classic - classic eyes, arch eyebrows, button nose, smile, no blush, short parted hair, no facial hair, no glasses
     let char1 = CharacterConfig {
         position: Vec3::new(-4.5, 0.0, 0.0),
         skin_dark: [0.74, 0.62, 0.53],
@@ -114,7 +114,7 @@ fn setup(
     };
     char1.build(&mut commands, &mut meshes, &mut materials);
 
-    // Character 2: Anime — wide eyes, straight brows, triangle nose, grin, soft blush, spiky hair, no facial hair, round glasses
+    // Character 2: Anime - wide eyes, straight brows, triangle nose, grin, soft blush, spiky hair, no facial hair, round glasses
     let char2 = CharacterConfig {
         position: Vec3::new(-1.5, 0.0, 0.0),
         skin_dark: [0.80, 0.68, 0.58],
@@ -135,7 +135,7 @@ fn setup(
     };
     char2.build(&mut commands, &mut meshes, &mut materials);
 
-    // Character 3: Rugged — sharp eyes, angled brows, bridge nose, smirk, freckles, ponytail, goatee, sunglasses
+    // Character 3: Rugged - sharp eyes, angled brows, bridge nose, smirk, freckles, ponytail, goatee, sunglasses
     let char3 = CharacterConfig {
         position: Vec3::new(1.5, 0.0, 0.0),
         skin_dark: [0.55, 0.40, 0.30],
@@ -156,7 +156,7 @@ fn setup(
     };
     char3.build(&mut commands, &mut meshes, &mut materials);
 
-    // Character 4: Cute — oval eyes, rounded brows, soft nose, cat mouth, round cheeks, twin buns, no facial hair, headband
+    // Character 4: Cute - oval eyes, rounded brows, soft nose, cat mouth, round cheeks, twin buns, no facial hair, headband
     let char4 = CharacterConfig {
         position: Vec3::new(4.5, 0.0, 0.0),
         skin_dark: [0.85, 0.72, 0.62],
@@ -177,7 +177,7 @@ fn setup(
     };
     char4.build(&mut commands, &mut meshes, &mut materials);
 
-    // Character 5: Sleepy — sleepy eyes, bushy brows, straight nose, neutral mouth, no blush, bob fringe, stubble, square glasses
+    // Character 5: Sleepy - sleepy eyes, bushy brows, straight nose, neutral mouth, no blush, bob fringe, stubble, square glasses
     let char5 = CharacterConfig {
         position: Vec3::new(-3.0, 0.0, -3.2),
         skin_dark: [0.65, 0.52, 0.42],
@@ -198,7 +198,7 @@ fn setup(
     };
     char5.build(&mut commands, &mut meshes, &mut materials);
 
-    // Character 6: Gentle — arch eyes, dot brows, button nose, O mouth, no blush, bald, mustache, no glasses
+    // Character 6: Gentle - arch eyes, dot brows, button nose, O mouth, no blush, bald, mustache, no glasses
     let char6 = CharacterConfig {
         position: Vec3::new(0.0, 0.0, -3.2),
         skin_dark: [0.70, 0.58, 0.48],
@@ -219,7 +219,7 @@ fn setup(
     };
     char6.build(&mut commands, &mut meshes, &mut materials);
 
-    // Character 7: Full beard — gentle eyes, bold brows, triangle nose, wide grin, soft blush, short parted, full beard, round glasses
+    // Character 7: Full beard - gentle eyes, bold brows, triangle nose, wide grin, soft blush, short parted, full beard, round glasses
     let char7 = CharacterConfig {
         position: Vec3::new(3.0, 0.0, -3.2),
         skin_dark: [0.60, 0.48, 0.38],
@@ -241,7 +241,7 @@ fn setup(
     char7.build(&mut commands, &mut meshes, &mut materials);
 }
 
-// ─── Character data enums ───
+// --- Character data enums ---
 
 #[derive(Clone, Copy)]
 enum EyeShape {
@@ -318,7 +318,7 @@ enum GlassesStyle {
     Headband,
 }
 
-// ─── Character configuration ───
+// --- Character configuration ---
 
 struct CharacterConfig {
     position: Vec3,
@@ -370,7 +370,7 @@ impl CharacterConfig {
             [0.1, 0.9, 0.3],
         ));
 
-        // ─── Body ───
+        // --- Body ---
         // Torso
         self.add_part(
             commands,
@@ -477,7 +477,7 @@ impl CharacterConfig {
             );
         }
 
-        // ─── Head ───
+        // --- Head ---
         // Head base (sphere)
         self.add_part(
             commands,
@@ -504,7 +504,7 @@ impl CharacterConfig {
             );
         }
 
-        // ─── Facial Features ───
+        // --- Facial Features ---
         self.build_eyes(commands, meshes, materials, root);
         self.build_eyebrows(commands, meshes, materials, root);
         self.build_nose(commands, meshes, materials, root);
@@ -514,7 +514,7 @@ impl CharacterConfig {
         self.build_facial_hair(commands, meshes, materials, root);
         self.build_glasses(commands, meshes, materials, root);
 
-        // ─── Label ───
+        // --- Label ---
         commands.entity(root).with_children(|parent| {
             parent.spawn((
                 Text2d(self.label.to_string()),
@@ -524,7 +524,7 @@ impl CharacterConfig {
         });
     }
 
-    // ─── Eyes ───
+    // --- Eyes ---
 
     fn build_eyes(
         &self,
@@ -690,7 +690,7 @@ impl CharacterConfig {
         }
     }
 
-    // ─── Eyebrows ───
+    // --- Eyebrows ---
 
     fn build_eyebrows(
         &self,
@@ -742,7 +742,7 @@ impl CharacterConfig {
         }
     }
 
-    // ─── Nose ───
+    // --- Nose ---
 
     fn build_nose(
         &self,
@@ -782,7 +782,7 @@ impl CharacterConfig {
         );
     }
 
-    // ─── Mouth ───
+    // --- Mouth ---
 
     fn build_mouth(
         &self,
@@ -908,7 +908,7 @@ impl CharacterConfig {
         }
     }
 
-    // ─── Blush ───
+    // --- Blush ---
 
     fn build_blush(
         &self,
@@ -967,7 +967,7 @@ impl CharacterConfig {
         }
     }
 
-    // ─── Hair ───
+    // --- Hair ---
 
     fn build_hair(
         &self,
@@ -985,7 +985,7 @@ impl CharacterConfig {
 
         match self.hair_style {
             HairStyle::Bald => {
-                // Stubble — transparent hemisphere
+                // Stubble - transparent hemisphere
                 let stubble_mat = materials.add(transparent(
                     self.hair_dark[0] * 0.9,
                     self.hair_dark[1] * 0.9,
@@ -1216,7 +1216,7 @@ impl CharacterConfig {
         }
     }
 
-    // ─── Facial Hair ───
+    // --- Facial Hair ---
 
     fn build_facial_hair(
         &self,
@@ -1296,7 +1296,7 @@ impl CharacterConfig {
         }
     }
 
-    // ─── Glasses ───
+    // --- Glasses ---
 
     fn build_glasses(
         &self,
@@ -1384,7 +1384,7 @@ impl CharacterConfig {
         }
     }
 
-    // ─── Helper ───
+    // --- Helper ---
 
     fn add_part(
         &self,

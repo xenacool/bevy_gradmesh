@@ -160,16 +160,23 @@ profile can overlap itself; that is not corrected.
 ## Splines
 
 `CatmullRomSpline::closed` and `CatmullRomSpline::open` build a curve through
-control points; an open one has one-sided end tangents and its bake puts a frame
-exactly on the last point. `with_channel(&[f32])` attaches a number per control
+control points and return `Err(SplineError::TooFewPoints { .. })` when there are
+too few (3 for a loop, 2 for a path), because the points usually come from user
+data. The curve is centripetal: it never swings out past a short hop between two
+long spans, however unevenly you place the points. An open one has one-sided end
+tangents and its bake puts a frame exactly on the last point. Baking never fails:
+a step that is not positive, or so small that it would need more than 100,000
+frames, is raised to a usable one, and points that coincide bake to a tiny
+stretch of frames. `with_channel(&[f32])` attaches a number per control
 point (width, roll, tilt...) that is interpolated like the position and wraps
 around a closed loop. `bake` samples every channel at every frame;
 `BakedSpline::sweep_frames(width, roll)` turns the baked frames into sweep frames.
 
-`BakedSpline::nearest_t` searches the whole curve, so a point under a bridge may
-match the bridge. `nearest_distance_near(point, around, window)` and
-`nearest_t_in(point, range)` search only a stretch of the curve, so a kart stays on
-its part of the road.
+`BakedSpline::nearest_t` compares in 3D, so a point on a road under a bridge
+matches the road. It still searches the whole curve, so where a road crosses itself
+within a few metres use `nearest_distance_near(point, around, window)` or
+`nearest_t_in(point, range)`, which search only a stretch of the curve, so a kart
+stays on its part of the road.
 
 `relaxed(min_radius)` straightens tight turns but never collapses the loop: it
 keeps at least half the length of the control polygon.

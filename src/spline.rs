@@ -7,6 +7,17 @@
 //! the curve is C1-continuous and passes through each control point. Open paths
 //! have one-sided tangents at their two ends.
 //!
+//! The curve is *centripetal*: each segment is parameterised by the square root
+//! of its chord length. Hand-placed points are rarely evenly spaced, and the
+//! uniform Catmull-Rom curve swings out past a short hop between two long spans,
+//! or even loops. The centripetal curve stays close to the control polygon and
+//! has no loops or cusps inside a segment. It is the only parameterisation, so
+//! curves baked by an earlier version come out a little different.
+//!
+//! The constructors return a [`SplineError`] when there are too few points, because
+//! control points usually come from user data. Baking never fails: see
+//! [`CatmullRomSpline::bake_with_up`].
+//!
 //! ```
 //! use bevy::math::Vec3;
 //! use bevy_gradmesh::spline::CatmullRomSpline;
@@ -16,7 +27,7 @@
 //!     Vec3::new(40.0, 0.0, 0.0),
 //!     Vec3::new(40.0, 0.0, 40.0),
 //!     Vec3::new(0.0, 0.0, 40.0),
-//! ])
+//! ]).unwrap()
 //! // One width per control point, interpolated like the position.
 //! .with_channel(&[6.0, 8.0, 6.0, 8.0])
 //! // Pull over-stressed (too tight) corners straight until every turn has r >= 10.
@@ -101,35 +112,70 @@ impl std::fmt::Display for Relaxed {
 
 impl std::error::Error for Relaxed {}
 
+/// Why a spline could not be built.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SplineError {
+    /// A closed spline needs 3 control points and an open one needs 2.
+    TooFewPoints {
+        /// How many points the spline needs.
+        needed: usize,
+        /// How many were given.
+        got: usize,
+    },
+}
+
+impl std::fmt::Display for SplineError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TooFewPoints { needed, got } => {
+                write!(f, "a spline of this kind needs at least {needed} control points, got {got}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for SplineError {}
+
 impl CatmullRomSpline {
     /// Create a closed spline through `points`. The last point connects back to the first.
     ///
-    /// # Panics
-    /// Panics if fewer than 3 points are given.
-    pub fn closed(points: impl Into<Vec<Vec3>>) -> Self {
+    /// Control points usually come from user data (an editor's handles), so too few of
+    /// them is an error to handle, not a panic: fewer than 3 points give
+    /// [`SplineError::TooFewPoints`].
+    pub fn closed(points: impl Into<Vec<Vec3>>) -> Result<Self, SplineError> {
         let points = points.into();
-        assert!(points.len() >= 3, "a closed spline needs at least 3 points");
-        Self {
+        if points.len() < 3 {
+            return Err(SplineError::TooFewPoints {
+                needed: 3,
+                got: points.len(),
+            });
+        }
+        Ok(Self {
             points,
             closed: true,
             channels: Vec::new(),
-        }
+        })
     }
 
     /// Create an open spline from the first to the last of `points`. The end
     /// tangents are one-sided (they point along the first and last chord), and
     /// [`CatmullRomSpline::bake`] puts a frame exactly on the last point.
     ///
-    /// # Panics
-    /// Panics if fewer than 2 points are given.
-    pub fn open(points: impl Into<Vec<Vec3>>) -> Self {
+    /// Fewer than 2 points give [`SplineError::TooFewPoints`].
+    pub fn open(points: impl Into<Vec<Vec3>>) -> Result<Self, SplineError> {
         let points = points.into();
-        assert!(points.len() >= 2, "an open spline needs at least 2 points");
-        Self {
+        if points.len() < 2 {
+            return Err(SplineError::TooFewPoints {
+                needed: 2,
+                got: points.len(),
+            });
+        }
+        Ok(Self {
             points,
             closed: false,
             channels: Vec::new(),
-        }
+        })
     }
 
     /// Adds a scalar channel with one value per control point. See the module
@@ -181,27 +227,32 @@ impl CatmullRomSpline {
     /// The cubic Bézier control points `[b0, b1, b2, b3]` of segment `index`
     /// (taken modulo [`CatmullRomSpline::segment_count`]).
     pub fn bezier_segment(&self, index: usize) -> [Vec3; 4] {
-        bezier_of(&self.points, index % self.segment_count(), self.closed)
+        self.bezier(index % self.segment_count())
+    }
+
+    /// Bézier control points of `segment` (already reduced modulo the segment count).
+    fn bezier(&self, segment: usize) -> [Vec3; 4] {
+        bezier_of(&self.points, segment, self.closed, knot_spans(&self.points, segment, self.closed))
     }
 
     /// Evaluate the curve at `t`. On a closed loop `t` wraps around `[0, 1)`
     /// over the whole loop; on an open path it is clamped to `[0, 1]`.
     pub fn point(&self, t: f32) -> Vec3 {
         let (segment, u) = self.locate(t);
-        bezier_point(&bezier_of(&self.points, segment, self.closed), u)
+        bezier_point(&self.bezier(segment), u)
     }
 
     /// Unit tangent of the curve at `t`.
     pub fn tangent(&self, t: f32) -> Vec3 {
         let (segment, u) = self.locate(t);
-        let (velocity, _) = bezier_derivatives(&bezier_of(&self.points, segment, self.closed), u);
+        let (velocity, _) = bezier_derivatives(&self.bezier(segment), u);
         velocity.normalize_or_zero()
     }
 
     /// Signed horizontal curvature (1 / radius) at `t`. Positive turns left, negative right.
     pub fn curvature(&self, t: f32) -> f32 {
         let (segment, u) = self.locate(t);
-        signed_curvature(&bezier_of(&self.points, segment, self.closed), u)
+        signed_curvature(&self.bezier(segment), u)
     }
 
     /// Value of channel `index` at `t` (wrapping or clamping like
@@ -209,7 +260,9 @@ impl CatmullRomSpline {
     pub fn channel(&self, index: usize, t: f32) -> Option<f32> {
         let values = self.channels.get(index)?;
         let (segment, u) = self.locate(t);
-        Some(bezier_point(&bezier_of(values, segment, self.closed), u))
+        // The channel uses the position's knot spacing so it stays in step with it.
+        let spans = knot_spans(&self.points, segment, self.closed);
+        Some(bezier_point(&bezier_of(values, segment, self.closed, spans), u))
     }
 
     /// Smallest horizontal turn radius anywhere on the curve (`f32::MAX` if perfectly straight).
@@ -307,8 +360,8 @@ impl CatmullRomSpline {
     /// with the first frame's up direction taken from `+Y`. See
     /// [`CatmullRomSpline::bake_with_up`].
     ///
-    /// # Panics
-    /// Panics if `frame_step` is not positive, or if the spline has no length.
+    /// Never panics: see [`CatmullRomSpline::bake_with_up`] for what happens to a
+    /// step that is not positive and to a spline with no length.
     pub fn bake(&self, frame_step: f32) -> BakedSpline {
         self.bake_with_up(frame_step, Vec3::Y)
     }
@@ -321,10 +374,13 @@ impl CatmullRomSpline {
     /// duplicate of its first frame at full length; an open path ends with a
     /// frame exactly on its last point. Every channel is sampled at every frame.
     ///
-    /// # Panics
-    /// Panics if `frame_step` is not positive, or if the spline has no length.
+    /// Baking never fails, because the step and the points often come from a
+    /// slider or an editor. A `frame_step` that is not positive (or is NaN), or so
+    /// small that it would need more than [`MAX_BAKED_FRAMES`] frames, is raised to
+    /// the smallest step that stays within that limit. A spline whose points
+    /// coincide has no direction and no length: it bakes to a few frames at its
+    /// point, [`MIN_BAKED_LENGTH`] long, facing along an arbitrary axis.
     pub fn bake_with_up(&self, frame_step: f32, up: Vec3) -> BakedSpline {
-        assert!(frame_step > 0.0, "frame_step must be positive");
 
         // Cumulative arc length over a dense, uniform-in-t sampling.
         let samples = self.segment_count() * BAKE_SAMPLES_PER_SEGMENT;
@@ -338,9 +394,19 @@ impl CatmullRomSpline {
             distances.push(total);
             previous = p;
         }
-        assert!(total > 0.0, "a spline needs some length to be baked");
+        let total = if total.is_finite() && total > MIN_BAKED_LENGTH {
+            total
+        } else {
+            MIN_BAKED_LENGTH
+        };
+        let smallest_step = total / MAX_BAKED_FRAMES as f32;
+        let frame_step = if frame_step > smallest_step { frame_step } else { smallest_step };
 
-        let first_forward = self.tangent(0.0);
+        let mut last_forward = self.tangent(0.0);
+        if last_forward == Vec3::ZERO {
+            last_forward = up.try_normalize().unwrap_or(Vec3::Y).any_orthonormal_vector();
+        }
+        let first_forward = last_forward;
         let mut right = up
             .cross(first_forward)
             .try_normalize()
@@ -350,7 +416,11 @@ impl CatmullRomSpline {
         let mut frames = Vec::new();
         let mut channels: Vec<Vec<f32>> = vec![Vec::new(); self.channels.len()];
         let mut push_frame = |distance: f32, t: f32, right: &mut Vec3, up: &mut Vec3| {
-            let forward = self.tangent(t);
+            let mut forward = self.tangent(t);
+            if forward == Vec3::ZERO {
+                forward = last_forward;
+            }
+            last_forward = forward;
             (*right, *up) = transport_frame(forward, *right, *up);
             frames.push(SplineFrame {
                 position: self.point(t),
@@ -647,32 +717,64 @@ impl BakedSpline {
     }
 }
 
-// ─── Internals ───
+// --- Internals ---
+
+/// The most frames [`CatmullRomSpline::bake`] produces, whatever step is asked for.
+pub const MAX_BAKED_FRAMES: usize = 100_000;
+
+/// The length a baked spline has at least, so a spline whose points coincide still
+/// bakes to usable frames.
+pub const MIN_BAKED_LENGTH: f32 = 1e-3;
+
+/// Smallest knot span, so coincident control points cannot divide by zero.
+const MIN_KNOT_SPAN: f32 = 1e-3;
+
+/// Neighbour of control point `i` of `points`: wrapped on a closed loop, and on an
+/// open path the missing neighbour is the reflection of the next point.
+fn neighbour<T>(points: &[T], i: isize, closed: bool) -> T
+where
+    T: Copy + Sub<Output = T> + Mul<f32, Output = T>,
+{
+    let n = points.len();
+    if closed {
+        points[i.rem_euclid(n as isize) as usize]
+    } else if i < 0 {
+        points[0] * 2.0 - points[1]
+    } else if i >= n as isize {
+        points[n - 1] * 2.0 - points[n - 2]
+    } else {
+        points[i as usize]
+    }
+}
+
+/// Centripetal knot spans `(d1, d2, d3)` of segment `segment`: the square roots of
+/// the chord lengths p0-p1, p1-p2 and p2-p3. Centripetal parameterisation never
+/// overshoots or loops on unevenly spaced points, and still passes through them.
+fn knot_spans(points: &[Vec3], segment: usize, closed: bool) -> (f32, f32, f32) {
+    let s = segment as isize;
+    let p = |i: isize| neighbour(points, i, closed);
+    let span = |a: Vec3, b: Vec3| a.distance(b).sqrt().max(MIN_KNOT_SPAN);
+    (span(p(s - 1), p(s)), span(p(s), p(s + 1)), span(p(s + 1), p(s + 2)))
+}
 
 /// Bézier control points of segment `segment` of `points` (a closed loop, or an
-/// open path whose end tangents are one-sided: the missing neighbour is the
-/// reflection of the next point).
-fn bezier_of<T>(points: &[T], segment: usize, closed: bool) -> [T; 4]
+/// open path whose end tangents are one-sided), for the centripetal knot spans
+/// `spans` of the position curve. Equal spans give the uniform Catmull-Rom curve.
+fn bezier_of<T>(points: &[T], segment: usize, closed: bool, spans: (f32, f32, f32)) -> [T; 4]
 where
     T: Copy + Add<Output = T> + Sub<Output = T> + Mul<f32, Output = T>,
 {
-    let n = points.len();
-    let at = |i: isize| -> T {
-        if closed {
-            points[i.rem_euclid(n as isize) as usize]
-        } else if i < 0 {
-            points[0] * 2.0 - points[1]
-        } else if i >= n as isize {
-            points[n - 1] * 2.0 - points[n - 2]
-        } else {
-            points[i as usize]
-        }
-    };
     let s = segment as isize;
+    let at = |i: isize| neighbour(points, i, closed);
     let (p0, p1, p2, p3) = (at(s - 1), at(s), at(s + 1), at(s + 2));
-    // Catmull-Rom tangents are (p2 - p0) / 2 and (p3 - p1) / 2 per unit of
-    // parameter; a cubic Bézier's end tangent is three times its control arm.
-    [p1, p1 + (p2 - p0) * (1.0 / 6.0), p2 - (p3 - p1) * (1.0 / 6.0), p2]
+    let (d1, d2, d3) = spans;
+    // Centripetal Catmull-Rom as a cubic Bézier. With d1 = d2 = d3 the arms are
+    // (p2 - p0) / 6 and (p3 - p1) / 6, the uniform Catmull-Rom curve.
+    let b1 = (p2 * (d1 * d1) - p0 * (d2 * d2) + p1 * (2.0 * d1 * d1 + 3.0 * d1 * d2 + d2 * d2))
+        * (1.0 / (3.0 * d1 * (d1 + d2)));
+    let b2 = (p1 * (d3 * d3) - p3 * (d2 * d2) + p2 * (2.0 * d3 * d3 + 3.0 * d3 * d2 + d2 * d2))
+        * (1.0 / (3.0 * d3 * (d3 + d2)));
+    [p1, b1, b2, p2]
 }
 
 fn bezier_point<T>(b: &[T; 4], u: f32) -> T
@@ -698,7 +800,7 @@ fn signed_curvature(b: &[Vec3; 4], u: f32) -> f32 {
 }
 
 fn segment_min_radius(points: &[Vec3], segment: usize, closed: bool) -> f32 {
-    let b = bezier_of(points, segment, closed);
+    let b = bezier_of(points, segment, closed, knot_spans(points, segment, closed));
     (0..=STRESS_SAMPLES)
         .map(|s| 1.0 / signed_curvature(&b, s as f32 / STRESS_SAMPLES as f32).abs().max(1e-6))
         .fold(f32::MAX, f32::min)
@@ -741,7 +843,7 @@ mod tests {
             Vec3::new(size, 0.0, 0.0),
             Vec3::new(size, 0.0, size),
             Vec3::new(0.0, 0.0, size),
-        ])
+        ]).unwrap()
     }
 
     #[test]
@@ -749,7 +851,7 @@ mod tests {
         // A Catmull-Rom spline reproduces a straight line exactly: a tangent that
         // is too long makes the curve overshoot and bend between the points.
         let points: Vec<Vec3> = (0..6).map(|i| Vec3::new(i as f32 * 2.0, 0.0, 0.0)).collect();
-        let spline = CatmullRomSpline::open(points);
+        let spline = CatmullRomSpline::open(points).unwrap();
         for i in 0..=50 {
             let t = i as f32 / 50.0;
             let p = spline.point(t);
@@ -768,13 +870,61 @@ mod tests {
                     Vec3::new(a.cos() * radius, 0.0, a.sin() * radius)
                 })
                 .collect::<Vec<_>>(),
-        );
+        ).unwrap();
         let min = spline.min_turn_radius();
         // The curve ripples between its control points, so allow some slack.
         assert!((radius * 0.75..radius * 1.25).contains(&min), "min radius {min}");
         for i in 0..200 {
             let r = spline.point(i as f32 / 200.0).xz().length();
             assert!((r - radius).abs() < 0.05 * radius, "radius {r}");
+        }
+    }
+
+    #[test]
+    fn a_hairpin_between_long_spans_stays_close_to_its_control_polygon() {
+        // A short hop between two long spans: a uniform Catmull-Rom curve swings out
+        // about 1.25 m past the point (12% of the long span); the centripetal one
+        // stays within 0.4 m of the control polygon.
+        let points = [
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(10.0, 0.0, 0.0),
+            Vec3::new(10.0, 0.0, 1.0),
+            Vec3::new(0.0, 0.0, 1.0),
+        ];
+        let distance_to_segment = |p: Vec3, a: Vec3, b: Vec3| {
+            let ab = b - a;
+            let t = ((p - a).dot(ab) / ab.length_squared()).clamp(0.0, 1.0);
+            p.distance(a + ab * t)
+        };
+        let spline = CatmullRomSpline::open(points).unwrap();
+        let mut worst = 0.0f32;
+        for i in 0..=600 {
+            let p = spline.point(i as f32 / 600.0);
+            let nearest = points.windows(2).map(|w| distance_to_segment(p, w[0], w[1])).fold(f32::MAX, f32::min);
+            worst = worst.max(nearest);
+        }
+        assert!(worst < 0.4, "the curve swings {worst} m away from its control polygon");
+        // Still passes through the points.
+        for (i, p) in points.iter().enumerate() {
+            assert!(spline.point(i as f32 / 3.0).distance(*p) < 1e-3, "point {i}");
+        }
+    }
+
+    #[test]
+    fn channels_use_the_positions_knot_spacing() {
+        // A channel that equals the x coordinate must stay equal to it everywhere,
+        // however unevenly the points are spaced.
+        let spline = CatmullRomSpline::open([
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(30.0, 0.0, 0.0),
+            Vec3::new(30.4, 0.0, 6.0),
+            Vec3::new(60.0, 0.0, 6.0),
+        ]).unwrap()
+        .with_channel(&[0.0, 30.0, 30.4, 60.0]);
+        for i in 0..=100 {
+            let t = i as f32 / 100.0;
+            let (x, c) = (spline.point(t).x, spline.channel(0, t).unwrap());
+            assert!((x - c).abs() < 1e-3, "t = {t}: x = {x}, channel = {c}");
         }
     }
 
@@ -804,7 +954,7 @@ mod tests {
             Vec3::new(60.0, 0.0, 12.0),
             Vec3::new(0.0, 0.0, 12.0),
             Vec3::new(-20.0, 0.0, 6.0),
-        ]);
+        ]).unwrap();
         let before = tight.min_turn_radius();
         let relaxed = tight.relaxed(6.0);
         assert!(relaxed.min_turn_radius() >= before);
@@ -817,7 +967,7 @@ mod tests {
             Vec3::new(10.0, 2.0, 0.0),
             Vec3::new(10.0, 3.0, 1.0),
             Vec3::new(0.0, 4.0, 1.0),
-        ]);
+        ]).unwrap();
         let relaxed = spline.clone().relaxed(5.0);
         for (a, b) in spline.points().iter().zip(relaxed.points()) {
             assert_eq!(a.y, b.y);
@@ -861,7 +1011,7 @@ mod tests {
         let spline = square(40.0);
         let reversed = CatmullRomSpline::closed(
             spline.points().iter().rev().copied().collect::<Vec<_>>(),
-        );
+        ).unwrap();
         let c = spline.curvature(0.1);
         let r = reversed.curvature(0.1);
         assert!(c * r < 0.0 || c == 0.0 && r == 0.0);
@@ -878,7 +1028,7 @@ mod open_and_channel_tests {
             Vec3::new(10.0, 0.0, 4.0),
             Vec3::new(20.0, 0.0, 0.0),
             Vec3::new(30.0, 0.0, 6.0),
-        ])
+        ]).unwrap()
     }
 
     /// A long thin loop: the strip along z = 0 and the strip along z = 2.
@@ -892,7 +1042,7 @@ mod open_and_channel_tests {
             Vec3::new(66.0, 0.0, 2.0),
             Vec3::new(33.0, 0.0, 2.0),
             Vec3::new(0.0, 0.0, 2.0),
-        ])
+        ]).unwrap()
     }
 
     #[test]
@@ -996,7 +1146,7 @@ mod open_and_channel_tests {
             Vec3::new(66.0, 6.0, 2.0),
             Vec3::new(33.0, 6.0, 2.0),
             Vec3::new(0.0, 6.0, 2.0),
-        ])
+        ]).unwrap()
         .bake(0.5);
         // In XZ this point is nearer the bridge (z = 2); in 3D it is on the road.
         let on_the_road = Vec3::new(50.0, 0.1, 1.2);
@@ -1028,7 +1178,7 @@ mod open_and_channel_tests {
             Vec3::new(4.0, 0.0, 0.0),
             Vec3::new(4.0, 0.0, 4.0),
             Vec3::new(0.0, 0.0, 4.0),
-        ]);
+        ]).unwrap();
         let before = tiny.polygon_length();
         let relaxed = tiny.clone().relaxed(100.0);
         assert!(relaxed.polygon_length() >= before * RELAXED_KEEP - 1e-4);
@@ -1047,7 +1197,7 @@ mod open_and_channel_tests {
             Vec3::new(400.0, 0.0, 0.0),
             Vec3::new(400.0, 0.0, 400.0),
             Vec3::new(0.0, 0.0, 400.0),
-        ]);
+        ]).unwrap();
         assert!(gentle.clone().relaxed_within(10.0, 0.9).is_ok());
     }
 
@@ -1060,7 +1210,7 @@ mod open_and_channel_tests {
             Vec3::new(0.0, 0.0, 1.0),
             Vec3::new(0.0, 0.0, 2.0),
             Vec3::new(10.0, 0.0, 2.0),
-        ])
+        ]).unwrap()
         .with_channel(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
         let relaxed = zigzag.clone().relaxed(3.0);
         assert_eq!(relaxed.points()[0], zigzag.points()[0]);
@@ -1104,8 +1254,47 @@ mod open_and_channel_tests {
     }
 
     #[test]
+    fn too_few_points_are_an_error_not_a_panic() {
+        let one = [Vec3::ZERO];
+        assert_eq!(
+            CatmullRomSpline::open(one).unwrap_err(),
+            SplineError::TooFewPoints { needed: 2, got: 1 }
+        );
+        let two = [Vec3::ZERO, Vec3::X];
+        assert!(CatmullRomSpline::open(two).is_ok());
+        let err = CatmullRomSpline::closed(two).unwrap_err();
+        assert_eq!(err, SplineError::TooFewPoints { needed: 3, got: 2 });
+        assert!(err.to_string().contains("at least 3"));
+        assert!(CatmullRomSpline::closed(Vec::<Vec3>::new()).is_err());
+    }
+
+    #[test]
+    fn baking_never_panics_and_always_gives_usable_frames() {
+        let line = CatmullRomSpline::open([Vec3::ZERO, Vec3::new(10.0, 0.0, 0.0)]).unwrap();
+        // A step that is not positive, NaN, or absurdly small is raised to a sane one.
+        for step in [0.0, -1.0, f32::NAN, f32::NEG_INFINITY, 1e-12] {
+            let baked = line.bake(step);
+            assert!(baked.frames().len() >= 2 && baked.frames().len() <= MAX_BAKED_FRAMES + 2, "{step}");
+            assert!((baked.length() - 10.0).abs() < 1e-2, "{step}");
+        }
+        // Coincident points: no length, no direction, but unit frames.
+        for spline in [
+            CatmullRomSpline::open([Vec3::ONE, Vec3::ONE]).unwrap(),
+            CatmullRomSpline::closed([Vec3::ONE; 3]).unwrap(),
+            CatmullRomSpline::closed([Vec3::NAN; 3]).unwrap(),
+        ] {
+            let baked = spline.bake(1.0);
+            assert!(baked.length() >= MIN_BAKED_LENGTH);
+            for f in baked.frames() {
+                assert!(f.forward.is_normalized(), "{f:?}");
+                assert!(f.right.is_normalized() && f.up.is_normalized(), "{f:?}");
+            }
+        }
+    }
+
+    #[test]
     fn baking_from_another_up_direction_starts_there() {
-        let line = CatmullRomSpline::open([Vec3::ZERO, Vec3::new(10.0, 0.0, 0.0)]);
+        let line = CatmullRomSpline::open([Vec3::ZERO, Vec3::new(10.0, 0.0, 0.0)]).unwrap();
         let baked = line.bake_with_up(1.0, Vec3::Z);
         assert!(baked.frames()[0].up.dot(Vec3::Z) > 0.99);
         // Parallel to the path: still a valid frame.

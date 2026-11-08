@@ -100,7 +100,7 @@ pub struct GradMeshHandle {
 pub struct RetainedWorld {
     /// Unique world ID for handle validation.
     world_id: u64,
-    /// Parallel arrays — one entry per slot.
+    /// Parallel arrays - one entry per slot.
     positions: Vec<Vec3>,
     rotations: Vec<Quat>,
     scales: Vec<Vec3>,
@@ -176,7 +176,7 @@ impl RetainedWorld {
         Some(handle.slot)
     }
 
-    // ─── Shape creation ───
+    // --- Shape creation ---
 
     fn add_shape(
         &mut self,
@@ -427,7 +427,7 @@ impl RetainedWorld {
         )
     }
 
-    // ─── Handle updates ───
+    // --- Handle updates ---
 
     /// Update the position of a retained shape.
     pub fn set_position(&mut self, handle: GradMeshHandle, position: Vec3) {
@@ -497,7 +497,7 @@ impl RetainedWorld {
         self.alive.iter().all(|&a| !a)
     }
 
-    // ─── Flush to batches ───
+    // --- Flush to batches ---
 
     /// Rebuild batches from the current parallel arrays and spawn entities.
     ///

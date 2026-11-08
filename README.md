@@ -1,10 +1,17 @@
 # BevyGradmesh
 
 [![Crates.io](https://img.shields.io/crates/v/bevy_gradmesh.svg)](https://crates.io/crates/bevy_gradmesh)
+[![Downloads](https://img.shields.io/crates/d/bevy_gradmesh.svg)](https://crates.io/crates/bevy_gradmesh)
+[![docs.rs](https://img.shields.io/docsrs/bevy_gradmesh)](https://docs.rs/bevy_gradmesh)
+[![Bevy](https://img.shields.io/badge/Bevy-0.20-232326)](https://bevyengine.org/)
+[![Rust](https://img.shields.io/badge/rust-1.87%2B-orange.svg)](https://www.rust-lang.org/)
+[![License](https://img.shields.io/crates/l/bevy_gradmesh.svg)](LICENSE-MIT)
+[![Last commit](https://img.shields.io/github/last-commit/xenacool/bevy_gradmesh)](https://github.com/xenacool/bevy_gradmesh/commits)
+[![Stars](https://img.shields.io/github/stars/xenacool/bevy_gradmesh?style=flat)](https://github.com/xenacool/bevy_gradmesh)
 
 Procedural mesh generation and gradient materials for [Bevy](https://bevyengine.org/).
 
-BevyGradmesh provides a clean API for generating procedural 3D primitives with proper geometry, detail levels, and gradient shading — inspired by Freya Holmer's work.
+BevyGradmesh provides a clean API for generating procedural 3D primitives with proper geometry, detail levels, and gradient shading - inspired by Freya Holmér's work.
 
 ## Features
 
@@ -25,9 +32,9 @@ BevyGradmesh provides a clean API for generating procedural 3D primitives with p
 
 ### 2D
 
-- **True `Mesh2d` output**: `Shape::build_2d()` returns flat XY-plane geometry facing +Z with gradient UVs — no billboarding and no 3D camera
-- **`GradMeshMaterial2d`**: an unlit `Material2d` with the same dual-directional and dual-radial gradients, mix spaces, alpha and dashes; `Style::build_2d()` builds it from a `Style`
-- **SDF 2D shapes**: `SdfMaterial2d` evaluates disc, ellipse, rounded rectangle and partial arcs per-pixel on a shared unit quad — rims, edge anti-aliasing, and animated arcs change only material floats each frame
+- **True `Mesh2d` output**: `Shape::build_2d()` returns flat XY-plane geometry facing +Z with gradient UVs - no billboarding and no 3D camera
+- **`GradMeshMaterial2d`**: an unlit `Material2d` with the same dual-directional and dual-radial gradients, mix spaces, alpha and dashes - `Style::build_2d()` builds it from a `Style`
+- **SDF 2D shapes**: `SdfMaterial2d` evaluates disc, ellipse, rounded rectangle and partial arcs per-pixel on a shared unit quad - rims, edge anti-aliasing, and animated arcs change only material floats each frame
 - **SDF dash modes**: `Dash2d` with `DashSnap::Off`, `Tiling` and `EndToEnd` (length-based or count-based), plus sliding offset animation
 - **SDF gradient variants**: radial gradients fitted to bounds and angular (conic) gradients with sweep control
 - **Scale and layering**: `Transform` scale resizes shapes on the XY plane and `Transform.translation.z` orders them
@@ -36,9 +43,9 @@ BevyGradmesh provides a clean API for generating procedural 3D primitives with p
 ### Rendering Modes
 
 - **Direct mode**: Call `Shape::build()` and spawn `Mesh3d` entities manually
-- **Immediate mode**: Per-frame draw/dispose with `ImmediateRecorder` — supports push/pop state stacking, billboarding, and relative transforms
+- **Immediate mode**: Per-frame draw/dispose with `ImmediateRecorder` - supports push/pop state stacking, billboarding, and relative transforms
 - **Retained mode**: `RetainedWorld` + `GradMeshHandle` for persistent shapes updated per-frame
-- **Batched GPU instancing**: `BatchRecorder` groups instances by mesh key, blend mode, and render state into single `draw_indexed` calls — thousands of shapes in far fewer draw calls
+- **Batched GPU instancing**: `BatchRecorder` groups instances by mesh key, blend mode, and render state into single `draw_indexed` calls - thousands of shapes in far fewer draw calls
 
 ### Materials & Shading
 
@@ -65,20 +72,20 @@ BevyGradmesh provides a clean API for generating procedural 3D primitives with p
 ### Custom Pipeline (Mobile-Friendly)
 
 - **Standalone pipeline**: `StandaloneRenderPlugin` and `render_standalone_batches()` bypass Bevy's PBR system entirely, using a simple vertex+fragment shader with no `StandardMaterial`, no lights, and no PBR imports
-- **Zero descriptor pool pressure**: All material variation via per-instance vertex attributes — one pipeline, one bind group layout, one descriptor set
+- **Zero descriptor pool pressure**: All material variation via per-instance vertex attributes - one pipeline, one bind group layout, one descriptor set
 - **Faster compilation**: One shader pipeline instead of N specializations
 - **`GradMeshMobilePlugin`**: lightweight plugin variant for minimal dependency setups
 
 ### Animation
 
 - **Vertex shader deformation**: Wobble, pulse, and morph effects without CPU mesh regeneration
-- **Appearance snapshots**: Per-instance color animation (pulse, cycle, gradient shift) resolved in the shader — no per-frame CPU updates
+- **Appearance snapshots**: Per-instance color animation (pulse, cycle, gradient shift) resolved in the shader - no per-frame CPU updates
 
 ## What is Dual-Directional Shading?
 
-Dual-directional shading is a technique that colors a surface with a smooth gradient between two colors along a given direction, instead of using a single flat color. One side of the shape takes on the "dark" color and the opposite side takes on the "light" color, with a smooth transition in between. This mimics the look of a single light source illuminating the shape, but is computed entirely in the shader — no actual lights are needed.
+Dual-directional shading is a technique that colors a surface with a smooth gradient between two colors along a given direction, instead of using a single flat color. One side of the shape takes on the "dark" color and the opposite side takes on the "light" color, with a smooth transition in between. This mimics the look of a single light source illuminating the shape, but is computed entirely in the shader - no actual lights are needed.
 
-It is commonly used in stylized games to give characters a painted, cel-shaded appearance: skin tones shift from warm highlights to cool shadows, and hair shows a bright rim where light catches it. The gradient direction can be any axis (e.g., `Vec3::UP` for top-down lighting), and the two colors are interpolated in [OKLAB](https://bottosson.github.io/posts/oklab/) by default (a perceptually uniform color space that avoids muddy midpoints), or in OKLCH, linear RGB or sRGB via `MixSpace`.
+It is commonly used in stylized games to give characters a painted, cel-shaded appearance: skin tones shift from warm highlights to cool shadows, and hair shows a bright rim where light catches it. The gradient direction can be any axis (e.g., `Vec3::UP` for top-down lighting), and the two colors are interpolated in [OKLAB](https://bottosson.github.io/posts/oklab/) by default - a perceptually uniform color space that avoids muddy midpoints - or in OKLCH, linear RGB or sRGB via `MixSpace`.
 
 ### Key Terms
 
@@ -92,13 +99,13 @@ It is commonly used in stylized games to give characters a painted, cel-shaded a
 
 | bevy_gradmesh | Bevy | Rust |
 |---------------|------|------|
-| 0.2.x         | 0.20 | 1.87+|
+| 0.3.x         | 0.20 | 1.87+|
 
 ## Quick Start
 
 ```toml
 [dependencies]
-bevy_gradmesh = "0.2"
+bevy_gradmesh = "0.3"
 ```
 
 ```rust
@@ -168,7 +175,7 @@ Transparency, emissive glow, metallic surfaces, and combined effects:
 
 ### SDF 2D
 
-One shared unit quad mesh: filled discs, ellipses, rounded rectangles, rims, animated partial arcs, radial and angular gradients — all shape changes are material floats, no mesh regeneration:
+One shared unit quad mesh: filled discs, ellipses, rounded rectangles, rims, animated partial arcs, radial and angular gradients - all shape changes are material floats, no mesh regeneration:
 
 ![SDF 2D](screenshots/screenshot_sdf_2d.png)
 
@@ -184,6 +191,12 @@ Profiles swept along 3D paths: a wall following a baked spline loop with an arch
 
 ![Sweep](screenshots/screenshot_sweep.png)
 
+### Road
+
+Banked road using `Shape::sweep_frames`: an open CatmullRomSpline with width and roll channels, plus a flat ribbon demonstrating `SweepOptions::roll_with`:
+
+![Road](screenshots/screenshot_road.png)
+
 ### Instanced Rendering
 
 500 spheres rendered in a single GPU batch via `BatchRecorder`:
@@ -192,7 +205,7 @@ Profiles swept along 3D paths: a wall following a baked spline loop with an arch
 
 ### Standalone Pipeline
 
-Gradient shapes drawn without any PBR material or lights — one shader pipeline, one bind group:
+Gradient shapes drawn without any PBR material or lights - one shader pipeline, one bind group:
 
 ![Standalone Pipeline](screenshots/screenshot_standalone.png)
 

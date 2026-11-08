@@ -1,4 +1,4 @@
-//! Standalone pipeline demo — renders gradient shapes without any PBR material.
+//! Standalone pipeline demo - renders gradient shapes without any PBR material.
 //!
 //! Every shape goes through `StandaloneRenderPlugin`: one pipeline, one view
 //! bind group, no `StandardMaterial`, no lights. This is the mobile-friendly path.

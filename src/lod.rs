@@ -108,13 +108,13 @@ impl LodConfig {
                 // Fully past this threshold, continue to check further thresholds
                 raw_level = level + 1;
             } else if distance > effective_threshold {
-                // In the transition zone for this threshold — stop here
+                // In the transition zone for this threshold - stop here
                 raw_level = level;
                 let progress = (distance - effective_threshold) / self.transition_width;
                 transition_weight = progress.clamp(0.0, 1.0);
                 break;
             } else {
-                // Before this threshold — stop here, no transition
+                // Before this threshold - stop here, no transition
                 raw_level = level;
                 transition_weight = 0.0;
                 break;

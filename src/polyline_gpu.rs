@@ -15,7 +15,7 @@
 //!    repeated polylines with the same style reuse geometry.
 //!
 //! This approach avoids per-frame CPU geometry regeneration for animated
-//! polylines — only the point positions need updating via buffer writes.
+//! polylines - only the point positions need updating via buffer writes.
 
 use bevy::math::Vec3;
 use bevy::render::mesh::{Mesh, PrimitiveTopology};
@@ -43,7 +43,7 @@ impl PolylineConfig {
     /// expands each point into tube cross-section geometry.
     ///
     /// This avoids per-frame CPU geometry regeneration for animated
-    /// polylines — only point positions need updating via buffer writes.
+    /// polylines - only point positions need updating via buffer writes.
     pub fn build_gpu_mesh(&self) -> Mesh {
         if self.points.is_empty() {
             let mut mesh = Mesh::new(

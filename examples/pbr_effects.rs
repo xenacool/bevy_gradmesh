@@ -1,4 +1,4 @@
-//! PBR effects showcase — transparency, emission, roughness, metallicity, and more.
+//! PBR effects showcase - transparency, emission, roughness, metallicity, and more.
 //!
 //! Demonstrates how BevyGradmesh shapes interact with Bevy's full PBR material
 //! system, including transparency, emissive glow, metallic surfaces, and
@@ -61,7 +61,7 @@ fn setup(
         Transform::from_xyz(0.0, 3.0, 8.8).looking_at(Vec3::new(0.0, 3.05, 0.0), Vec3::Y),
     ));
 
-    // Lighting — warm key light for dramatic PBR
+    // Lighting - warm key light for dramatic PBR
     commands.spawn((
         DirectionalLight {
             color: Color::srgb(1.0, 0.95, 0.85),
@@ -97,7 +97,7 @@ fn setup(
         Name::new("Backdrop"),
     ));
 
-    // ─── Row 1: Transparency variants (y = 0.5) ───
+    // --- Row 1: Transparency variants (y = 0.5) ---
     let y1 = 0.5;
     let xs1 = [-4.0, -2.0, 0.0, 2.0, 4.0];
 
@@ -155,7 +155,7 @@ fn setup(
         "Dither blend\n(alpha 0.5)",
     );
 
-    // ─── Row 2: Emission / Additive (y = 2.2) ───
+    // --- Row 2: Emission / Additive (y = 2.2) ---
     let y2 = 2.2;
     let xs2 = [-4.0, -2.0, 0.0, 2.0, 4.0];
 
@@ -218,7 +218,7 @@ fn setup(
         );
     }
 
-    // ─── Row 3: Roughness & Metallicity (y = 3.9) ───
+    // --- Row 3: Roughness & Metallicity (y = 3.9) ---
     let y3 = 3.9;
     let xs3 = [-4.0, -2.0, 0.0, 2.0, 4.0];
 
@@ -297,7 +297,7 @@ fn setup(
         );
     };
 
-    // ─── Row 4: Combined effects (y = 5.6) ───
+    // --- Row 4: Combined effects (y = 5.6) ---
     let y4 = 5.6;
     let xs4 = [-4.0, -2.0, 0.0, 2.0, 4.0];
 

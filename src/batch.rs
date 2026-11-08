@@ -30,7 +30,7 @@ use crate::mix_space::MixSpace;
 use crate::shape::{Shape, ShapeDetail};
 use crate::style::{BlendMode, ColorMode, Dash, DashType};
 
-// ─── Per-instance GPU data ───
+// --- Per-instance GPU data ---
 
 /// Per-instance transform stored as 4×vec4 (column-major Mat4 flattened).
 /// Matches what the vertex shader expects for instanced transforms.
@@ -143,7 +143,7 @@ impl InstanceProperties {
     }
 }
 
-// ─── Batch key ───
+// --- Batch key ---
 
 /// Identifies a render batch: shapes with the same mesh geometry and material
 /// variant can share a single draw call.
@@ -175,7 +175,7 @@ impl Hash for BatchKey {
     }
 }
 
-// ─── Mesh cache key ───
+// --- Mesh cache key ---
 
 /// Canonical key for procedural mesh caching.
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
@@ -196,7 +196,7 @@ fn hash_shape(shape: &Shape) -> u64 {
     h.finish()
 }
 
-// ─── Batch ───
+// --- Batch ---
 
 /// A single render batch: one mesh + N instances.
 ///
@@ -333,7 +333,7 @@ impl Batch {
     }
 }
 
-// ─── Batch Recorder ───
+// --- Batch Recorder ---
 
 /// Accumulates draw commands and groups them into batches.
 ///
@@ -405,7 +405,7 @@ impl BatchRecorder {
         &self.batches
     }
 
-    // ─── State management ───
+    // --- State management ---
 
     pub fn push_state(&mut self) {
         self.state_stack
@@ -449,7 +449,7 @@ impl BatchRecorder {
         self.pending_appearance = appearance;
     }
 
-    // ─── Drawing methods ───
+    // --- Drawing methods ---
 
     fn get_or_build_mesh(&mut self, shape: &Shape) -> &Mesh {
         let mesh_id = hash_shape(shape);
@@ -679,7 +679,7 @@ impl BatchRecorder {
         self.add_instance(&shape, props);
     }
 
-    // ─── Dual-directional variants ───
+    // --- Dual-directional variants ---
 
     /// Draw a sphere with dual-directional gradient shading.
     pub fn sphere_dual_directional(
@@ -730,7 +730,7 @@ impl BatchRecorder {
         self.add_instance(&shape, props);
     }
 
-    // ─── Transparent variants ───
+    // --- Transparent variants ---
 
     /// Draw a sphere with transparency.
     pub fn sphere_transparent(&mut self, radius: f32, detail: ShapeDetail, color: [f32; 4]) {
@@ -762,7 +762,7 @@ impl BatchRecorder {
         self.add_instance(&shape, props);
     }
 
-    // ─── Rendering ───
+    // --- Rendering ---
 
     #[cfg(feature = "pbr")]
     /// Spawns entities with `InstancedBatchData` components from the collected
@@ -867,7 +867,7 @@ impl BatchRecorder {
         }
     }
 
-    // ─── Statistics ───
+    // --- Statistics ---
 
     /// Returns total instance count across all batches.
     pub fn total_instances(&self) -> usize {

@@ -6,3 +6,6 @@ screenshots/
 # Junie reference docs and backups
 .junie/
 reference/
+
+# mdBook output
+/book/book/

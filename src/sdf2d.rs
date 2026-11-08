@@ -9,7 +9,7 @@
 //!
 //! * edges are anti-aliased from screen-space derivatives, so no MSAA is needed;
 //! * radius, rim width, corner radius and arc span can be animated every frame by
-//!   changing a few floats — no new mesh, no mesh cache entry;
+//!   changing a few floats - no new mesh, no mesh cache entry;
 //! * every shape shares one mesh asset.
 //!
 //! ```ignore

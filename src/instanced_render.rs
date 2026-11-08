@@ -5,13 +5,13 @@
 //!
 //! # Architecture
 //!
-//! 1. **Batch Data Extraction** — Each frame, `InstancedBatch` components are
+//! 1. **Batch Data Extraction** - Each frame, `InstancedBatch` components are
 //!    extracted to the render world via `ExtractComponent`.
-//! 2. **GPU Buffers** — Per-batch transform and property data are uploaded to
+//! 2. **GPU Buffers** - Per-batch transform and property data are uploaded to
 //!    GPU vertex buffers with `VertexStepMode::Instance`.
-//! 3. **Render Phase** — Batches are queued as `Opaque3d` phase items and
+//! 3. **Render Phase** - Batches are queued as `Opaque3d` phase items and
 //!    rendered with a single `draw_indexed` call per batch.
-//! 4. **Dirty Tracking** — Only dirty batches re-upload GPU data each frame.
+//! 4. **Dirty Tracking** - Only dirty batches re-upload GPU data each frame.
 
 use std::mem::size_of;
 
@@ -44,7 +44,7 @@ use crate::culling::{self, AABB};
 use crate::lod::LodConfig;
 use crate::render_pipeline::InstancedStats;
 
-// ─── Extracted Batch Data ───
+// --- Extracted Batch Data ---
 
 /// Extracted batch data for the render world. Contains the mesh handle,
 /// instance count, and per-instance transform and property data.
@@ -82,7 +82,7 @@ pub struct InstancedGpuBuffers {
     instance_count: u32,
 }
 
-// ─── Pipeline ───
+// --- Pipeline ---
 
 /// The specialized pipeline for instanced GradMesh rendering.
 #[derive(Resource)]
@@ -105,7 +105,7 @@ impl InstancedPipeline {
 /// Specialized pipelines cache for instanced rendering.
 pub type InstancedPipelineCache = SpecializedMeshPipelines<InstancedPipeline>;
 
-// ─── Draw Command ───
+// --- Draw Command ---
 
 /// The draw command tuple for instanced batches.
 pub type DrawInstancedBatch = (
@@ -193,7 +193,7 @@ impl<P: PhaseItem> RenderCommand<P> for DrawInstancedBatchImpl {
     }
 }
 
-// ─── Buffer Preparation ───
+// --- Buffer Preparation ---
 
 /// Prepare GPU buffers for instanced batches. Uploads dirty batch data.
 fn prepare_instanced_buffers(
@@ -275,7 +275,7 @@ fn build_combined_buffer(batch_data: &InstancedBatchData) -> Vec<u8> {
     combined
 }
 
-// ─── Queue System ───
+// --- Queue System ---
 
 /// Queue instanced batches into the opaque render phase with frustum culling and LOD.
 fn queue_instanced_batches(
@@ -455,7 +455,7 @@ fn parse_transforms(batch_data: &InstancedBatchData) -> Vec<culling::InstanceTra
     transforms
 }
 
-// ─── Plugin ───
+// --- Plugin ---
 
 /// Plugin that wires the GPU instanced pipeline into Bevy's render graph.
 pub struct InstancedRenderPlugin;
@@ -503,7 +503,7 @@ fn init_instanced_pipeline(
     commands.insert_resource(InstancedPipeline::new(mesh_pipeline.clone(), shader));
 }
 
-// ─── Pipeline Specialization ───
+// --- Pipeline Specialization ---
 
 impl SpecializedMeshPipeline for InstancedPipeline {
     type Key = MeshPipelineKey;

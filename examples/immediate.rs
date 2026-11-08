@@ -1,4 +1,4 @@
-//! Immediate mode drawing example — showcases the `ImmediateRecorder` API.
+//! Immediate mode drawing example - showcases the `ImmediateRecorder` API.
 //!
 //! Demonstrates per-frame drawing with animated particles, billboarding,
 //! push/pop state transform stacking, render layer ordering, and line drawing.
@@ -152,7 +152,7 @@ fn draw_immediate(
 
     rec.begin(&mut commands);
 
-    // ─── Animated Particles (orbiting spheres) ───
+    // --- Animated Particles (orbiting spheres) ---
     let particle_count = 20;
     for i in 0..particle_count {
         let angle = (i as f32 / particle_count as f32) * std::f32::consts::TAU + t * 0.5;
@@ -177,7 +177,7 @@ fn draw_immediate(
         );
     }
 
-    // ─── Push/Pop State Stack (nested transforms) ───
+    // --- Push/Pop State Stack (nested transforms) ---
     let base = Vec3::new(0.0, 0.3, -3.0);
     rec.set_position(base);
     rec.set_rotation(Quat::IDENTITY);
@@ -236,7 +236,7 @@ fn draw_immediate(
     );
     rec.pop_state(); // Back to base level
 
-    // ─── Billboarding (2D shapes facing camera) ───
+    // --- Billboarding (2D shapes facing camera) ---
     let bill_pos = Vec3::new(4.0, 1.0, -3.0);
 
     // FaceCameraY disc
@@ -285,7 +285,7 @@ fn draw_immediate(
         BillboardMode::FaceCamera,
     );
 
-    // ─── Line Drawing ───
+    // --- Line Drawing ---
     let line_base = Vec3::new(-4.0, 0.3, 1.0);
 
     // Static triangle
@@ -345,10 +345,10 @@ fn draw_immediate(
         );
     }
 
-    // ─── Render Layers (depth ordering) ───
+    // --- Render Layers (depth ordering) ---
     let layer_base = Vec3::new(0.0, 0.5, 1.0);
 
-    // Background layer — large transparent disc
+    // Background layer - large transparent disc
     rec.set_position(layer_base + Vec3::new(0.0, 0.3, 0.0));
     rec.set_scale(Vec3::splat(1.5));
     rec.disc(
@@ -360,7 +360,7 @@ fn draw_immediate(
         BillboardMode::FaceCamera,
     );
 
-    // Middle layer — sphere
+    // Middle layer - sphere
     rec.set_position(layer_base + Vec3::new(0.0, 0.3, 0.0));
     rec.set_scale(Vec3::ONE);
     rec.sphere(
@@ -372,7 +372,7 @@ fn draw_immediate(
         imm_dual_directional([0.5, 0.2, 0.15], [0.96, 0.8, 0.69], [0.0, 1.0, 0.0]),
     );
 
-    // Overlay layer — small additive glow
+    // Overlay layer - small additive glow
     rec.set_position(layer_base + Vec3::new(0.0, 0.8, 0.0));
     rec.set_scale(Vec3::splat(0.15 + t.sin() * 0.05));
     rec.sphere(
@@ -384,7 +384,7 @@ fn draw_immediate(
         imm_additive(1.0, 0.9, 0.3),
     );
 
-    // ─── Mixed Shapes (various primitives) ───
+    // --- Mixed Shapes (various primitives) ---
     let mixed_base = Vec3::new(4.0, 0.3, 1.0);
 
     // Torus

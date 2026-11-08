@@ -97,7 +97,7 @@ pub use shape::{
     HeightfieldBorder, HeightfieldOptions, Shape, ShapeBounds, ShapeDetail, ShapePart, SweepFrame,
     SweepOpening, SweepOptions,
 };
-pub use spline::{BakedSpline, CatmullRomSpline, SplineFrame};
+pub use spline::{BakedSpline, CatmullRomSpline, SplineError, SplineFrame};
 pub use standalone_pipeline::{StandaloneRenderPlugin, render_standalone_batches};
 pub use style::{
     BlendMode, ColorMode, Dash, DashType, DirectionSpace, Noise, Rim, ShapeType, Stripes, Style,

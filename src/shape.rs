@@ -2489,7 +2489,7 @@ impl Shape {
     }
 }
 
-// ─── Mesh builders ───
+// --- Mesh builders ---
 
 fn build_sphere(radius: f32, detail: ShapeDetail) -> Mesh {
     let segments = detail.segments() as usize;
@@ -2668,9 +2668,9 @@ fn build_simple_box(size: Vec3) -> Mesh {
         0, 1, 2, 2, 3, 0, // Front (+Z)
         4, 5, 6, 6, 7, 4, // Back (-Z)
         8, 9, 10, 10, 11, 8, // Top (+Y)
-        12, 14, 13, 14, 12, 15, // Bottom (-Y) — reversed winding
-        16, 18, 17, 18, 16, 19, // Right (+X) — reversed winding
-        20, 22, 21, 22, 20, 23, // Left (-X) — reversed winding
+        12, 14, 13, 14, 12, 15, // Bottom (-Y) - reversed winding
+        16, 18, 17, 18, 16, 19, // Right (+X) - reversed winding
+        20, 22, 21, 22, 20, 23, // Left (-X) - reversed winding
     ];
 
     build_mesh(
@@ -3087,7 +3087,7 @@ fn build_capsule(radius: f32, height: f32, detail: ShapeDetail) -> Mesh {
         }
     }
 
-    // Cylinder middle section — two rings: top ring first, then bottom ring
+    // Cylinder middle section - two rings: top ring first, then bottom ring
     let cyl_top_start = vertices.len() / ring_verts;
     for lon in 0..=segments {
         let phi = lon as f32 * 2.0 * PI / segments as f32;
@@ -3147,7 +3147,7 @@ fn build_capsule(radius: f32, height: f32, detail: ShapeDetail) -> Mesh {
         }
     }
 
-    // Cylinder indices — connects top ring to bottom ring
+    // Cylinder indices - connects top ring to bottom ring
     let cyl_bot_start = (cyl_top_start + 1) * ring_verts;
     for lon in 0..segments {
         let a = cyl_top_start * ring_verts + lon;
@@ -3284,7 +3284,7 @@ fn build_torus(radius: f32, thickness: f32, start: f32, span: f32, detail: Shape
 
     // Cap the tube ends when the arc is partial (span < TAU)
     if span < std::f32::consts::TAU - 1e-6 {
-        // Start cap — fan from center of first ring
+        // Start cap - fan from center of first ring
         let start_center = vertices.len();
         // Compute center of the tube cross-section at start angle
         let cos_start = start.cos();
@@ -3306,7 +3306,7 @@ fn build_torus(radius: f32, thickness: f32, start: f32, span: f32, detail: Shape
             ]);
         }
 
-        // End cap — fan from center of last ring
+        // End cap - fan from center of last ring
         let end_center = vertices.len();
         let cos_end = (start + span).cos();
         let sin_end = (start + span).sin();
@@ -3668,7 +3668,7 @@ fn build_pyramid(sides: u32, radius: f32, height: f32, _detail: ShapeDetail) -> 
         indices.extend_from_slice(&[base_idx, base_idx + 1, base_idx + 2]);
     }
 
-    // Base cap — separate vertices with downward normal
+    // Base cap - separate vertices with downward normal
     let base_center = vertices.len() as u32;
     vertices.push(Vec3::new(0.0, -half_h, 0.0));
     normals.push(Vec3::new(0.0, -1.0, 0.0));
@@ -3696,7 +3696,7 @@ fn build_pyramid(sides: u32, radius: f32, height: f32, _detail: ShapeDetail) -> 
     build_mesh(vertices, normals, uvs, indices)
 }
 
-// ─── 2D Mesh builders ───
+// --- 2D Mesh builders ---
 
 fn build_rectangle(size: Vec2, _detail: ShapeDetail) -> Mesh {
     let (hx, hy) = (size.x / 2.0, size.y / 2.0);
@@ -4055,7 +4055,7 @@ fn ear_clip_triangulate(vertices: &[Vec2]) -> Vec<u32> {
             let next = indices[(i + 1) % len];
 
             if is_ear(vertices, prev, curr, next, &indices) {
-                // This is an ear — add triangle and remove the ear tip
+                // This is an ear - add triangle and remove the ear tip
                 triangles.push(prev as u32);
                 triangles.push(curr as u32);
                 triangles.push(next as u32);
@@ -4066,7 +4066,7 @@ fn ear_clip_triangulate(vertices: &[Vec2]) -> Vec<u32> {
         }
 
         if !found_ear {
-            // No ear found — degenerate polygon; fallback to fan
+            // No ear found - degenerate polygon; fallback to fan
             break;
         }
     }
@@ -6027,7 +6027,7 @@ mod tests {
         assert!((points[2].y).abs() < 1e-6, "Midpoint Y should be 0.0");
     }
 
-    // ─── New shape tests ───
+    // --- New shape tests ---
 
     #[test]
     fn star_generates_mesh() {

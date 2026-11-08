@@ -1,4 +1,4 @@
-//! Deformation showcase — demonstrates vertex shader deformations: wobble, pulse, and morph.
+//! Deformation showcase - demonstrates vertex shader deformations: wobble, pulse, and morph.
 //!
 //! Shows animated shapes with different deformation types side-by-side,
 //! comparing deformed shapes against their static originals.
@@ -140,7 +140,7 @@ fn draw_deformations(
 
     let xs = [-3.5_f32, 0.0, 3.5];
 
-    // ─── Row 1: Wobble (y = 0.7) ───
+    // --- Row 1: Wobble (y = 0.7) ---
     let rows = [0.7_f32, 2.4, 4.1];
     let row1 = [
         (DeformationParams::none(), static_grey),
@@ -153,7 +153,7 @@ fn draw_deformations(
         rec.sphere(0.6, ShapeDetail::High, color);
     }
 
-    // ─── Row 2: Pulse (y = 2.4) ───
+    // --- Row 2: Pulse (y = 2.4) ---
     let row2 = [
         (DeformationParams::none(), static_grey),
         (DeformationParams::pulse(0.2, 2.5, 0.0), butter),
@@ -165,7 +165,7 @@ fn draw_deformations(
         rec.cuboid(Vec3::splat(0.9), 0.15, ShapeDetail::High, color);
     }
 
-    // ─── Row 3: Morph (y = 4.1) ───
+    // --- Row 3: Morph (y = 4.1) ---
     let row3 = [
         (DeformationParams::none(), static_grey),
         (DeformationParams::morph(0.2, 2.0, 0.0), mint),

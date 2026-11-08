@@ -1,4 +1,4 @@
-//! Standalone GradMesh render pipeline — no PBR dependency.
+//! Standalone GradMesh render pipeline - no PBR dependency.
 //!
 //! This module provides a complete render pipeline for GradMesh that bypasses
 //! Bevy's PBR system entirely. Unlike the `ExtendedMaterial` path which inherits
@@ -23,16 +23,16 @@
 //! The pipeline is specialized only on view state (MSAA, target format) and mesh
 //! topology, never on material, so all batches share a single specialization.
 //!
-//! This module depends on `bevy_render` and `bevy_core_pipeline` only — nothing
+//! This module depends on `bevy_render` and `bevy_core_pipeline` only - nothing
 //! from `bevy_pbr`. The camera is bound through its own `ViewUniform` bind group
 //! and meshes are bound straight from the `MeshAllocator`.
 //!
 //! ```text
 //! StandalonePipeline
-//! ├── One bind group: the camera `ViewUniform` (dynamic offset)
-//! ├── Reuses Opaque3d binned render phase
-//! ├── Per-batch vertex buffer (transforms + properties)
-//! └── Standalone shader (no PBR imports)
+//! |-- One bind group: the camera `ViewUniform` (dynamic offset)
+//! |-- Reuses Opaque3d binned render phase
+//! |-- Per-batch vertex buffer (transforms + properties)
+//! +-- Standalone shader (no PBR imports)
 //! ```
 
 use std::mem::size_of;
@@ -62,7 +62,7 @@ use crate::culling::{self, AABB};
 use crate::lod::LodConfig;
 use crate::render_pipeline::InstancedStats;
 
-// ─── Extracted Batch Data ───
+// --- Extracted Batch Data ---
 
 /// Extracted batch data for the standalone render world.
 #[derive(Clone, Component, ExtractComponent)]
@@ -93,7 +93,7 @@ pub struct StandaloneGpuBuffers {
     instance_count: u32,
 }
 
-// ─── Pipeline ───
+// --- Pipeline ---
 
 /// The standalone pipeline for GradMesh rendering (no PBR).
 #[derive(Resource, Clone)]
@@ -127,7 +127,7 @@ pub struct StandaloneViewBindGroup(BindGroup);
 /// Specialized pipelines cache for standalone rendering.
 pub type StandalonePipelineCache = SpecializedMeshPipelines<StandalonePipeline>;
 
-/// Pipeline key — depends only on view state and mesh topology, never on
+/// Pipeline key - depends only on view state and mesh topology, never on
 /// material, so all standalone batches on a view share the same pipeline.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct StandalonePipelineKey {
@@ -288,7 +288,7 @@ impl SpecializedMeshPipeline for StandalonePipeline {
     }
 }
 
-// ─── Draw Command ───
+// --- Draw Command ---
 
 /// The draw command tuple for standalone batches.
 pub type DrawStandaloneBatch = (
@@ -386,7 +386,7 @@ impl<P: PhaseItem> RenderCommand<P> for DrawStandaloneBatchImpl {
     }
 }
 
-// ─── Buffer Preparation ───
+// --- Buffer Preparation ---
 
 /// Prepare GPU buffers for standalone instanced batches.
 fn prepare_standalone_buffers(
@@ -466,7 +466,7 @@ fn build_combined_buffer(batch_data: &StandaloneBatchData) -> Vec<u8> {
     combined
 }
 
-// ─── Queue System ───
+// --- Queue System ---
 
 /// Queue standalone batches into the opaque render phase.
 fn queue_standalone_batches(
@@ -593,7 +593,7 @@ fn parse_transforms(batch_data: &StandaloneBatchData) -> Vec<culling::InstanceTr
     transforms
 }
 
-// ─── Plugin ───
+// --- Plugin ---
 
 /// Plugin that wires the standalone GPU instanced pipeline into Bevy's render graph.
 ///
@@ -660,7 +660,7 @@ fn prepare_standalone_view_bind_group(
     commands.insert_resource(StandaloneViewBindGroup(bind_group));
 }
 
-// ─── Spawn API ───
+// --- Spawn API ---
 
 /// Spawn standalone batch entities from a `BatchRecorder`.
 ///

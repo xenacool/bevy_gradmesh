@@ -73,7 +73,7 @@ fn draw(mut recorder: ResMut<BatchRecorder>) {
 1. Each instance carries an `AppearanceSnapshot` vec4 encoding speed, phase, and type
 2. The vertex shader resolves the animated color at render time using global time
 3. Different phase values create staggered animation across instances
-4. No per-frame CPU updates needed — the GPU handles all animation
+4. No per-frame CPU updates needed - the GPU handles all animation
 
 ## Performance
 

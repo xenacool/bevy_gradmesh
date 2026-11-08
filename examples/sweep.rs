@@ -139,7 +139,7 @@ fn setup(
                 centre + Vec3::new(a.cos() * r, 0.0, a.sin() * r)
             })
             .collect::<Vec<_>>(),
-    );
+    ).unwrap();
     let baked = ring.bake(0.5);
     let wall = Shape::sweep(
         wall_profile(),

@@ -18,7 +18,7 @@
 //! This plugin detects when the first frame has actually rendered by observing
 //! `FrameCount` (which increments during the `Last` schedule after rendering).
 //! It then spawns the screenshot entity and waits for the `ScreenshotCaptured`
-//! observer before exiting — no frame counters or sleep needed.
+//! observer before exiting - no frame counters or sleep needed.
 //!
 //! Configure `RenderPlugin` with `synchronous_pipeline_compilation: true` so all
 //! shaders compile before the first frame. Without this, the first frame may render
@@ -249,7 +249,7 @@ struct ScreenshotState {
 /// Wait for the first rendered frame, then spawn the screenshot entity.
 ///
 /// Instead of guessing with a frame counter, we use `FrameCount` which Bevy
-/// increments during the `Last` schedule — after the render pipeline has
+/// increments during the `Last` schedule - after the render pipeline has
 /// completed. When `FrameCount.0 > 0`, at least one frame has fully rendered.
 ///
 /// The Bevy screenshot pipeline then needs 2 more frames:

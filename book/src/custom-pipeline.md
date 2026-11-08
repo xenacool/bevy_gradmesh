@@ -6,7 +6,7 @@ By default, BevyGradmesh uses `GradMeshMaterial`, which is implemented as `Exten
 
 On mobile GPUs (e.g., Android Mali-G715), the Vulkan descriptor pool fragments after ~20-30 such allocations, causing `VK_ERROR_FRAGMENTED_POOL` and a wgpu panic. Even with `GradMeshMaterialPool` deduplication, adding many materials can push past the limit.
 
-The root issue: **ExtendedMaterial inherits the entire PBR pipeline**, including lighting, shadows, prepass, deferred rendering, and meshlet support — none of which GradMesh uses. Gradient shading is a simple two-color vertex shader that doesn't need PBR at all.
+The root issue: **ExtendedMaterial inherits the entire PBR pipeline**, including lighting, shadows, prepass, deferred rendering, and meshlet support - none of which GradMesh uses. Gradient shading is a simple two-color vertex shader that doesn't need PBR at all.
 
 ## The Standalone Pipeline
 
@@ -14,19 +14,19 @@ The standalone pipeline (`StandaloneRenderPlugin`) bypasses Bevy's PBR system en
 
 ### Key Benefits
 
-- **Zero descriptor pool pressure** — One pipeline, one bind group layout, one descriptor set
-- **No PBR overhead** — No prepass, no shadows, no deferred rendering
-- **Mobile-friendly** — Works on Mali-G715, Adreno, and any GPU with limited descriptor pool capacity
-- **Faster compilation** — One shader pipeline instead of N specializations
+- **Zero descriptor pool pressure** - One pipeline, one bind group layout, one descriptor set
+- **No PBR overhead** - No prepass, no shadows, no deferred rendering
+- **Mobile-friendly** - Works on Mali-G715, Adreno, and any GPU with limited descriptor pool capacity
+- **Faster compilation** - One shader pipeline instead of N specializations
 
 ### Architecture
 
 ```
 StandalonePipeline
-├── Single render pipeline (no specialization per material)
-├── Reuses Opaque3d binned render phase
-├── Per-batch vertex buffer (transforms + properties)
-└── Standalone WGSL shader (no PBR imports)
+|-- Single render pipeline (no specialization per material)
+|-- Reuses Opaque3d binned render phase
+|-- Per-batch vertex buffer (transforms + properties)
++-- Standalone WGSL shader (no PBR imports)
 ```
 
 ### Usage
@@ -55,7 +55,7 @@ fn render(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
     recorder.set_position(Vec3::X);
     recorder.sphere(0.5, ShapeDetail::Medium, [0.0, 1.0, 0.0, 1.0]);
 
-    // Use standalone pipeline — no PBR, no descriptor pool pressure
+    // Use standalone pipeline - no PBR, no descriptor pool pressure
     let _entities = render_standalone_batches(&mut recorder, &mut commands, meshes, None);
 }
 ```

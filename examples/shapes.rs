@@ -1,4 +1,4 @@
-//! Shape showcase example — displays all procedural primitives with different detail levels.
+//! Shape showcase example - displays all procedural primitives with different detail levels.
 //!
 //! Run with: `cargo run --example shapes`
 
@@ -50,13 +50,13 @@ fn setup(
     mut meshes: ResMut<Assets<bevy::render::mesh::Mesh>>,
     mut materials: ResMut<Assets<GradMeshMaterial>>,
 ) {
-    // Camera — centered on the shape showcase wall
+    // Camera - centered on the shape showcase wall
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(0.0, 3.9, 11.2).looking_at(Vec3::new(0.0, 3.9, 0.0), Vec3::Y),
     ));
 
-    // Lighting — side-on angle so each shape shows roughly half lit, half shadowed
+    // Lighting - side-on angle so each shape shows roughly half lit, half shadowed
     commands.spawn((
         DirectionalLight {
             illuminance: 15_000.0,
@@ -233,7 +233,7 @@ fn setup(
         "Hemisphere".to_string(),
     );
 
-    // Torus — tilted to show the doughnut shape clearly
+    // Torus - tilted to show the doughnut shape clearly
     add_shape_rotated(
         &mut commands,
         &mut meshes,
@@ -244,7 +244,7 @@ fn setup(
         "Torus".to_string(),
     );
 
-    // Torus Arc (smile) — tilted
+    // Torus Arc (smile) - tilted
     add_shape_rotated(
         &mut commands,
         &mut meshes,
