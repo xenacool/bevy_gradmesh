@@ -67,79 +67,220 @@ pub(crate) fn heightfield_skirt_depth(extent: Vec2) -> f32 {
     extent.x.abs().max(extent.y.abs()) * SKIRT_FRACTION
 }
 
+/// Checks the inputs of a heightfield; the error says what is wrong.
+pub(crate) fn heightfield_check(
+    size: bevy::math::UVec2,
+    heights: usize,
+    holes: Option<&[bool]>,
+    border: Option<&crate::shape::HeightfieldBorder>,
+) -> Result<(), String> {
+    let (sx, sy) = (size.x as usize, size.y as usize);
+    if sx < 2 || sy < 2 || heights != sx * sy {
+        return Err(format!(
+            "size {}x{} needs at least 2x2 samples and {} heights, got {}",
+            size.x,
+            size.y,
+            sx * sy,
+            heights
+        ));
+    }
+    if let Some(h) = holes
+        && h.len() != (sx - 1) * (sy - 1)
+    {
+        return Err(format!(
+            "the hole mask needs one flag per cell, {}, got {}",
+            (sx - 1) * (sy - 1),
+            h.len()
+        ));
+    }
+    if let Some(b) = border
+        && (b.west.len() != sy || b.east.len() != sy || b.north.len() != sx || b.south.len() != sx)
+    {
+        return Err(format!(
+            "the border needs {sy} samples on its west and east sides and {sx} on its north and south sides, got {}, {}, {} and {}",
+            b.west.len(),
+            b.east.len(),
+            b.north.len(),
+            b.south.len()
+        ));
+    }
+    Ok(())
+}
+
+/// Which grid vertices a cell mask leaves in the mesh: those that touch at
+/// least one cell that is not a hole.
+fn heightfield_used(sx: usize, sy: usize, holes: Option<&[bool]>) -> Vec<bool> {
+    let solid = |cx: usize, cy: usize| holes.is_none_or(|h| !h[cx + cy * (sx - 1)]);
+    let mut used = vec![false; sx * sy];
+    for cy in 0..sy - 1 {
+        for cx in 0..sx - 1 {
+            if solid(cx, cy) {
+                for (x, y) in [(cx, cy), (cx + 1, cy), (cx, cy + 1), (cx + 1, cy + 1)] {
+                    used[x + y * sx] = true;
+                }
+            }
+        }
+    }
+    used
+}
+
+/// The four edges of the grid, each walked so a skirt faces outwards: grid
+/// vertices in order, and for every step the cell it borders.
+fn heightfield_edges(sx: usize, sy: usize) -> [(Vec<(usize, usize)>, Vec<(usize, usize)>); 4] {
+    [
+        (
+            (0..sx).map(|x| (x, 0)).collect(),
+            (0..sx - 1).map(|i| (i, 0)).collect(),
+        ),
+        (
+            (0..sx).rev().map(|x| (x, sy - 1)).collect(),
+            (0..sx - 1).map(|i| (sx - 2 - i, sy - 2)).collect(),
+        ),
+        (
+            (0..sy).rev().map(|y| (0, y)).collect(),
+            (0..sy - 1).map(|i| (0, sy - 2 - i)).collect(),
+        ),
+        (
+            (0..sy).map(|y| (sx - 1, y)).collect(),
+            (0..sy - 1).map(|i| (sx - 2, i)).collect(),
+        ),
+    ]
+}
+
+/// Bounds of a heightfield without and with its skirts, as `(surface, full)`.
+/// Vertices that only touch holes, and skirts under holes, do not count.
+pub(crate) fn heightfield_bounds(
+    size: bevy::math::UVec2,
+    extent: Vec2,
+    heights: &[f32],
+    holes: Option<&[bool]>,
+) -> (crate::shape::ShapeBounds, crate::shape::ShapeBounds) {
+    use crate::shape::ShapeBounds;
+    let (sx, sy) = (size.x as usize, size.y as usize);
+    let used = heightfield_used(sx, sy, holes);
+    let (mut lo, mut hi) = (f32::MAX, f32::MIN);
+    for (i, &h) in heights.iter().enumerate() {
+        if used[i] {
+            lo = lo.min(h);
+            hi = hi.max(h);
+        }
+    }
+    if lo > hi {
+        return (ShapeBounds::default(), ShapeBounds::default());
+    }
+    let skirt = heightfield_skirt_depth(extent);
+    let mut skirt_lo = lo;
+    for (verts, cells) in heightfield_edges(sx, sy) {
+        for (i, &(cx, cy)) in cells.iter().enumerate() {
+            if holes.is_none_or(|h| !h[cx + cy * (sx - 1)]) {
+                for (x, y) in [verts[i], verts[i + 1]] {
+                    skirt_lo = skirt_lo.min(heights[x + y * sx] - skirt);
+                }
+            }
+        }
+    }
+    let make = |lo: f32| ShapeBounds {
+        min: Vec3::new(-extent.x * 0.5, lo, -extent.y * 0.5),
+        max: Vec3::new(extent.x * 0.5, hi, extent.y * 0.5),
+    };
+    (make(lo), make(skirt_lo))
+}
+
 /// A grid of `size.x * size.y` height samples over `extent`, centred on the
 /// origin in XZ (`heights[x + y * size.x]` is the sample at column `x`, row `y`,
 /// rows running along +Z).
 ///
 /// Normals come from central differences, UVs run 0 to 1 over the grid, and
-/// skirts hang below the four edges so cracks between neighbouring chunks stay
-/// hidden. Invalid input (a side shorter than 2 samples, or a mismatched
-/// `heights` length) returns an empty mesh and logs a warning.
-pub(crate) fn heightfield_mesh(size: bevy::math::UVec2, extent: Vec2, heights: &[f32]) -> Mesh {
-    let (sx, sy) = (size.x as usize, size.y as usize);
-    if sx < 2 || sy < 2 || heights.len() != sx * sy {
-        bevy::log::warn!(
-            "heightfield: size {}x{} needs at least 2x2 samples and {} heights, got {}; building an empty mesh",
-            size.x,
-            size.y,
-            sx * sy,
-            heights.len()
-        );
+/// skirts hang below the edges of the grid so cracks between neighbouring
+/// chunks stay hidden. A `holes` cell (`holes[cx + cy * (size.x - 1)]`) has no
+/// triangles, and no skirt below it; vertices only holes touch are left out.
+/// With a `border`, the normals of the edge vertices use the neighbour heights
+/// beyond the edge instead of one-sided differences. Invalid input returns an
+/// empty mesh and logs a warning.
+pub(crate) fn heightfield_mesh(
+    size: bevy::math::UVec2,
+    extent: Vec2,
+    heights: &[f32],
+    holes: Option<&[bool]>,
+    border: Option<&crate::shape::HeightfieldBorder>,
+) -> Mesh {
+    if let Err(why) = heightfield_check(size, heights.len(), holes, border) {
+        bevy::log::warn!("heightfield: {why}; building an empty mesh");
         return MeshData::default().into_mesh(false);
     }
+    let (sx, sy) = (size.x as usize, size.y as usize);
     let hx = extent.x / (sx - 1) as f32;
     let hz = extent.y / (sy - 1) as f32;
     let at = |x: usize, y: usize| heights[x + y * sx];
     let skirt = heightfield_skirt_depth(extent);
+    let used = heightfield_used(sx, sy, holes);
 
     let mut data = MeshData::default();
+    let mut id: Vec<Option<u32>> = vec![None; sx * sy];
     for y in 0..sy {
         for x in 0..sx {
-            let (x0, x1) = (x.saturating_sub(1), (x + 1).min(sx - 1));
-            let (y0, y1) = (y.saturating_sub(1), (y + 1).min(sy - 1));
-            let dhdx = (at(x1, y) - at(x0, y)) / ((x1 - x0) as f32 * hx);
-            let dhdz = (at(x, y1) - at(x, y0)) / ((y1 - y0) as f32 * hz);
-            let normal = Vec3::new(-dhdx, 1.0, -dhdz).normalize();
+            if !used[x + y * sx] {
+                continue;
+            }
+            let c = at(x, y);
+            let left = if x > 0 { Some(at(x - 1, y)) } else { border.map(|b| b.west[y]) };
+            let right = if x + 1 < sx { Some(at(x + 1, y)) } else { border.map(|b| b.east[y]) };
+            let back = if y > 0 { Some(at(x, y - 1)) } else { border.map(|b| b.north[x]) };
+            let front = if y + 1 < sy { Some(at(x, y + 1)) } else { border.map(|b| b.south[x]) };
+            let slope = |lo: Option<f32>, hi: Option<f32>, step: f32| match (lo, hi) {
+                (Some(l), Some(r)) => (r - l) / (2.0 * step),
+                (Some(l), None) => (c - l) / step,
+                (None, Some(r)) => (r - c) / step,
+                (None, None) => 0.0,
+            };
+            let normal = Vec3::new(-slope(left, right, hx), 1.0, -slope(back, front, hz)).normalize();
             let pos = Vec3::new(
                 (x as f32 / (sx - 1) as f32 - 0.5) * extent.x,
-                at(x, y),
+                c,
                 (y as f32 / (sy - 1) as f32 - 0.5) * extent.y,
             );
             let uv = Vec2::new(x as f32 / (sx - 1) as f32, y as f32 / (sy - 1) as f32);
-            data.push(pos, normal, uv, WHITE);
+            id[x + y * sx] = Some(data.push(pos, normal, uv, WHITE));
         }
     }
-    let idx = |x: usize, y: usize| (x + y * sx) as u32;
+    let v = |x: usize, y: usize| id[x + y * sx].expect("a vertex of a solid cell is used");
+    let solid = |cx: usize, cy: usize| holes.is_none_or(|h| !h[cx + cy * (sx - 1)]);
     for y in 0..sy - 1 {
         for x in 0..sx - 1 {
-            let (a, b, c, d) = (idx(x, y), idx(x, y + 1), idx(x + 1, y), idx(x + 1, y + 1));
+            if !solid(x, y) {
+                continue;
+            }
+            let (a, b, c, d) = (v(x, y), v(x, y + 1), v(x + 1, y), v(x + 1, y + 1));
             data.tri(a, b, c);
             data.tri(c, b, d);
         }
     }
 
-    // Skirts: each edge is walked so the strip faces outwards.
-    let edges: [Vec<u32>; 4] = [
-        (0..sx).map(|x| idx(x, 0)).collect(),
-        (0..sx).rev().map(|x| idx(x, sy - 1)).collect(),
-        (0..sy).rev().map(|y| idx(0, y)).collect(),
-        (0..sy).map(|y| idx(sx - 1, y)).collect(),
-    ];
-    for edge in edges {
-        let skirt_start = data.positions.len() as u32;
-        for &e in &edge {
-            let (p, n, uv) = (
-                data.positions[e as usize],
-                data.normals[e as usize],
-                data.uvs[e as usize],
-            );
-            data.push(p - Vec3::Y * skirt, n, uv, WHITE);
-        }
-        for i in 0..edge.len() as u32 - 1 {
-            let (e0, e1) = (edge[i as usize], edge[i as usize + 1]);
-            let (s0, s1) = (skirt_start + i, skirt_start + i + 1);
-            data.tri(e0, e1, s0);
-            data.tri(e1, s1, s0);
+    // Skirts: only under edge cells that are not holes.
+    let mut skirt_id: Vec<Option<u32>> = vec![None; sx * sy];
+    for (verts, cells) in heightfield_edges(sx, sy) {
+        for (i, &(cx, cy)) in cells.iter().enumerate() {
+            if !solid(cx, cy) {
+                continue;
+            }
+            let mut ends = [0u32; 2];
+            let mut drops = [0u32; 2];
+            for k in 0..2 {
+                let (x, y) = verts[i + k];
+                let e = v(x, y);
+                let s = *skirt_id[x + y * sx].get_or_insert_with(|| {
+                    let (p, n, uv) = (
+                        data.positions[e as usize],
+                        data.normals[e as usize],
+                        data.uvs[e as usize],
+                    );
+                    data.push(p - Vec3::Y * skirt, n, uv, WHITE)
+                });
+                ends[k] = e;
+                drops[k] = s;
+            }
+            data.tri(ends[0], ends[1], drops[0]);
+            data.tri(ends[1], drops[1], drops[0]);
         }
     }
     data.into_mesh(false)
@@ -457,6 +598,7 @@ fn flat_quad(data: &mut MeshData, corners: [Vec3; 4], toward: Vec3, color: [f32;
 pub(crate) fn sweep_mesh(
     profile: &[Vec2],
     path: &[Vec3],
+    given: Option<&[crate::shape::SweepFrame]>,
     o: &crate::shape::SweepOptions,
 ) -> Mesh {
     let empty = || MeshData::default().into_mesh(false);
@@ -467,15 +609,18 @@ pub(crate) fn sweep_mesh(
 
     // Distinct path points.
     let mut pts: Vec<Vec3> = Vec::with_capacity(path.len());
-    for &p in path {
+    let mut kept: Vec<usize> = Vec::with_capacity(path.len());
+    for (k, &p) in path.iter().enumerate() {
         if pts.last().is_none_or(|l| l.distance_squared(p) > 1e-10) {
             pts.push(p);
+            kept.push(k);
         }
     }
     let closed = o.closed;
     if closed {
         while pts.len() > 1 && pts[0].distance_squared(pts[pts.len() - 1]) <= 1e-10 {
             pts.pop();
+            kept.pop();
         }
     }
     let n = pts.len();
@@ -491,7 +636,24 @@ pub(crate) fn sweep_mesh(
         .filter(|t| !t.is_empty())
         .map(|t| t.iter().map(|(r, c)| (*r, c.to_linear().to_f32_array())).collect());
     let scale_keys = o.scale_along.as_deref().filter(|s| !s.is_empty());
-    let pieces = if o.twist != 0.0 || scale_keys.is_some() || tint_keys.is_some() {
+    let roll_keys = o.roll_along.as_deref().filter(|r| !r.is_empty());
+    // A closed sweep has no seam only if the twist is a whole number of turns
+    // and the roll comes back to where it started: the nearest such twist is
+    // used, and the roll's leftover is spread evenly along the loop.
+    let twist = if closed { o.twist.round() } else { o.twist };
+    let roll_drift = match roll_keys {
+        Some(k) if closed => {
+            let (a, b) = (
+                sample_keys(k, 0.0, |a: f32, b: f32, t| a + (b - a) * t).unwrap_or(0.0),
+                sample_keys(k, 1.0, |a: f32, b: f32, t| a + (b - a) * t).unwrap_or(0.0),
+            );
+            let d = b - a;
+            d - (d / TAU).round() * TAU
+        }
+        _ => 0.0,
+    };
+    let varies = twist != 0.0 || roll_keys.is_some() || scale_keys.is_some() || tint_keys.is_some();
+    let pieces = if varies {
         (o.detail.segments() / 4).max(1) as usize
     } else {
         1
@@ -545,32 +707,71 @@ pub(crate) fn sweep_mesh(
         bends.push((next - prev).try_normalize().map(|b| (b, scale)));
     }
 
-    // Parallel-transport frames `(right, up)`, `right x up == forward`.
-    let up_hint = o.up.try_normalize().unwrap_or(Vec3::Y);
-    let mut right = up_hint.cross(tans[0]);
-    if right.length_squared() < 1e-6 {
-        right = (if tans[0].y.abs() < 0.9 { Vec3::Y } else { Vec3::X }).cross(tans[0]);
-    }
-    let mut right = right.normalize();
+    // Frames `(right, up)` with `right x up == forward`: the caller's, sampled
+    // along the path, or parallel transport.
     let mut frames: Vec<(Vec3, Vec3)> = Vec::with_capacity(m);
-    for i in 0..m {
-        if i > 0 {
-            right = Quat::from_rotation_arc(tans[i - 1], tans[i]) * right;
+    let mut frame_scale: Vec<Vec2> = vec![Vec2::ONE; m];
+    if let Some(given) = given {
+        let total_in = path_length(&pts, closed);
+        let mut keys: Vec<(f32, (Vec3, Vec3, Vec2))> = Vec::with_capacity(pts.len() + 1);
+        let mut d = 0.0;
+        for (k, &idx) in kept.iter().enumerate() {
+            if k > 0 {
+                d += pts[k].distance(pts[k - 1]);
+            }
+            let f = &given[idx];
+            keys.push((d / total_in, (f.right, f.up, f.scale)));
         }
-        right = (right - tans[i] * right.dot(tans[i]))
-            .try_normalize()
-            .unwrap_or_else(|| tans[i].any_orthonormal_vector());
-        frames.push((right, tans[i].cross(right)));
-    }
-    if closed {
-        // Parallel transport around a loop returns twisted; spread the
-        // difference over the loop so the last ring meets the first.
-        let end = Quat::from_rotation_arc(tans[m - 1], tans[0]) * frames[m - 1].0;
-        let start = frames[0].0;
-        let angle = end.cross(start).dot(tans[0]).atan2(end.dot(start));
+        if closed {
+            let first = keys[0].1;
+            keys.push((1.0, first));
+        }
         for i in 0..m {
-            let rot = Quat::from_axis_angle(tans[i], angle * ratio[i]);
-            frames[i] = (rot * frames[i].0, rot * frames[i].1);
+            let (r, u, sc) = sample_keys(&keys, ratio[i], |a: (Vec3, Vec3, Vec2), b, t| {
+                (a.0.lerp(b.0, t), a.1.lerp(b.1, t), a.2.lerp(b.2, t))
+            })
+            .unwrap_or((Vec3::X, Vec3::Y, Vec2::ONE));
+            let tan = tans[i];
+            let flat = |v: Vec3| (v - tan * v.dot(tan)).try_normalize();
+            let (right, up) = match (flat(r), flat(u)) {
+                (Some(r), Some(u)) if r.cross(u).dot(tan) >= 0.0 => (r, tan.cross(r)),
+                // Left-handed frame: keep `up`, so a road never turns over.
+                (_, Some(u)) => (u.cross(tan), u),
+                (Some(r), None) => (r, tan.cross(r)),
+                (None, None) => {
+                    let r = tan.any_orthonormal_vector();
+                    (r, tan.cross(r))
+                }
+            };
+            frames.push((right, up));
+            frame_scale[i] = sc;
+        }
+    } else {
+        let up_hint = o.up.try_normalize().unwrap_or(Vec3::Y);
+        let mut right = up_hint.cross(tans[0]);
+        if right.length_squared() < 1e-6 {
+            right = (if tans[0].y.abs() < 0.9 { Vec3::Y } else { Vec3::X }).cross(tans[0]);
+        }
+        let mut right = right.normalize();
+        for i in 0..m {
+            if i > 0 {
+                right = Quat::from_rotation_arc(tans[i - 1], tans[i]) * right;
+            }
+            right = (right - tans[i] * right.dot(tans[i]))
+                .try_normalize()
+                .unwrap_or_else(|| tans[i].any_orthonormal_vector());
+            frames.push((right, tans[i].cross(right)));
+        }
+        if closed {
+            // Parallel transport around a loop returns twisted; spread the
+            // difference over the loop so the last ring meets the first.
+            let end = Quat::from_rotation_arc(tans[m - 1], tans[0]) * frames[m - 1].0;
+            let start = frames[0].0;
+            let angle = end.cross(start).dot(tans[0]).atan2(end.dot(start));
+            for i in 0..m {
+                let rot = Quat::from_axis_angle(tans[i], angle * ratio[i]);
+                frames[i] = (rot * frames[i].0, rot * frames[i].1);
+            }
         }
     }
 
@@ -603,12 +804,17 @@ pub(crate) fn sweep_mesh(
     for i in 0..m {
         let r = rings.ratio[i];
         rings.scale.push(
-            scale_keys
+            (scale_keys
                 .and_then(|k| sample_keys(k, r, |a: Vec2, b: Vec2, t| a.lerp(b, t)))
                 .unwrap_or(Vec2::ONE)
+                * frame_scale[i])
                 .max(Vec2::splat(1e-4)),
         );
-        rings.spin.push((std::f32::consts::TAU * o.twist * r).sin_cos());
+        let roll = roll_keys
+            .and_then(|k| sample_keys(k, r, |a: f32, b: f32, t| a + (b - a) * t))
+            .unwrap_or(0.0)
+            - roll_drift * r;
+        rings.spin.push((TAU * twist * r + roll).sin_cos());
         rings.color.push(
             tint_keys
                 .as_deref()

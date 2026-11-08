@@ -1,6 +1,6 @@
 [package]
 name = "bevy_gradmesh"
-version = "0.2.6"
+version = "0.2.7"
 authors = ["Jessica Collins (https://github.com/xenacool)"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
@@ -90,6 +90,14 @@ path = "examples/sdf_dash_gallery.rs"
 [[example]]
 name = "sweep"
 path = "examples/sweep.rs"
+
+[[example]]
+name = "terrain"
+path = "examples/terrain.rs"
+
+[[example]]
+name = "road"
+path = "examples/road.rs"
 
 [[example]]
 name = "composed_shapes"

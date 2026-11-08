@@ -707,28 +707,34 @@ impl Style {
     /// (no blending). Fragments below the first band take its colour.
     ///
     /// `bands` is `(height, colour)` pairs in any order (they are sorted by
-    /// height); at most [`MAX_HEIGHT_BANDS`] (4) are used, extra ones are dropped
-    /// with a `debug_assert!`. An empty slice leaves the style unchanged. The
+    /// height). At most [`MAX_HEIGHT_BANDS`] (4) fit in the shader: given more,
+    /// the four lowest are kept and a warning is logged, the same in debug and
+    /// release builds. An empty slice leaves the style unchanged. The
     /// style's own colour no longer shows, but noise, stripes, rim light and
     /// vertex tints still apply. Heights are in world space, so it suits terrain
     /// that stays put. Applies to [`GradMeshMaterial`] only; the instanced,
     /// standalone and `Mesh2d` paths ignore it. [`Style::lerp`] blends band
     /// colours and heights when both styles have bands.
+    ///
+    /// To state the heights as fractions of a shape's own height, so that
+    /// re-scaling the shape keeps the look, see [`Style::with_height_bands_on`].
     #[must_use]
     pub fn with_height_bands(mut self, bands: &[(f32, Color)]) -> Self {
-        debug_assert!(
-            bands.len() <= MAX_HEIGHT_BANDS,
-            "height bands: at most {MAX_HEIGHT_BANDS} are supported"
-        );
         if bands.is_empty() {
             return self;
         }
         let mut sorted: Vec<(f32, LinearRgba)> = bands
             .iter()
-            .take(MAX_HEIGHT_BANDS)
             .map(|(h, c)| (if h.is_nan() { 0.0 } else { *h }, c.to_linear()))
             .collect();
         sorted.sort_by(|a, b| a.0.total_cmp(&b.0));
+        if sorted.len() > MAX_HEIGHT_BANDS {
+            bevy::log::warn!(
+                "height bands: {} given but at most {MAX_HEIGHT_BANDS} fit; keeping the lowest {MAX_HEIGHT_BANDS}",
+                sorted.len()
+            );
+            sorted.truncate(MAX_HEIGHT_BANDS);
+        }
         let last = sorted[sorted.len() - 1].1;
         let mut out = HeightBands {
             colors: [last; MAX_HEIGHT_BANDS],
@@ -742,6 +748,39 @@ impl Style {
         self.height_bands = Some(out);
         self.color_mode = ColorMode::HeightBands;
         self
+    }
+
+    /// Like [`Style::with_height_bands`], with each band's height given as a
+    /// fraction of the vertical extent of the land of `shape` as placed by
+    /// `transform`: `0.0` is its lowest point and `1.0` its highest, and
+    /// fractions outside `0.0..=1.0` reach below or above it.
+    ///
+    /// The fractions are resolved here, against [`Shape::surface_bounds`], so
+    /// they cannot be left unresolved in the style and the skirts of a
+    /// heightfield (which hang below the land) never shift the bands. The
+    /// resolved heights are world heights, like the absolute form: the
+    /// `transform` should be the one the shape is shown with, and a shape that is
+    /// tilted is measured along the world `Y` axis through its centre.
+    /// A shape that is flat (or empty) has no extent to spread the fractions
+    /// over, so all bands start at its height and only the highest shows.
+    /// Build the style again when the shape's heights or transform change; the
+    /// result is an ordinary style that [`Style::lerp`] blends and the pool shares.
+    #[must_use]
+    pub fn with_height_bands_on(
+        self,
+        bands: &[(f32, Color)],
+        shape: &crate::shape::Shape,
+        transform: &bevy::transform::components::Transform,
+    ) -> Self {
+        let b = shape.surface_bounds();
+        let c = b.center();
+        let world_height = |fraction: f32| {
+            let fraction = if fraction.is_nan() { 0.0 } else { fraction };
+            let local = b.min.y + (b.max.y - b.min.y) * fraction;
+            transform.transform_point(Vec3::new(c.x, local, c.z)).y
+        };
+        let absolute: Vec<(f32, Color)> = bands.iter().map(|&(f, col)| (world_height(f), col)).collect();
+        self.with_height_bands(&absolute)
     }
 
     /// Multiplies the alpha of both gradient colours by `alpha` (clamped to
@@ -1658,22 +1697,76 @@ mod height_band_tests {
     }
 
     #[test]
-    #[cfg(debug_assertions)]
-    #[should_panic(expected = "at most 4")]
-    fn more_than_four_bands_assert_in_debug() {
-        let five: Vec<(f32, Color)> = (0..5).map(|i| (i as f32, GRASS)).collect();
-        let _ = Style::opaque(Color::WHITE).with_height_bands(&five);
+    fn more_than_four_bands_keep_the_lowest_four_in_every_build() {
+        // Given out of order: the lowest four by height stay, whatever the order.
+        let five: Vec<(f32, Color)> = [4.0, 0.0, 3.0, 1.0, 2.0].iter().map(|&h| (h, GRASS)).collect();
+        let b = Style::opaque(Color::WHITE).with_height_bands(&five).height_bands.unwrap();
+        assert_eq!(b.count, 4);
+        assert_eq!(b.heights, [0.0, 1.0, 2.0, 3.0]);
+    }
+
+    fn land(top: f32) -> crate::shape::Shape {
+        use bevy::math::{UVec2, Vec2};
+        // Heights 0 and `top`, with skirts hanging 0.1 * 10 = 1 below.
+        let heights: std::sync::Arc<[f32]> = vec![0.0, top, 0.0, top].into();
+        crate::shape::Shape::heightfield(heights, UVec2::new(2, 2), Vec2::splat(10.0), 1)
+    }
+
+    fn palette(shape: &crate::shape::Shape, transform: &bevy::transform::components::Transform) -> Style {
+        Style::opaque(Color::WHITE).with_height_bands_on(&[(0.0, GRASS), (0.5, ROCK), (1.0, SNOW)], shape, transform)
     }
 
     #[test]
-    #[cfg(not(debug_assertions))]
-    fn more_than_four_bands_truncate_in_release() {
-        let five: Vec<(f32, Color)> = (0..5).map(|i| (i as f32, GRASS)).collect();
-        let b = Style::opaque(Color::WHITE)
-            .with_height_bands(&five)
+    fn relative_bands_follow_the_land_not_its_skirts() {
+        use bevy::transform::components::Transform;
+        let b = palette(&land(8.0), &Transform::IDENTITY).height_bands.unwrap();
+        // The land spans 0..8; the skirts (down to -1) do not count.
+        assert_eq!(b.count, 3);
+        assert_eq!(b.heights[..3], [0.0, 4.0, 8.0]);
+    }
+
+    #[test]
+    fn rescaled_heights_keep_the_look() {
+        use bevy::transform::components::Transform;
+        let low = palette(&land(8.0), &Transform::IDENTITY).height_bands.unwrap();
+        let tall = palette(&land(80.0), &Transform::IDENTITY).height_bands.unwrap();
+        assert_eq!(tall.heights[..3], [0.0, 40.0, 80.0]);
+        assert_eq!(low.colors, tall.colors);
+        // The same land scaled by its transform lands on the same world heights.
+        let scaled = palette(&land(8.0), &Transform::from_scale(Vec3::new(1.0, 10.0, 1.0)))
             .height_bands
             .unwrap();
-        assert_eq!(b.count, 4);
-        assert_eq!(b.heights, [0.0, 1.0, 2.0, 3.0]);
+        assert_eq!(scaled.heights[..3], [0.0, 40.0, 80.0]);
+        // And a lifted placement moves the bands with it.
+        let lifted = palette(&land(8.0), &Transform::from_xyz(0.0, 100.0, 0.0)).height_bands.unwrap();
+        assert_eq!(lifted.heights[..3], [100.0, 104.0, 108.0]);
+    }
+
+    #[test]
+    fn fractions_outside_the_range_reach_past_the_land() {
+        use bevy::transform::components::Transform;
+        let s = Style::opaque(Color::WHITE).with_height_bands_on(
+            &[(-0.5, GRASS), (1.5, SNOW)],
+            &land(8.0),
+            &Transform::IDENTITY,
+        );
+        assert_eq!(s.height_bands.unwrap().heights[..2], [-4.0, 12.0]);
+    }
+
+    #[test]
+    fn a_flat_or_empty_shape_collapses_the_bands_to_its_height() {
+        use bevy::transform::components::Transform;
+        let flat = palette(&land(0.0), &Transform::IDENTITY).height_bands.unwrap();
+        assert_eq!(flat.heights[..3], [0.0, 0.0, 0.0]);
+        let empty = palette(&crate::shape::Shape::from_mesh(
+            std::sync::Arc::new(bevy::mesh::Mesh::new(
+                bevy::mesh::PrimitiveTopology::TriangleList,
+                bevy_asset::RenderAssetUsages::default(),
+            )),
+            1,
+        ), &Transform::IDENTITY)
+        .height_bands
+        .unwrap();
+        assert!(empty.heights[..3].iter().all(|h| h.is_finite()));
     }
 }

@@ -441,6 +441,87 @@ impl SdfMaterial2d {
         self.uniform.size.x = size.x;
         self.uniform.size.y = size.y;
     }
+
+    /// Blends this material towards `other` by `t` (clamped to `0.0..=1.0`;
+    /// `t == 0.0` is a copy of `self` and `t == 1.0` a copy of `other`).
+    ///
+    /// * Size, corner radius, rim width, arc, padding, the gradient direction
+    ///   and the dash length, gap and offset blend linearly. The two colours
+    ///   mix in `self`'s [`MixSpace`], like [`Style::lerp`](crate::Style::lerp).
+    /// * A circle blends into a rectangle through its corner radius (a circle
+    ///   is a rectangle whose corners take up the whole side), so the outline
+    ///   never jumps. Any other pairing of a rectangle and an ellipse cannot
+    ///   be blended and switches at `t == 0.5`.
+    /// * The gradient mode, the mix space, the dash snapping, and whether
+    ///   there are dashes at all or how they are given (by length or by count)
+    ///   switch at `t == 0.5`. A count of dashes stays a whole number.
+    #[must_use]
+    pub fn lerp(&self, other: &Self, t: f32) -> Self {
+        let t = if t.is_nan() { 0.0 } else { t.clamp(0.0, 1.0) };
+        if t <= 0.0 {
+            return self.clone();
+        }
+        if t >= 1.0 {
+            return other.clone();
+        }
+        let (mut a, mut b) = (self.uniform, other.uniform);
+        let near = if t < 0.5 { a } else { b };
+        let mix = |x: f32, y: f32| x + (y - x) * t;
+        let is_rect = |u: &SdfUniform| u.shape.x < 0.5;
+        let is_circle = |u: &SdfUniform| !is_rect(u) && (u.size.x - u.size.y).abs() < 1e-6;
+        let as_rect = |mut u: SdfUniform| {
+            u.shape.x = SdfKind::Rect.gpu_code();
+            u.size.z = u.size.x * 0.5;
+            u
+        };
+        if is_circle(&a) && is_rect(&b) {
+            a = as_rect(a);
+        } else if is_circle(&b) && is_rect(&a) {
+            b = as_rect(b);
+        }
+        let kind = if is_rect(&a) == is_rect(&b) { a.shape.x } else { near.shape.x };
+
+        let space = MixSpace::from_gpu_code(self.uniform.gradient.w);
+        let color_of = |v: Vec4| Color::srgba(v.x, v.y, v.z, v.w);
+        let mixed = |x: Vec4, y: Vec4| srgb_vec4(space.mix(color_of(x), color_of(y), t));
+
+        let mut gradient = Vec4::new(
+            mix(a.gradient.x, b.gradient.x),
+            mix(a.gradient.y, b.gradient.y),
+            near.gradient.z,
+            near.gradient.w,
+        );
+        if a.gradient.z == b.gradient.z && a.gradient.z == SdfGradient::Linear.gpu_code() {
+            let d = Vec2::new(gradient.x, gradient.y).normalize_or(Vec2::new(near.gradient.x, near.gradient.y));
+            gradient.x = d.x;
+            gradient.y = d.y;
+        }
+
+        let dashes = |u: &SdfUniform| u.dash.x != 0.0;
+        let dash = if dashes(&a) && dashes(&b) && (a.dash.x > 0.0) == (b.dash.x > 0.0) {
+            let x = mix(a.dash.x, b.dash.x);
+            let x = if x < 0.0 { x.round().min(-1.0) } else { x };
+            Vec4::new(x, mix(a.dash.y, b.dash.y), mix(a.dash.z, b.dash.z), near.dash.w)
+        } else {
+            near.dash
+        };
+
+        Self {
+            uniform: SdfUniform {
+                color: mixed(a.color, b.color),
+                secondary_color: mixed(a.secondary_color, b.secondary_color),
+                shape: Vec4::new(kind, mix(a.shape.y, b.shape.y), mix(a.shape.z, b.shape.z), mix(a.shape.w, b.shape.w)),
+                size: Vec4::new(
+                    mix(a.size.x, b.size.x),
+                    mix(a.size.y, b.size.y),
+                    mix(a.size.z, b.size.z),
+                    mix(a.size.w, b.size.w),
+                ),
+                gradient,
+                dash,
+            },
+        }
+    }
 }
 
 fn srgb_vec4(color: Color) -> Vec4 {
@@ -631,5 +712,71 @@ mod tests {
             .with_corner_radius(10.0)
             .perimeter();
         assert!((stadium - (40.0 + std::f32::consts::TAU * 10.0)).abs() < 1e-3);
+    }
+
+    #[test]
+    fn lerp_blends_continuous_values_and_keeps_endpoints() {
+        let a = SdfMaterial2d::rect(Vec2::new(40.0, 20.0))
+            .with_corner_radius(2.0)
+            .with_rim(1.0)
+            .with_padding(2.0)
+            .with_color(Color::srgb(1.0, 0.0, 0.0));
+        let b = SdfMaterial2d::rect(Vec2::new(80.0, 40.0))
+            .with_corner_radius(6.0)
+            .with_rim(5.0)
+            .with_padding(4.0)
+            .with_color(Color::srgb(0.0, 0.0, 1.0));
+        assert_eq!(a.lerp(&b, 0.0).uniform, a.uniform);
+        assert_eq!(a.lerp(&b, 1.0).uniform, b.uniform);
+        assert_eq!(a.lerp(&b, f32::NAN).uniform, a.uniform);
+        let m = a.lerp(&b, 0.5).uniform;
+        assert_eq!(m.size, Vec4::new(60.0, 30.0, 4.0, 3.0));
+        assert_eq!(m.shape.y, 3.0);
+        assert!(m.color.x > 0.0 && m.color.x < 1.0 && m.color.z > 0.0 && m.color.z < 1.0);
+    }
+
+    #[test]
+    fn a_circle_becomes_a_rectangle_through_its_corner_radius() {
+        let circle = SdfMaterial2d::disc(10.0);
+        let rect = SdfMaterial2d::rect(Vec2::new(20.0, 20.0));
+        let m = circle.lerp(&rect, 0.25).uniform;
+        assert_eq!(m.shape.x, SdfKind::Rect.gpu_code());
+        // Corners start fully round (radius 10) and shrink to square.
+        assert!((m.size.z - 7.5).abs() < 1e-4, "{}", m.size.z);
+        let back = rect.lerp(&circle, 0.75).uniform;
+        assert!((back.size.z - 7.5).abs() < 1e-4);
+    }
+
+    #[test]
+    fn kinds_that_cannot_blend_switch_halfway() {
+        let ellipse = SdfMaterial2d::ellipse(Vec2::new(20.0, 10.0));
+        let rect = SdfMaterial2d::rect(Vec2::new(40.0, 20.0));
+        assert_eq!(ellipse.lerp(&rect, 0.4).uniform.shape.x, SdfKind::Ellipse.gpu_code());
+        assert_eq!(ellipse.lerp(&rect, 0.6).uniform.shape.x, SdfKind::Rect.gpu_code());
+    }
+
+    #[test]
+    fn dash_counts_stay_whole_and_dash_modes_switch() {
+        let ring = |dash: Dash2d| SdfMaterial2d::disc(10.0).with_rim(2.0).with_dash(dash);
+        let a = ring(Dash2d::by_count(10, 0.2));
+        let b = ring(Dash2d::by_count(15, 0.4));
+        let m = a.lerp(&b, 0.2).uniform.dash;
+        assert_eq!(m.x, -11.0);
+        assert!((m.y - 0.24).abs() < 1e-5);
+        // Count against length cannot blend: the nearer pattern wins.
+        let c = ring(Dash2d::by_length(3.0, 1.0));
+        assert_eq!(a.lerp(&c, 0.4).uniform.dash, a.uniform.dash);
+        assert_eq!(a.lerp(&c, 0.6).uniform.dash, c.uniform.dash);
+        // No dashes against dashes: the nearer one wins too.
+        let none = SdfMaterial2d::disc(10.0).with_rim(2.0);
+        assert_eq!(none.lerp(&a, 0.4).uniform.dash, Vec4::ZERO);
+    }
+
+    #[test]
+    fn opposite_gradient_directions_do_not_collapse() {
+        let up = SdfMaterial2d::rect(Vec2::splat(10.0)).with_colors(Color::BLACK, Color::WHITE);
+        let down = up.clone().with_gradient_direction(Vec2::NEG_Y);
+        let g = up.lerp(&down, 0.5).uniform.gradient;
+        assert!((Vec2::new(g.x, g.y).length() - 1.0).abs() < 1e-5);
     }
 }

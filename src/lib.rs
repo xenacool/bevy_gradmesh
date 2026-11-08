@@ -81,7 +81,8 @@ pub use material::{
 pub use material::{GradMeshUniform, GradMeshUniformBuffer, Vec4};
 #[cfg(feature = "pbr")]
 pub use material_interning::{
-    GradMeshMaterialKey, GradMeshMaterialPool, MATERIAL_WARNING_THRESHOLD, warn_excessive_materials,
+    GradMeshMaterialKey, GradMeshMaterialPool, MATERIAL_WARNING_THRESHOLD, MaterialWarning,
+    warn_excessive_materials,
 };
 pub use material2d::{GradMesh2dPlugin, GradMeshMaterial2d};
 pub use mix_space::MixSpace;
@@ -92,7 +93,10 @@ pub use retained::{GradMeshHandle, RetainedWorld};
 pub use sdf2d::{
     Dash2d, DashSnap, SdfGradient, SdfKind, SdfMaterial2d, SdfMaterial2dPlugin, SdfUniform, unit_quad,
 };
-pub use shape::{Shape, ShapeBounds, ShapeDetail, ShapePart, SweepOpening, SweepOptions};
+pub use shape::{
+    HeightfieldBorder, HeightfieldOptions, Shape, ShapeBounds, ShapeDetail, ShapePart, SweepFrame,
+    SweepOpening, SweepOptions,
+};
 pub use spline::{BakedSpline, CatmullRomSpline, SplineFrame};
 pub use standalone_pipeline::{
     StandaloneBatchData, StandalonePipeline, StandalonePipelineKey, StandaloneRenderPlugin,

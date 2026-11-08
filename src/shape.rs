@@ -47,6 +47,14 @@ impl ShapeDetail {
 pub struct Shape {
     kind: ShapeKind,
     detail: ShapeDetail,
+    cache: BoundsCache,
+}
+
+/// Bounds measured from the built mesh, shared by clones of a shape.
+#[derive(Debug, Clone, Default)]
+struct BoundsCache {
+    solid: Arc<std::sync::OnceLock<ShapeBounds>>,
+    flat: Arc<std::sync::OnceLock<ShapeBounds>>,
 }
 
 impl PartialEq for Shape {
@@ -191,15 +199,100 @@ impl std::hash::Hash for ShapePart {
     }
 }
 
+/// Heights of the samples just outside a heightfield chunk, used for the
+/// normals of its edge vertices and never meshed. See
+/// [`HeightfieldOptions::border`].
+///
+/// For a chunk of `size` samples: `west` is the column left of column 0
+/// (`size.y` heights, one per row), `east` the column right of the last one
+/// (`size.y` heights), `north` the row before row 0 (`size.x` heights, one per
+/// column; rows run along +Z, so this is the -Z side) and `south` the row
+/// after the last one (`size.x` heights). The corners are not needed.
+#[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
+pub struct HeightfieldBorder {
+    /// Heights at `x = -1`, one per row.
+    pub west: Vec<f32>,
+    /// Heights at `x = size.x`, one per row.
+    pub east: Vec<f32>,
+    /// Heights at `y = -1`, one per column.
+    pub north: Vec<f32>,
+    /// Heights at `y = size.y`, one per column.
+    pub south: Vec<f32>,
+}
+
+impl HeightfieldBorder {
+    /// A border from its four sides; see the type for their lengths.
+    pub fn new(west: Vec<f32>, east: Vec<f32>, north: Vec<f32>, south: Vec<f32>) -> Self {
+        Self {
+            west,
+            east,
+            north,
+            south,
+        }
+    }
+
+    fn identity_bits(&self) -> Vec<u32> {
+        let mut v = Vec::with_capacity(4 + self.west.len() * 2 + self.north.len() * 2);
+        for side in [&self.west, &self.east, &self.north, &self.south] {
+            v.push(side.len() as u32);
+            v.extend(side.iter().map(|h| h.to_bits()));
+        }
+        v
+    }
+}
+
+/// Options for [`Shape::heightfield_with_options`].
+///
+/// `#[non_exhaustive]`: start from [`HeightfieldOptions::default`] and use the
+/// `with_*` methods.
+#[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
+pub struct HeightfieldOptions {
+    /// One flag per cell, `(size.x - 1) * (size.y - 1)` of them, `holes[cx + cy *
+    /// (size.x - 1)]` for the cell between columns `cx` and `cx + 1` and rows
+    /// `cy` and `cy + 1`. A hole has no triangles; the terrain is see-through
+    /// there. Hole rims get no skirt (a skirt only hides seams between chunks),
+    /// and vertices that touch only holes are not in the mesh.
+    pub holes: Option<Vec<bool>>,
+    /// Neighbour heights for the normals of the edge vertices, so that chunks
+    /// that share an edge also share its normals exactly. See
+    /// [`HeightfieldBorder`].
+    pub border: Option<HeightfieldBorder>,
+}
+
+impl HeightfieldOptions {
+    /// Sets [`HeightfieldOptions::holes`].
+    #[must_use]
+    pub fn with_holes(mut self, holes: Vec<bool>) -> Self {
+        self.holes = Some(holes);
+        self
+    }
+
+    /// Sets [`HeightfieldOptions::border`].
+    #[must_use]
+    pub fn with_border(mut self, border: HeightfieldBorder) -> Self {
+        self.border = Some(border);
+        self
+    }
+}
+
 /// Options for [`Shape::sweep`].
 ///
 /// Everything here is plain data (no closures), so a swept [`Shape`] stays
 /// `Clone + Eq + Hash` and can be cached like any other shape. Floats compare
 /// and hash by their bits.
+///
+/// The struct is `#[non_exhaustive]`: start from [`SweepOptions::default`] and
+/// use the `with_*` methods, so new options never break existing code.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct SweepOptions {
     /// Joins the last path point back to the first. Closed sweeps have no caps
-    /// and no seam; give them whole turns of [`SweepOptions::twist`].
+    /// and no seam: a fractional [`SweepOptions::twist`] is rounded to the
+    /// nearest whole turn, and a [`SweepOptions::roll_along`] that does not
+    /// return to its starting angle (modulo a whole turn) has the difference
+    /// spread evenly over the loop.
     pub closed: bool,
     /// Closes the two open ends of an open sweep with flat caps.
     pub caps: bool,
@@ -214,6 +307,14 @@ pub struct SweepOptions {
     pub scale_along: Option<Vec<(f32, Vec2)>>,
     /// Turns of the profile around the path over its whole length.
     pub twist: f32,
+    /// Roll of the profile about the path tangent as `(ratio, radians)`
+    /// keyframes, with the same rules as [`SweepOptions::scale_along`]: `ratio`
+    /// runs `0.0..=1.0` over the path length, steps are linear and the values
+    /// are held beyond the first and last key. Roll turns the (already scaled)
+    /// profile on top of the parallel-transported frame, or of the frames given
+    /// to [`Shape::sweep_frames`], and adds to [`SweepOptions::twist`]. See
+    /// [`SweepOptions::roll_with`] to fill this from a closure.
+    pub roll_along: Option<Vec<(f32, f32)>>,
     /// With twist, scale or tint, long path segments are split into
     /// `detail / 4` pieces so the change looks smooth.
     pub detail: ShapeDetail,
@@ -222,6 +323,63 @@ pub struct SweepOptions {
     pub tint_by_length: Option<Vec<(f32, Color)>>,
     /// Gates and windows cut through the swept body. See [`SweepOpening`].
     pub openings: Vec<SweepOpening>,
+}
+
+/// One cross-section of a sweep given by the caller: see [`Shape::sweep_frames`].
+///
+/// `right` and `up` are the directions the profile's `x` and `y` run along at
+/// `position`; `scale` stretches the profile across (`x`) and upwards (`y`).
+/// `right × up` should point along the path. The sweep re-squares the frame
+/// against the direction of the path at the joint: a left-handed frame keeps
+/// its `up` and gets its `right` flipped, so the surface never turns inside
+/// out.
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
+pub struct SweepFrame {
+    /// Where the cross-section sits.
+    pub position: Vec3,
+    /// Direction of the profile's `x` axis.
+    pub right: Vec3,
+    /// Direction of the profile's `y` axis.
+    pub up: Vec3,
+    /// Profile scale across (`x`) and upwards (`y`).
+    pub scale: Vec2,
+}
+
+impl SweepFrame {
+    /// A frame with unit scale.
+    pub fn new(position: Vec3, right: Vec3, up: Vec3) -> Self {
+        Self {
+            position,
+            right,
+            up,
+            scale: Vec2::ONE,
+        }
+    }
+
+    /// Sets the profile scale of the frame.
+    #[must_use]
+    pub fn with_scale(mut self, scale: Vec2) -> Self {
+        self.scale = scale;
+        self
+    }
+
+    fn identity_bits(&self) -> [u32; 11] {
+        let f = |v: f32| v.to_bits();
+        [
+            f(self.position.x),
+            f(self.position.y),
+            f(self.position.z),
+            f(self.right.x),
+            f(self.right.y),
+            f(self.right.z),
+            f(self.up.x),
+            f(self.up.y),
+            f(self.up.z),
+            f(self.scale.x),
+            f(self.scale.y),
+        ]
+    }
 }
 
 /// A hole through a swept wall: a gate or a window.
@@ -247,6 +405,7 @@ pub struct SweepOptions {
 /// * Openings expect profiles whose horizontal cross-section is one interval
 ///   (walls, rails, kerbs), and are meant for sweeps without twist.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct SweepOpening {
     /// The stretch of the path the opening's `x` axis maps onto, as ratios of
     /// the path length.
@@ -256,6 +415,12 @@ pub struct SweepOpening {
 }
 
 impl SweepOpening {
+    /// An opening with a custom `outline` over the `t` range of the path (see
+    /// the type for the coordinates and rules).
+    pub fn new(t: std::ops::Range<f32>, outline: Vec<Vec2>) -> Self {
+        Self { t, outline }
+    }
+
     /// A rectangle spanning `x` of its range and heights `y_min..y_max`.
     pub fn rect(t: std::ops::Range<f32>, y_min: f32, y_max: f32) -> Self {
         Self {
@@ -293,6 +458,7 @@ impl Default for SweepOptions {
             up: Vec3::Y,
             scale_along: None,
             twist: 0.0,
+            roll_along: None,
             detail: ShapeDetail::default(),
             tint_by_length: None,
             openings: Vec::new(),
@@ -301,6 +467,85 @@ impl Default for SweepOptions {
 }
 
 impl SweepOptions {
+    /// Sets [`SweepOptions::closed`].
+    #[must_use]
+    pub fn with_closed(mut self, closed: bool) -> Self {
+        self.closed = closed;
+        self
+    }
+
+    /// Sets [`SweepOptions::caps`].
+    #[must_use]
+    pub fn with_caps(mut self, caps: bool) -> Self {
+        self.caps = caps;
+        self
+    }
+
+    /// Sets [`SweepOptions::up`].
+    #[must_use]
+    pub fn with_up(mut self, up: Vec3) -> Self {
+        self.up = up;
+        self
+    }
+
+    /// Sets [`SweepOptions::scale_along`].
+    #[must_use]
+    pub fn with_scale_along(mut self, keys: Vec<(f32, Vec2)>) -> Self {
+        self.scale_along = Some(keys);
+        self
+    }
+
+    /// Sets [`SweepOptions::twist`].
+    #[must_use]
+    pub fn with_twist(mut self, turns: f32) -> Self {
+        self.twist = turns;
+        self
+    }
+
+    /// Sets [`SweepOptions::roll_along`].
+    #[must_use]
+    pub fn with_roll_along(mut self, keys: Vec<(f32, f32)>) -> Self {
+        self.roll_along = Some(keys);
+        self
+    }
+
+    /// Sets [`SweepOptions::detail`].
+    #[must_use]
+    pub fn with_detail(mut self, detail: ShapeDetail) -> Self {
+        self.detail = detail;
+        self
+    }
+
+    /// Sets [`SweepOptions::tint_by_length`].
+    #[must_use]
+    pub fn with_tint_by_length(mut self, keys: Vec<(f32, Color)>) -> Self {
+        self.tint_by_length = Some(keys);
+        self
+    }
+
+    /// Sets [`SweepOptions::openings`].
+    #[must_use]
+    pub fn with_openings(mut self, openings: Vec<SweepOpening>) -> Self {
+        self.openings = openings;
+        self
+    }
+
+    /// Fills [`SweepOptions::roll_along`] by sampling `f` (path ratio to roll in
+    /// radians) at `samples` evenly spaced ratios from 0 to 1 (at least 2).
+    #[must_use]
+    pub fn roll_with(mut self, samples: usize, f: impl Fn(f32) -> f32) -> Self {
+        let samples = samples.max(2);
+        self.roll_along = Some(
+            (0..samples)
+                .map(|i| {
+                    let r = i as f32 / (samples - 1) as f32;
+                    (r, f(r))
+                })
+                .collect(),
+        );
+        self
+    }
+
     /// Fills [`SweepOptions::scale_along`] by sampling `f` (path ratio to
     /// profile scale) at `samples` evenly spaced ratios from 0 to 1 (at least 2).
     ///
@@ -330,6 +575,15 @@ impl SweepOptions {
             self.up.z.to_bits(),
             self.twist.to_bits(),
         ];
+        match &self.roll_along {
+            None => v.push(0),
+            Some(keys) => {
+                v.extend([1, keys.len() as u32]);
+                for (r, a) in keys {
+                    v.extend([r.to_bits(), a.to_bits()]);
+                }
+            }
+        }
         match &self.scale_along {
             None => v.push(0),
             Some(keys) => {
@@ -357,6 +611,16 @@ impl SweepOptions {
             }
         }
         v
+    }
+}
+
+fn eq_frames(a: &Option<Vec<SweepFrame>>, b: &Option<Vec<SweepFrame>>) -> bool {
+    match (a, b) {
+        (None, None) => true,
+        (Some(a), Some(b)) => {
+            a.len() == b.len() && a.iter().zip(b).all(|(a, b)| a.identity_bits() == b.identity_bits())
+        }
+        _ => false,
     }
 }
 
@@ -545,6 +809,7 @@ enum ShapeKind {
     Sweep {
         profile: Vec<Vec2>,
         path: Vec<Vec3>,
+        frames: Option<Vec<SweepFrame>>,
         options: SweepOptions,
     },
     /// A grid of heights over the XZ plane (see [`Shape::heightfield`]).
@@ -552,8 +817,11 @@ enum ShapeKind {
         size: UVec2,
         extent: Vec2,
         heights: Arc<[f32]>,
+        holes: Option<Arc<[bool]>>,
+        border: Option<Arc<HeightfieldBorder>>,
         key: u64,
-        bounds: ShapeBounds,
+        /// Bounds of the surface and bounds with skirts.
+        bounds: (ShapeBounds, ShapeBounds),
     },
 }
 
@@ -962,15 +1230,18 @@ impl PartialEq for ShapeKind {
                 Self::Sweep {
                     profile: p1,
                     path: w1,
+                    frames: f1,
                     options: o1,
                 },
                 Self::Sweep {
                     profile: p2,
                     path: w2,
+                    frames: f2,
                     options: o2,
                 },
             ) => {
-                eq_vec2s(p1, p2)
+                eq_frames(f1, f2)
+                    && eq_vec2s(p1, p2)
                     && w1.len() == w2.len()
                     && w1.iter().zip(w2).all(|(a, b)| {
                         a.x.to_bits() == b.x.to_bits()
@@ -983,16 +1254,28 @@ impl PartialEq for ShapeKind {
                 Self::Heightfield {
                     size: s1,
                     extent: e1,
+                    holes: h1,
+                    border: b1,
                     key: k1,
                     ..
                 },
                 Self::Heightfield {
                     size: s2,
                     extent: e2,
+                    holes: h2,
+                    border: b2,
                     key: k2,
                     ..
                 },
-            ) => k1 == k2 && s1 == s2 && e1.x.to_bits() == e2.x.to_bits() && e1.y.to_bits() == e2.y.to_bits(),
+            ) => {
+                k1 == k2
+                    && s1 == s2
+                    && e1.x.to_bits() == e2.x.to_bits()
+                    && e1.y.to_bits() == e2.y.to_bits()
+                    && h1 == h2
+                    && b1.as_deref().map(HeightfieldBorder::identity_bits)
+                        == b2.as_deref().map(HeightfieldBorder::identity_bits)
+            }
             _ => false,
         }
     }
@@ -1230,8 +1513,10 @@ impl std::hash::Hash for ShapeKind {
             Self::Sweep {
                 profile,
                 path,
+                frames,
                 options,
             } => {
+                frames.as_ref().map(|f| f.iter().map(SweepFrame::identity_bits).collect::<Vec<_>>()).hash(state);
                 hash_vec2s(profile, state);
                 path.len().hash(state);
                 for p in path {
@@ -1240,11 +1525,18 @@ impl std::hash::Hash for ShapeKind {
                 options.identity_bits().hash(state);
             }
             Self::Heightfield {
-                size, extent, key, ..
+                size,
+                extent,
+                holes,
+                border,
+                key,
+                ..
             } => {
                 size.hash(state);
                 hash_vec2(extent, state);
                 key.hash(state);
+                holes.hash(state);
+                border.as_deref().map(HeightfieldBorder::identity_bits).hash(state);
             }
         }
     }
@@ -1256,6 +1548,7 @@ impl Shape {
         Self {
             kind: ShapeKind::Sphere { radius },
             detail,
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1264,6 +1557,7 @@ impl Shape {
         Self {
             kind: ShapeKind::Ellipsoid { size },
             detail,
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1272,6 +1566,7 @@ impl Shape {
         Self {
             kind: ShapeKind::Cuboid { size, roundness },
             detail,
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1284,6 +1579,7 @@ impl Shape {
                 roundness: 0.0,
             },
             detail,
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1305,6 +1601,7 @@ impl Shape {
                 roundness,
             },
             detail,
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1314,6 +1611,7 @@ impl Shape {
         Self {
             kind: ShapeKind::Capsule { radius, height },
             detail,
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1323,6 +1621,7 @@ impl Shape {
         Self {
             kind: ShapeKind::Hemisphere { radius, capped },
             detail,
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1337,6 +1636,7 @@ impl Shape {
                 span,
             },
             detail: ShapeDetail::Medium,
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1356,6 +1656,7 @@ impl Shape {
                 roundness,
             },
             detail,
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1384,6 +1685,7 @@ impl Shape {
                 roundness,
             },
             detail,
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1392,6 +1694,7 @@ impl Shape {
         Self {
             kind: ShapeKind::Rectangle { size },
             detail,
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1400,6 +1703,7 @@ impl Shape {
         Self {
             kind: ShapeKind::RectangleRim { size, rim_width },
             detail,
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1408,6 +1712,7 @@ impl Shape {
         Self {
             kind: ShapeKind::Disc { radius },
             detail,
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1416,6 +1721,7 @@ impl Shape {
         Self {
             kind: ShapeKind::DiscRim { radius, rim_width },
             detail,
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1424,6 +1730,7 @@ impl Shape {
         Self {
             kind: ShapeKind::Polygon { sides, radius },
             detail,
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1436,6 +1743,7 @@ impl Shape {
                 rim_width,
             },
             detail,
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1444,6 +1752,7 @@ impl Shape {
         Self {
             kind: ShapeKind::Ellipse { radius },
             detail,
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1452,6 +1761,7 @@ impl Shape {
         Self {
             kind: ShapeKind::EllipseRim { radius, rim_width },
             detail,
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1470,6 +1780,7 @@ impl Shape {
                 colors: None,
             },
             detail,
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1492,6 +1803,7 @@ impl Shape {
         Self {
             kind: ShapeKind::ArbitraryPolygon { vertices, colors },
             detail,
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1518,6 +1830,7 @@ impl Shape {
                 segments,
             },
             detail,
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1541,6 +1854,7 @@ impl Shape {
                 segments,
             },
             detail,
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1554,6 +1868,7 @@ impl Shape {
                 inner_radius,
             },
             detail,
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1566,6 +1881,7 @@ impl Shape {
                 inner_radius: inner_radius.min(outer_radius),
             },
             detail,
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1578,6 +1894,7 @@ impl Shape {
                 angle: angle.clamp(0.0, 2.0 * PI),
             },
             detail,
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1596,6 +1913,7 @@ impl Shape {
                 height,
             },
             detail,
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1637,6 +1955,7 @@ impl Shape {
                 roundness,
             },
             detail,
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1667,6 +1986,7 @@ impl Shape {
                 roundness,
             },
             detail,
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1679,6 +1999,7 @@ impl Shape {
         Self {
             kind: ShapeKind::Compound { parts },
             detail: ShapeDetail::default(),
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1694,6 +2015,7 @@ impl Shape {
         Self {
             kind: ShapeKind::Lathe { profile, segments },
             detail,
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1713,6 +2035,7 @@ impl Shape {
                 closed,
             },
             detail: ShapeDetail::default(),
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1726,6 +2049,7 @@ impl Shape {
                 thickness,
             },
             detail,
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1749,6 +2073,7 @@ impl Shape {
                 round,
             },
             detail: ShapeDetail::default(),
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1778,55 +2103,100 @@ impl Shape {
             kind: ShapeKind::Sweep {
                 profile,
                 path,
+                frames: None,
                 options,
             },
             detail,
+            cache: BoundsCache::default(),
         }
+    }
+
+    /// Sweeps `profile` through cross-sections you supply, instead of letting
+    /// the sweep derive frames from a polyline.
+    ///
+    /// Use it when the frames already exist, for example the baked frames of a
+    /// spline with its own banking: the sweep keeps their `right` and `up`
+    /// (and `scale`) as given and does not run parallel transport,
+    /// [`SweepOptions::up`] is unused, and [`SweepOptions::roll_along`],
+    /// [`SweepOptions::twist`] and [`SweepOptions::scale_along`] still apply on
+    /// top of them. Frames in between (at the extra rings that smoothness,
+    /// openings and tint need) are blended from their neighbours. Frames at the
+    /// same position as the one before are dropped.
+    ///
+    /// `right × up` should point along the path (see [`SweepFrame`]); a
+    /// closed sweep joins the last frame back to the first and does not
+    /// correct the frames at the seam, so make them meet. Everything else works
+    /// as in [`Shape::sweep`].
+    pub fn sweep_frames(profile: Vec<Vec2>, frames: &[SweepFrame], options: SweepOptions) -> Self {
+        let detail = options.detail;
+        Self {
+            kind: ShapeKind::Sweep {
+                profile,
+                path: frames.iter().map(|f| f.position).collect(),
+                frames: Some(frames.to_vec()),
+                options,
+            },
+            detail,
+            cache: BoundsCache::default(),
+        }
+    }
+
+    /// A terrain chunk: a grid of `size.x * size.y` height samples spread over
+    /// `extent` world units and centred on the origin in XZ. Shorthand for
+    /// [`Shape::heightfield_with_options`] with no holes and no border.
+    pub fn heightfield(heights: Arc<[f32]>, size: UVec2, extent: Vec2, key: u64) -> Self {
+        Self::heightfield_with_options(heights, size, extent, key, HeightfieldOptions::default())
     }
 
     /// A terrain chunk: a grid of `size.x * size.y` height samples spread over
     /// `extent` world units and centred on the origin in XZ.
     ///
     /// `heights[x + y * size.x]` is the sample at column `x` and row `y`, with rows
-    /// running along +Z. The mesh has smooth normals from central differences,
-    /// UVs from 0 to 1 and skirts that hang below the four edges (a tenth of the
-    /// larger extent) to hide cracks between neighbouring chunks. Bounds include
-    /// the skirts.
+    /// running along +Z. The mesh has smooth normals from central differences
+    /// (with a [`HeightfieldOptions::border`], the edge vertices use the
+    /// neighbours' heights too, so chunks that share an edge share its normals),
+    /// UVs from 0 to 1 and skirts that hang a tenth of the larger extent below
+    /// the edges of the chunk to hide cracks between neighbouring chunks.
+    /// Cells flagged in [`HeightfieldOptions::holes`] have no triangles and no
+    /// skirt. The skirt depth is not an option: a chunk without skirts shows
+    /// cracks.
     ///
-    /// The shape is `Eq` and `Hash` by `key`, `size` and `extent`; the heights are
-    /// not walked, so change `key` when the heights change. `detail` only takes
-    /// part in the shape's identity. A `size` below 2 in either axis, or a
-    /// `heights` slice of the wrong length, gives an empty mesh and a warning when
-    /// built.
-    pub fn heightfield(
+    /// [`Shape::bounds`] includes the skirts and [`Shape::surface_bounds`] does
+    /// not; both ignore vertices that only touch holes.
+    ///
+    /// The shape is `Eq` and `Hash` by `key`, `size`, `extent`, the hole mask
+    /// and the border (both are walked, which costs one pass over them); the
+    /// heights are not walked, so change `key` when the heights change. A `size`
+    /// below 2 in either axis, a `heights` slice, hole mask or border of the
+    /// wrong length gives an empty mesh and a warning when built.
+    pub fn heightfield_with_options(
+        heights: Arc<[f32]>,
         size: UVec2,
         extent: Vec2,
-        heights: Arc<[f32]>,
         key: u64,
-        detail: ShapeDetail,
+        options: HeightfieldOptions,
     ) -> Self {
-        let valid = size.x >= 2 && size.y >= 2 && heights.len() == (size.x * size.y) as usize;
+        let holes: Option<Arc<[bool]>> = options.holes.map(Arc::from);
+        let border = options.border.map(Arc::new);
+        let valid =
+            geometry::heightfield_check(size, heights.len(), holes.as_deref(), border.as_deref()).is_ok();
         let bounds = if valid {
-            let (lo, hi) = heights
-                .iter()
-                .fold((f32::MAX, f32::MIN), |(lo, hi), &h| (lo.min(h), hi.max(h)));
-            let skirt = geometry::heightfield_skirt_depth(extent);
-            ShapeBounds {
-                min: Vec3::new(-extent.x * 0.5, lo - skirt, -extent.y * 0.5),
-                max: Vec3::new(extent.x * 0.5, hi, extent.y * 0.5),
-            }
+            geometry::heightfield_bounds(size, extent, &heights, holes.as_deref())
         } else {
-            ShapeBounds::default()
+            (ShapeBounds::default(), ShapeBounds::default())
         };
         Self {
             kind: ShapeKind::Heightfield {
                 size,
                 extent,
                 heights,
+                holes,
+                border,
                 key,
                 bounds,
             },
-            detail,
+            detail: ShapeDetail::default(),
+            cache: BoundsCache::default(),
         }
     }
 
@@ -1850,12 +2220,25 @@ impl Shape {
     ///
     /// The bounds are measured from the generated vertices, so they are exact
     /// for every shape kind (rounded edges, partial tori, compounds, lathes and
-    /// curves included) but cost one mesh build; cache the result when reading
-    /// it every frame.
+    /// curves included). The first call builds the mesh once; the result is
+    /// kept in the shape and shared with its clones, so reading it every frame
+    /// is free. [`Shape::from_mesh`] and [`Shape::heightfield`] shapes never
+    /// build anything.
     pub fn bounds(&self) -> ShapeBounds {
         match &self.kind {
-            ShapeKind::Mesh { bounds, .. } | ShapeKind::Heightfield { bounds, .. } => *bounds,
-            _ => mesh_bounds(&self.build()),
+            ShapeKind::Mesh { bounds, .. } => *bounds,
+            ShapeKind::Heightfield { bounds, .. } => bounds.1,
+            _ => *self.cache.solid.get_or_init(|| mesh_bounds(&self.build())),
+        }
+    }
+
+    /// Like [`Shape::bounds`], without the skirts of a heightfield: the bounds
+    /// of the land itself. Every other shape returns what [`Shape::bounds`]
+    /// does.
+    pub fn surface_bounds(&self) -> ShapeBounds {
+        match &self.kind {
+            ShapeKind::Heightfield { bounds, .. } => bounds.0,
+            _ => self.bounds(),
         }
     }
 
@@ -1881,8 +2264,9 @@ impl Shape {
     /// Like [`Shape::bounds`], for the flat geometry of [`Shape::build_2d`].
     pub fn bounds_2d(&self) -> ShapeBounds {
         match &self.kind {
-            ShapeKind::Mesh { bounds, .. } | ShapeKind::Heightfield { bounds, .. } => *bounds,
-            _ => mesh_bounds(&self.build_2d()),
+            ShapeKind::Mesh { bounds, .. } => *bounds,
+            ShapeKind::Heightfield { bounds, .. } => bounds.1,
+            _ => *self.cache.flat.get_or_init(|| mesh_bounds(&self.build_2d())),
         }
     }
 
@@ -2062,14 +2446,17 @@ impl Shape {
             ShapeKind::Sweep {
                 profile,
                 path,
+                frames,
                 options,
-            } => geometry::sweep_mesh(profile, path, options),
+            } => geometry::sweep_mesh(profile, path, frames.as_deref(), options),
             ShapeKind::Heightfield {
                 size,
                 extent,
                 heights,
+                holes,
+                border,
                 ..
-            } => geometry::heightfield_mesh(*size, *extent, heights),
+            } => geometry::heightfield_mesh(*size, *extent, heights, holes.as_deref(), border.as_deref()),
         }
     }
 }
@@ -4670,9 +5057,15 @@ impl Shape {
     ///   winding of the first and rotated to the start that moves points the
     ///   least. Per-vertex colours blend alongside (a missing list counts as
     ///   white). Polygons with fewer than three vertices cannot be morphed.
-    /// * Shapes of **different kinds**, open point lists (polylines, curves,
-    ///   lathe profiles) of different lengths, or polygons with a different
-    ///   number of holes cannot be blended and yield the nearer endpoint.
+    /// * Filled flat shapes of **different kinds** (rectangle, disc, ellipse,
+    ///   regular polygon, star and arbitrary polygon) morph as outlines, so a
+    ///   polygon can turn into a star; the blend in between is an arbitrary
+    ///   polygon, and the [`ShapeDetail`] gives the segment count of a disc or
+    ///   an ellipse.
+    /// * Other shapes of different kinds (rims and rings, solids), open point
+    ///   lists (polylines, curves, lathe profiles) of different lengths, or
+    ///   polygons with a different number of holes cannot be blended and yield
+    ///   the nearer endpoint.
     ///
     /// `t == 0.0` returns a copy of `self` and `t == 1.0` a copy of `other`.
     ///
@@ -4688,14 +5081,86 @@ impl Shape {
         if t >= 1.0 {
             return other.clone();
         }
-        match self.kind.lerp(&other.kind, t) {
+        let blended = if std::mem::discriminant(&self.kind) == std::mem::discriminant(&other.kind) {
+            self.kind.lerp(&other.kind, t)
+        } else {
+            self.lerp_flat_outlines(other, t)
+        };
+        match blended {
             Some(kind) => Self {
                 kind,
                 detail: if t < 0.5 { self.detail } else { other.detail },
+                cache: BoundsCache::default(),
             },
             None if t < 0.5 => self.clone(),
             None => other.clone(),
         }
+    }
+
+    /// The outline of a filled flat shape, counter-clockwise, with its
+    /// per-vertex colours if it has any.
+    fn flat_outline(&self) -> Option<(Vec<Vec2>, Option<Vec<Rgba>>)> {
+        let round = |radius: Vec2| {
+            let n = self.detail.segments() as usize;
+            (0..n)
+                .map(|i| {
+                    let a = i as f32 * 2.0 * PI / n as f32;
+                    Vec2::new(a.cos() * radius.x, a.sin() * radius.y)
+                })
+                .collect::<Vec<_>>()
+        };
+        Some(match &self.kind {
+            ShapeKind::Rectangle { size } => {
+                let h = *size * 0.5;
+                (
+                    vec![Vec2::new(-h.x, -h.y), Vec2::new(h.x, -h.y), Vec2::new(h.x, h.y), Vec2::new(-h.x, h.y)],
+                    None,
+                )
+            }
+            ShapeKind::Disc { radius } => (round(Vec2::splat(*radius)), None),
+            ShapeKind::Ellipse { radius } => (round(*radius), None),
+            ShapeKind::Polygon { sides, radius } => {
+                let n = (*sides).max(3) as usize;
+                (
+                    (0..n)
+                        .map(|i| {
+                            let a = i as f32 * 2.0 * PI / n as f32;
+                            Vec2::new(a.cos() * radius, a.sin() * radius)
+                        })
+                        .collect(),
+                    None,
+                )
+            }
+            ShapeKind::Star {
+                points,
+                outer_radius,
+                inner_radius,
+            } => {
+                let n = (*points).max(2) as usize;
+                (
+                    (0..n * 2)
+                        .map(|i| {
+                            let a = i as f32 * PI / n as f32 - PI / 2.0;
+                            let r = if i % 2 == 0 { *outer_radius } else { *inner_radius };
+                            Vec2::new(a.cos() * r, a.sin() * r)
+                        })
+                        .collect(),
+                    None,
+                )
+            }
+            ShapeKind::ArbitraryPolygon { vertices, colors } => (vertices.clone(), colors.clone()),
+            _ => return None,
+        })
+    }
+
+    /// Blends two different kinds of filled flat shape (rectangle, disc,
+    /// ellipse, regular polygon, star, arbitrary polygon) as outlines, the way
+    /// two arbitrary polygons of different vertex counts blend.
+    fn lerp_flat_outlines(&self, other: &Self, t: f32) -> Option<ShapeKind> {
+        let (a, ca) = self.flat_outline()?;
+        let (b, cb) = other.flat_outline()?;
+        let (vertices, colors) = morph_rings(&a, ca.as_deref(), &b, cb.as_deref(), t)?;
+        Some(ShapeKind::ArbitraryPolygon { vertices, colors })
     }
 }
 
@@ -4740,6 +5205,33 @@ mod lerp_tests {
             a.lerp(&b, 0.75),
             Shape::regular_prism(8, 2.5, 1.0, 0.0, ShapeDetail::High)
         );
+    }
+
+    #[test]
+    fn different_flat_kinds_morph_as_outlines() {
+        let polygon = Shape::polygon(5, 2.0, D);
+        let star = Shape::star(5, 2.0, 1.0, D);
+        assert_eq!(polygon.lerp(&star, 0.0), polygon);
+        assert_eq!(polygon.lerp(&star, 1.0), star);
+        let mid = polygon.lerp(&star, 0.5);
+        assert!(matches!(mid.kind, ShapeKind::ArbitraryPolygon { .. }));
+        assert!(!mid.build().attribute(Mesh::ATTRIBUTE_POSITION).unwrap().is_empty());
+        // The middle sits between the ends: smaller than the star's tips, wider
+        // than the star's dents.
+        let b = mid.bounds();
+        assert!(b.size().x > 2.0 && b.size().x <= 4.0 + 1e-4);
+        // A rectangle turns into a disc, which takes its segment count from the detail.
+        let rect = Shape::rectangle(Vec2::new(4.0, 2.0), D);
+        let disc = Shape::disc(1.0, ShapeDetail::Low);
+        let mid = rect.lerp(&disc, 0.5);
+        match &mid.kind {
+            ShapeKind::ArbitraryPolygon { vertices, .. } => assert!(vertices.len() >= 12),
+            other => panic!("unexpected {other:?}"),
+        }
+        // Rings and solids still snap.
+        let ring = Shape::ring(2.0, 1.0, D);
+        assert_eq!(star.lerp(&ring, 0.4), star);
+        assert_eq!(star.lerp(&ring, 0.6), ring);
     }
 
     #[test]
@@ -6248,19 +6740,117 @@ mod from_mesh_tests {
     }
 
     fn heightfield(sx: u32, sy: u32, f: impl Fn(u32, u32) -> f32) -> Shape {
-        Shape::heightfield(
-            UVec2::new(sx, sy),
-            Vec2::new(8.0, 6.0),
-            field(sx, sy, f),
-            1,
-            D,
-        )
+        Shape::heightfield(field(sx, sy, f), UVec2::new(sx, sy), Vec2::new(8.0, 6.0), 1)
+    }
+
+    fn with_options(sx: u32, sy: u32, f: impl Fn(u32, u32) -> f32, o: HeightfieldOptions) -> Shape {
+        Shape::heightfield_with_options(field(sx, sy, f), UVec2::new(sx, sy), Vec2::new(8.0, 6.0), 1, o)
+    }
+
+    fn tri_count(mesh: &Mesh) -> usize {
+        mesh.indices().map_or(0, |i| i.len() / 3)
+    }
+
+    #[test]
+    fn a_hole_has_no_triangles_and_no_skirt_under_it() {
+        // 3x3 samples, 2x2 cells; the cell at (0, 0) is a hole (a chunk corner).
+        let holes = vec![true, false, false, false];
+        let full = heightfield(3, 3, |_, _| 0.0).build();
+        let holed = with_options(3, 3, |_, _| 0.0, HeightfieldOptions::default().with_holes(holes)).build();
+        // One grid cell (2 triangles) and its two edge skirt segments (4 triangles) are gone.
+        assert_eq!(tri_count(&full) - tri_count(&holed), 2 + 4);
+        // The grid vertex (0, 0) touches only the hole, so it is not meshed.
+        let p: Vec<Vec3> = positions(&holed).into_iter().map(Vec3::from_array).collect();
+        assert!(!p.iter().any(|p| (p.x + 4.0).abs() < 1e-5 && (p.z + 3.0).abs() < 1e-5 && p.y.abs() < 1e-5));
+    }
+
+    #[test]
+    fn a_fully_holed_chunk_is_empty_without_a_warning_shape() {
+        let all = vec![true; 4];
+        let shape = with_options(3, 3, |_, _| 1.0, HeightfieldOptions::default().with_holes(all));
+        assert_eq!(tri_count(&shape.build()), 0);
+        assert_eq!(shape.bounds(), ShapeBounds::default());
+    }
+
+    #[test]
+    fn bounds_ignore_what_holes_remove() {
+        // A tall spike at (0, 0) that only the hole at cell (0, 0) touches.
+        let f = |x: u32, y: u32| if (x, y) == (0, 0) { 50.0 } else { 1.0 };
+        let holes = vec![true, false, false, false];
+        let shape = with_options(3, 3, f, HeightfieldOptions::default().with_holes(holes));
+        assert_eq!(shape.surface_bounds().max.y, 1.0);
+        let built = ShapeBounds::from_points(positions(&shape.build()).into_iter().map(Vec3::from_array));
+        assert!((shape.bounds().min - built.min).length() < 1e-5);
+        assert!((shape.bounds().max - built.max).length() < 1e-5);
+    }
+
+    #[test]
+    fn surface_bounds_leave_out_the_skirts() {
+        let shape = heightfield(3, 3, |x, y| (x + y) as f32);
+        assert_eq!(shape.surface_bounds().min.y, 0.0);
+        assert!(shape.bounds().min.y < 0.0);
+        assert_eq!(shape.surface_bounds().max, shape.bounds().max);
+        assert_eq!(Shape::sphere(1.0, D).surface_bounds(), Shape::sphere(1.0, D).bounds());
+    }
+
+    #[test]
+    fn holes_and_border_are_part_of_the_identity() {
+        let a = heightfield(3, 3, |_, _| 0.0);
+        let holed = with_options(3, 3, |_, _| 0.0, HeightfieldOptions::default().with_holes(vec![true, false, false, false]));
+        let other = with_options(3, 3, |_, _| 0.0, HeightfieldOptions::default().with_holes(vec![false, true, false, false]));
+        assert_ne!(a, holed);
+        assert_ne!(holed, other);
+        assert_ne!(hash_of(&holed), hash_of(&other));
+        let border = HeightfieldBorder::new(vec![0.0; 3], vec![0.0; 3], vec![0.0; 3], vec![0.0; 3]);
+        let mut raised = border.clone();
+        raised.east[1] = 1.0;
+        let b1 = with_options(3, 3, |_, _| 0.0, HeightfieldOptions::default().with_border(border));
+        let b2 = with_options(3, 3, |_, _| 0.0, HeightfieldOptions::default().with_border(raised));
+        assert_ne!(b1, b2);
+        assert_ne!(hash_of(&b1), hash_of(&b2));
+    }
+
+    #[test]
+    fn invalid_hole_masks_and_borders_build_an_empty_mesh() {
+        let bad_holes = with_options(3, 3, |_, _| 0.0, HeightfieldOptions::default().with_holes(vec![false; 3]));
+        assert_eq!(tri_count(&bad_holes.build()), 0);
+        let bad_border = HeightfieldBorder::new(vec![0.0; 3], vec![0.0; 2], vec![0.0; 3], vec![0.0; 3]);
+        let shape = with_options(3, 3, |_, _| 0.0, HeightfieldOptions::default().with_border(bad_border));
+        assert_eq!(tri_count(&shape.build()), 0);
+    }
+
+    #[test]
+    fn neighbouring_chunks_share_the_normals_of_their_edge() {
+        // One continuous ridge z = |x - 2| sampled over 5 columns, cut into two
+        // chunks of 3 columns that share column 2 (the crest).
+        let h = |x: i32| ((x - 2).abs()) as f32;
+        let chunk = |x0: i32, border: Option<HeightfieldBorder>| {
+            let heights: Arc<[f32]> = (0..3).flat_map(|_| (0..3).map(|x| h(x0 + x))).collect::<Vec<_>>().into();
+            let mut o = HeightfieldOptions::default();
+            o.border = border;
+            Shape::heightfield_with_options(heights, UVec2::new(3, 3), Vec2::new(2.0, 2.0), 1, o)
+        };
+        let left_border = HeightfieldBorder::new(vec![h(-1); 3], vec![h(3); 3], vec![h(0), h(1), h(2)], vec![h(0), h(1), h(2)]);
+        let right_border = HeightfieldBorder::new(vec![h(1); 3], vec![h(5); 3], vec![h(2), h(3), h(4)], vec![h(2), h(3), h(4)]);
+        let (left, right) = (chunk(0, Some(left_border)), chunk(2, Some(right_border)));
+        // The crest column: x index 2 of the left chunk, x index 0 of the right one.
+        let ln = Vec3::from_array(normals(&left.build())[2]);
+        let rn = Vec3::from_array(normals(&right.build())[0]);
+        assert!((ln - rn).length() < 1e-6, "{ln:?} vs {rn:?}");
+        // Without the border the crest is lopsided: the two normals differ.
+        let (left, right) = (chunk(0, None), chunk(2, None));
+        let (ln, rn) = (
+            Vec3::from_array(normals(&left.build())[2]),
+            Vec3::from_array(normals(&right.build())[0]),
+        );
+        assert!((ln - rn).length() > 0.1);
     }
 
     #[test]
     fn heightfield_vertex_count_includes_skirts() {
         let mesh = heightfield(5, 4, |_, _| 0.0).build();
-        assert_eq!(positions(&mesh).len(), 5 * 4 + 2 * (5 + 4));
+        // The skirts of two edges share their vertex at each of the 4 corners.
+        assert_eq!(positions(&mesh).len(), 5 * 4 + 2 * (5 + 4) - 4);
         let grid_tris = 4 * 3 * 2;
         let skirt_tris = 2 * (4 + 3) * 2;
         assert_eq!(mesh.indices().unwrap().len(), (grid_tris + skirt_tris) * 3);
@@ -6331,13 +6921,7 @@ mod from_mesh_tests {
         let b = heightfield(3, 3, |_, _| 0.0);
         assert_eq!(a, b);
         assert_eq!(hash_of(&a), hash_of(&b));
-        let moved = Shape::heightfield(
-            UVec2::new(3, 3),
-            Vec2::new(8.0, 6.0),
-            field(3, 3, |_, _| 0.0),
-            2,
-            D,
-        );
+        let moved = Shape::heightfield(field(3, 3, |_, _| 0.0), UVec2::new(3, 3), Vec2::new(8.0, 6.0), 2);
         assert_ne!(a, moved);
     }
 
@@ -6345,13 +6929,7 @@ mod from_mesh_tests {
     fn invalid_heightfield_builds_an_empty_mesh() {
         let one_wide = heightfield(1, 4, |_, _| 0.0);
         assert!(positions(&one_wide.build()).is_empty());
-        let wrong_len = Shape::heightfield(
-            UVec2::new(3, 3),
-            Vec2::splat(1.0),
-            vec![0.0; 5].into(),
-            1,
-            D,
-        );
+        let wrong_len = Shape::heightfield(vec![0.0; 5].into(), UVec2::new(3, 3), Vec2::splat(1.0), 1);
         assert!(positions(&wrong_len.build()).is_empty());
         assert_eq!(wrong_len.bounds(), ShapeBounds::default());
     }
@@ -6833,6 +7411,148 @@ mod sweep_tests {
 
     fn default<T: Default>() -> T {
         T::default()
+    }
+
+    fn extent_y(mesh: &Mesh, keep: impl Fn(Vec3) -> bool) -> f32 {
+        let ys: Vec<f32> = positions(mesh).into_iter().filter(|p| keep(*p)).map(|p| p.y).collect();
+        ys.iter().cloned().fold(f32::MIN, f32::max) - ys.iter().cloned().fold(f32::MAX, f32::min)
+    }
+
+    #[test]
+    fn a_constant_roll_turns_the_profile_onto_its_side() {
+        let mesh = Shape::sweep(
+            slab(),
+            straight(),
+            SweepOptions::default().with_roll_along(vec![(0.0, std::f32::consts::FRAC_PI_2), (1.0, std::f32::consts::FRAC_PI_2)]),
+        )
+        .build();
+        // The 2 wide, 0.2 tall slab now stands 2 tall and 0.2 wide.
+        let size = ShapeBounds::from_points(positions(&mesh)).size();
+        assert!((size.y - 2.0).abs() < 1e-4 && (size.z - 0.2).abs() < 1e-4, "{size:?}");
+    }
+
+    #[test]
+    fn roll_follows_its_keyframes_along_the_path() {
+        let mesh = Shape::sweep(
+            slab(),
+            straight(),
+            SweepOptions::default().with_roll_along(vec![(0.0, 0.0), (1.0, std::f32::consts::FRAC_PI_2)]),
+        )
+        .build();
+        assert!((extent_y(&mesh, |p| p.x < 1e-4) - 0.2).abs() < 1e-4);
+        assert!((extent_y(&mesh, |p| p.x > 6.0 - 1e-4) - 2.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn roll_with_samples_a_closure_and_roll_is_part_of_the_identity() {
+        let o = SweepOptions::default().roll_with(5, |r| r * 2.0);
+        assert_eq!(o.roll_along.as_ref().unwrap().len(), 5);
+        assert_eq!(o.roll_along.as_ref().unwrap()[4], (1.0, 2.0));
+        let a = Shape::sweep(slab(), straight(), o.clone());
+        let b = Shape::sweep(slab(), straight(), o.clone().with_roll_along(vec![(0.0, 0.0), (1.0, 1.0)]));
+        assert_eq!(a, Shape::sweep(slab(), straight(), o));
+        assert_ne!(a, b);
+        assert_ne!(hash_of(&a), hash_of(&b));
+    }
+
+    fn straight_frames(bank_end: f32) -> Vec<SweepFrame> {
+        // `right x up` points along +X, like the frames the sweep derives.
+        let end_up = Vec3::new(0.0, bank_end.cos(), bank_end.sin());
+        let end_right = end_up.cross(Vec3::X).normalize();
+        vec![
+            SweepFrame::new(Vec3::ZERO, -Vec3::Z, Vec3::Y),
+            SweepFrame::new(Vec3::new(6.0, 0.0, 0.0), end_right, end_up),
+        ]
+    }
+
+    #[test]
+    fn frames_equal_to_the_derived_ones_give_the_same_mesh() {
+        let derived = Shape::sweep(slab(), straight(), SweepOptions::default()).build();
+        let given = Shape::sweep_frames(slab(), &straight_frames(0.0), SweepOptions::default()).build();
+        let (a, b) = (positions(&derived), positions(&given));
+        assert_eq!(a.len(), b.len());
+        for (a, b) in a.iter().zip(&b) {
+            assert!(near(*a, *b), "{a:?} vs {b:?}");
+        }
+    }
+
+    #[test]
+    fn caller_frames_bank_the_road_and_scale_it() {
+        let mut frames = straight_frames(0.5);
+        frames[1] = frames[1].with_scale(Vec2::new(2.0, 1.0));
+        let mesh = Shape::sweep_frames(slab(), &frames, SweepOptions::default()).build();
+        // The start ring is flat; the end ring is banked by 0.5 rad and twice as wide.
+        assert!((extent_y(&mesh, |p| p.x < 1e-4) - 0.2).abs() < 1e-4);
+        let banked = extent_y(&mesh, |p| p.x > 6.0 - 1e-4);
+        assert!((banked - (4.0 * 0.5_f32.sin() + 0.2 * 0.5_f32.cos())).abs() < 1e-3, "{banked}");
+        assert_eq!(boundary_edges(&mesh), 0);
+    }
+
+    #[test]
+    fn frames_are_part_of_the_identity() {
+        let a = Shape::sweep_frames(slab(), &straight_frames(0.0), SweepOptions::default());
+        let b = Shape::sweep_frames(slab(), &straight_frames(0.1), SweepOptions::default());
+        let plain = Shape::sweep(slab(), straight(), SweepOptions::default());
+        assert_eq!(a, Shape::sweep_frames(slab(), &straight_frames(0.0), SweepOptions::default()));
+        assert_ne!(a, b);
+        assert_ne!(hash_of(&a), hash_of(&b));
+        assert_ne!(a, plain);
+    }
+
+    #[test]
+    fn a_left_handed_frame_does_not_turn_the_mesh_inside_out() {
+        // `right x up` points along -X here: against the path.
+        let frames = [
+            SweepFrame::new(Vec3::ZERO, Vec3::Z, Vec3::Y),
+            SweepFrame::new(Vec3::new(6.0, 0.0, 0.0), Vec3::Z, Vec3::Y),
+        ];
+        let mesh = Shape::sweep_frames(slab(), &frames, SweepOptions::default()).build();
+        assert!(!positions(&mesh).is_empty());
+        assert_eq!(boundary_edges(&mesh), 0);
+        let (p, n) = (positions(&mesh), normals(&mesh));
+        for t in indices(&mesh).chunks_exact(3) {
+            let (a, b, c) = (t[0] as usize, t[1] as usize, t[2] as usize);
+            let face = (p[b] - p[a]).cross(p[c] - p[a]);
+            if face.length() > 1e-6 {
+                assert!(face.dot(n[a] + n[b] + n[c]) > 0.0);
+            }
+        }
+        // `up` is kept, so the slab still sits on top of the path.
+        assert!(extent_y(&mesh, |_| true) > 0.19 && positions(&mesh).iter().all(|p| p.y > -1e-4));
+    }
+
+    fn square_loop() -> Vec<Vec3> {
+        vec![
+            Vec3::new(-3.0, 0.0, -3.0),
+            Vec3::new(3.0, 0.0, -3.0),
+            Vec3::new(3.0, 0.0, 3.0),
+            Vec3::new(-3.0, 0.0, 3.0),
+        ]
+    }
+
+    #[test]
+    fn a_closed_sweep_never_shows_a_seam() {
+        let plain = positions(&Shape::sweep(slab(), square_loop(), SweepOptions::default().with_closed(true)).build());
+        // A twist that is not whole turns is rounded to the nearest turn.
+        let twisted = Shape::sweep(slab(), square_loop(), SweepOptions::default().with_closed(true).with_twist(0.4));
+        let twisted = positions(&twisted.build());
+        assert_eq!(plain.len(), twisted.len());
+        assert!(plain.iter().zip(&twisted).all(|(a, b)| near(*a, *b)));
+        // Roll that does not come back is spread over the loop, so a roll from
+        // 0 to 0.3 rad across the loop is no roll at all.
+        let rolled = Shape::sweep(
+            slab(),
+            square_loop(),
+            SweepOptions::default().with_closed(true).with_roll_along(vec![(0.0, 0.0), (1.0, 0.3)]),
+        );
+        // (Rolled sweeps get extra rings, so look at the profile, not the vertex list.)
+        let rolled = rolled.build();
+        assert!((extent_y(&rolled, |_| true) - 0.2).abs() < 1e-4);
+        // Whole turns still twist.
+        let one_turn = Shape::sweep(slab(), square_loop(), SweepOptions::default().with_closed(true).with_twist(1.0));
+        let one_turn = one_turn.build();
+        assert_eq!(boundary_edges(&one_turn), 0);
+        assert!(!positions(&one_turn).iter().zip(&plain).all(|(a, b)| near(*a, *b)));
     }
 }
 

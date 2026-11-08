@@ -1,5 +1,5 @@
 
-EXAMPLES = shapes styles mix_spaces character_creator immediate curves polyline pbr_effects deformation retained arbitrary_shapes gradient_2d composed_shapes sweep sdf_2d sdf_dash_gallery standalone instanced
+EXAMPLES = shapes styles mix_spaces character_creator immediate curves polyline pbr_effects deformation retained arbitrary_shapes gradient_2d composed_shapes sweep terrain road sdf_2d sdf_dash_gallery standalone instanced
 
 .PHONY: $(EXAMPLES) all-examples screenshots clean
 
@@ -44,7 +44,7 @@ gradient_2d:
 composed_shapes:
 	cargo run --example composed_shapes
 
-SCREENSHOTS = screenshot_shapes.png screenshot_styles.png screenshot_mix_spaces.png screenshot_character_creator.png screenshot_immediate.png screenshot_curves.png screenshot_polyline.png screenshot_pbr_effects.png screenshot_deformation.png screenshot_retained.png screenshot_arbitrary_shapes.png screenshot_gradient_2d.png screenshot_composed_shapes.png screenshot_sdf_2d.png screenshot_sdf_dash_gallery.png screenshot_sweep.png screenshot_standalone.png screenshot_instanced.png
+SCREENSHOTS = screenshot_shapes.png screenshot_styles.png screenshot_mix_spaces.png screenshot_character_creator.png screenshot_immediate.png screenshot_curves.png screenshot_polyline.png screenshot_pbr_effects.png screenshot_deformation.png screenshot_retained.png screenshot_arbitrary_shapes.png screenshot_gradient_2d.png screenshot_composed_shapes.png screenshot_sdf_2d.png screenshot_sdf_dash_gallery.png screenshot_sweep.png screenshot_terrain.png screenshot_road.png screenshot_standalone.png screenshot_instanced.png
 
 # Detect whether we need a virtual display for screenshot capture
 # XVFB_RUN is set to "xvfb-run --auto-servernum --server-args='-screen 0 1280x720x24'" when no display is found
@@ -96,6 +96,10 @@ screenshots:
 	$(call capture_screenshot,sdf_dash_gallery)
 	@echo ""
 	$(call capture_screenshot,sweep)
+	@echo ""
+	$(call capture_screenshot,terrain)
+	@echo ""
+	$(call capture_screenshot,road)
 	@echo ""
 	$(call capture_screenshot,standalone)
 	@echo ""

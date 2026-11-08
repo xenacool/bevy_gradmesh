@@ -208,7 +208,7 @@ fn setup(
                 hills(centre.x + u * extent.x, centre.y + v * extent.y)
             })
             .collect();
-        Shape::heightfield(UVec2::splat(samples), extent, heights.into(), key, d)
+        Shape::heightfield(heights.into(), UVec2::splat(samples), extent, key)
     };
     // Grass, rock and snow by world height: the bands follow the terrain, so the
     // two chunks agree on colour at their shared edge.

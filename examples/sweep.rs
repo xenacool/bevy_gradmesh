@@ -13,7 +13,7 @@ use bevy_gradmesh::{
     CatmullRomSpline, GradMeshMaterial, GradMeshMaterialPool, GradMeshPlugin, MeshCache, Shape,
     ShapeDetail, Style, SweepOpening, SweepOptions,
 };
-use common::screenshot::AutoScreenshotPlugin;
+use common::screenshot::{AutoScreenshotPlugin, spawn_world_label};
 use std::f32::consts::TAU;
 
 fn main() {
@@ -90,7 +90,7 @@ fn setup(
 ) {
     commands.spawn((
         Camera3d::default(),
-        Transform::from_xyz(-3.2, 2.6, 9.0).looking_at(Vec3::new(-3.6, 1.0, 0.0), Vec3::Y),
+        Transform::from_xyz(0.8, 9.0, 17.5).looking_at(Vec3::new(0.8, 1.6, 0.8), Vec3::Y),
     ));
     commands.spawn((
         DirectionalLight {
@@ -122,7 +122,7 @@ fn setup(
     // Ground.
     piece(
         &mut commands,
-        &Shape::cuboid(Vec3::new(22.0, 0.2, 14.0), 0.0, d),
+        &Shape::cuboid(Vec3::new(26.0, 0.2, 18.0), 0.0, d),
         &Style::shaded(Color::srgb(0.62, 0.78, 0.58), 0.6).with_perceptual_roughness(0.95),
         Transform::from_xyz(0.0, -0.1, 0.0),
     );
@@ -144,16 +144,14 @@ fn setup(
     let wall = Shape::sweep(
         wall_profile(),
         baked.frames().iter().map(|f| f.position).collect(),
-        SweepOptions {
-            closed: true,
-            detail: d,
-            openings: vec![
+        SweepOptions::default()
+            .with_closed(true)
+            .with_detail(d)
+            .with_openings(vec![
                 SweepOpening::arch(0.205..0.295, 0.0, 0.9, 1.35, 10),
                 SweepOpening::rect(0.455..0.485, 0.6, 1.1),
                 SweepOpening::rect(0.715..0.745, 0.6, 1.1),
-            ],
-            ..default()
-        },
+            ]),
     );
     piece(
         &mut commands,
@@ -174,14 +172,12 @@ fn setup(
     let road = Shape::sweep(
         road_profile(),
         road_path,
-        SweepOptions {
-            tint_by_length: Some(vec![
+        SweepOptions::default()
+            .with_tint_by_length(vec![
                 (0.0, Color::srgb(0.55, 0.55, 0.6)),
                 (1.0, Color::srgb(1.0, 0.95, 0.85)),
-            ]),
-            detail: d,
-            ..default()
-        },
+            ])
+            .with_detail(d),
     );
     piece(
         &mut commands,
@@ -189,6 +185,10 @@ fn setup(
         &Style::shaded(Color::srgb(0.45, 0.45, 0.5), 0.5).with_perceptual_roughness(0.9),
         Transform::IDENTITY,
     );
+
+    spawn_world_label(&mut commands, "Wall: closed sweep + openings", Vec3::new(-5.0, 3.3, -0.5));
+    spawn_world_label(&mut commands, "Road: tint by length", Vec3::new(4.0, 1.4, 6.6));
+    spawn_world_label(&mut commands, "Pipe: scale along a helix", Vec3::new(5.0, 5.4, -1.5));
 
     // Pipe: a helix that tapers towards the top.
     let helix: Vec<Vec3> = (0..=90)
@@ -201,11 +201,9 @@ fn setup(
     let pipe = Shape::sweep(
         circle_profile(0.38, 14),
         helix,
-        SweepOptions {
-            detail: d,
-            ..default()
-        }
-        .scale_with(8, |t| Vec2::splat(1.0 - 0.55 * t)),
+        SweepOptions::default()
+            .with_detail(d)
+            .scale_with(8, |t| Vec2::splat(1.0 - 0.55 * t)),
     );
     piece(
         &mut commands,

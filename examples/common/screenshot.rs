@@ -100,6 +100,8 @@ impl AutoScreenshotPlugin {
 
 impl Plugin for AutoScreenshotPlugin {
     fn build(&self, app: &mut App) {
+        app.add_systems(PostUpdate, position_world_labels.after(TransformSystems::Propagate));
+
         // Only enable when DSD_SCREENSHOT is set
         if std::env::var("DSD_SCREENSHOT").is_err() {
             return;
@@ -137,51 +139,93 @@ struct ScreenshotTitle {
 struct TitleOverlay;
 
 /// Spawn a semi-transparent banner at the top of the window showing the title and description.
-fn spawn_title_overlay(
-    mut commands: Commands,
-    title: Res<ScreenshotTitle>,
-    window: Query<&Window, With<Window>>,
-) {
-    let window = window.single().expect("no window found");
-    let width = window.resolution.width() as f32;
-    let height = window.resolution.height() as f32;
-    let banner_height = 44.0_f32;
+///
+/// The banner is a UI node, so it is drawn on top of any camera, 2D or 3D.
+fn spawn_title_overlay(mut commands: Commands, title: Res<ScreenshotTitle>) {
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                top: Val::Px(0.0),
+                left: Val::Px(0.0),
+                width: Val::Percent(100.0),
+                padding: UiRect::axes(Val::Px(16.0), Val::Px(8.0)),
+                flex_direction: FlexDirection::Column,
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.55)),
+            TitleOverlay,
+            Name::new("Title Overlay"),
+        ))
+        .with_children(|banner| {
+            if let Some(ref t) = title.title {
+                banner.spawn((
+                    Text::new(t.clone()),
+                    TextColor(Color::srgb(1.0, 1.0, 1.0)),
+                    TextFont {
+                        font_size: FontSize::Px(20.0),
+                        ..default()
+                    },
+                ));
+            }
+            if let Some(ref d) = title.description {
+                banner.spawn((
+                    Text::new(d.clone()),
+                    TextColor(Color::srgba(1.0, 1.0, 1.0, 0.75)),
+                    TextFont {
+                        font_size: FontSize::Px(14.0),
+                        ..default()
+                    },
+                ));
+            }
+        });
+}
 
-    // Title text using Text2d
-    if let Some(ref t) = title.title {
-        commands.spawn((
-            Text2d(t.clone()),
-            TextColor(Color::srgb(1.0, 1.0, 1.0)),
-            TextFont {
-                font_size: FontSize::Px(18.0),
-                ..default()
-            },
-            Transform::from_xyz(
-                width / 2.0 - 100.0,
-                height / 2.0 - banner_height / 2.0 - 10.0,
-                1000.0,
-            ),
-            TitleOverlay,
-            Name::new("Title Overlay Text"),
-        ));
-    }
-    // Description text using Text2d
-    if let Some(ref d) = title.description {
-        commands.spawn((
-            Text2d(d.clone()),
-            TextColor(Color::srgba(1.0, 1.0, 1.0, 0.7)),
-            TextFont {
-                font_size: FontSize::Px(14.0),
-                ..default()
-            },
-            Transform::from_xyz(
-                width / 2.0 - 100.0,
-                height / 2.0 - banner_height / 2.0 + 10.0,
-                1000.0,
-            ),
-            TitleOverlay,
-            Name::new("Title Overlay Description"),
-        ));
+/// A label that follows a point in the world; spawn it with [`spawn_world_label`].
+#[derive(Component)]
+pub struct WorldLabel(pub Vec3);
+
+/// Spawn a text label that is kept centred on `position` by the screenshot plugin.
+#[allow(dead_code)]
+pub fn spawn_world_label(commands: &mut Commands, text: &str, position: Vec3) {
+    commands.spawn((
+        Text::new(text.to_string()),
+        TextFont {
+            font_size: FontSize::Px(14.0),
+            ..default()
+        },
+        TextColor(Color::srgb(0.95, 0.97, 1.0)),
+        TextLayout::no_wrap(),
+        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.45)),
+        Node {
+            position_type: PositionType::Absolute,
+            left: Val::Px(0.0),
+            top: Val::Px(0.0),
+            padding: UiRect::axes(Val::Px(6.0), Val::Px(2.0)),
+            display: Display::None,
+            ..default()
+        },
+        WorldLabel(position),
+    ));
+}
+
+fn position_world_labels(
+    camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    mut labels: Query<(&WorldLabel, &mut Node, &ComputedNode)>,
+) {
+    let Ok((camera, camera_transform)) = camera.single() else {
+        return;
+    };
+    for (label, mut node, computed) in &mut labels {
+        if let Ok(viewport) = camera.world_to_viewport(camera_transform, label.0) {
+            // The box is sized by its text; centre it on the projected point.
+            let size = computed.size() * computed.inverse_scale_factor();
+            node.left = Val::Px(viewport.x - size.x / 2.0);
+            node.top = Val::Px(viewport.y - size.y / 2.0);
+            node.display = Display::Flex;
+        } else {
+            node.display = Display::None;
+        }
     }
 }
 

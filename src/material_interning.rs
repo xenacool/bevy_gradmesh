@@ -18,7 +18,7 @@
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
-use bevy::asset::{Assets, Handle};
+use bevy::asset::{AssetId, Assets, Handle};
 use bevy::ecs::prelude::{Local, Resource};
 
 use crate::material::{GradMeshExtension, GradMeshMaterial, GradMeshUniformBuffer, Vec4};
@@ -199,6 +199,14 @@ impl GradMeshMaterialKey {
 /// Unlike `GradMeshMaterialKey::get_or_insert()`, which scans all assets on
 /// each call, this pool maintains a `HashMap` for O(1) lookups.
 ///
+/// The pool does **not** keep its materials alive: it remembers their ids and
+/// hands out strong handles, so a material that no node refers to any more is
+/// freed by Bevy and forgotten here. A screen that animates colours therefore
+/// creates many materials over time but holds only the live ones, and
+/// [`warn_excessive_materials`] counts only those. Hold the handle for as long
+/// as the material is shown; asking again for an equal style while it is alive
+/// returns the same handle.
+///
 /// # Example
 ///
 /// ```ignore
@@ -213,9 +221,11 @@ impl GradMeshMaterialKey {
 #[derive(Resource, Default, Debug)]
 pub struct GradMeshMaterialPool {
     /// Cache of material keys to their asset handles.
-    cache: HashMap<GradMeshMaterialKey, Handle<GradMeshMaterial>>,
+    cache: HashMap<GradMeshMaterialKey, AssetId<GradMeshMaterial>>,
     /// Materials keyed by the `Style` they were built from (bucketed by hash).
-    styles: HashMap<u64, Vec<(Style, Handle<GradMeshMaterial>)>>,
+    styles: HashMap<u64, Vec<(Style, AssetId<GradMeshMaterial>)>>,
+    /// Entry count at which dead entries are swept out next.
+    prune_at: usize,
     /// Total lookups performed.
     total_lookups: u64,
     /// Cache hits (existing material found).
@@ -235,14 +245,18 @@ impl GradMeshMaterialPool {
     ) -> Handle<GradMeshMaterial> {
         self.total_lookups += 1;
 
-        if let Some(handle) = self.cache.get(key) {
-            self.hits += 1;
-            return handle.clone();
+        if let Some(id) = self.cache.get(key).copied() {
+            if let Some(handle) = assets.get_strong_handle(id) {
+                self.hits += 1;
+                return handle;
+            }
+            self.cache.remove(key);
         }
 
         self.misses += 1;
         let handle = key.get_or_insert(assets);
-        self.cache.insert(key.clone(), handle.clone());
+        self.cache.insert(key.clone(), handle.id());
+        self.prune_when_due(assets);
         handle
     }
 
@@ -257,19 +271,46 @@ impl GradMeshMaterialPool {
     ) -> Handle<GradMeshMaterial> {
         self.total_lookups += 1;
         let bucket = self.styles.entry(style.cache_hash()).or_default();
-        // Entries whose asset was removed are dropped instead of returned dangling.
-        bucket.retain(|(_, handle)| assets.contains(handle.id()));
-        if let Some((_, handle)) = bucket.iter().find(|(s, _)| s == style) {
+        // Entries whose asset was freed are dropped instead of returned dangling.
+        bucket.retain(|(_, id)| assets.contains(*id));
+        let found = bucket
+            .iter()
+            .find(|(s, _)| s == style)
+            .map(|(_, id)| *id)
+            .and_then(|id| assets.get_strong_handle(id));
+        if let Some(handle) = found {
             self.hits += 1;
-            return handle.clone();
+            return handle;
         }
         self.misses += 1;
         let handle = assets.add(style.build());
-        bucket.push((style.clone(), handle.clone()));
+        bucket.push((style.clone(), handle.id()));
+        self.prune_when_due(assets);
         handle
     }
 
-    /// Returns the number of cached materials.
+    /// Forgets every entry whose material has been freed. Lookups do this on
+    /// their own as the pool grows, so calling it is only needed to shrink the
+    /// pool at a moment of your choosing.
+    pub fn prune(&mut self, assets: &Assets<GradMeshMaterial>) {
+        self.cache.retain(|_, id| assets.contains(*id));
+        for bucket in self.styles.values_mut() {
+            bucket.retain(|(_, id)| assets.contains(*id));
+        }
+        self.styles.retain(|_, bucket| !bucket.is_empty());
+    }
+
+    /// Sweeps dead entries once the pool has doubled since the last sweep, so
+    /// the work stays proportional to the number of materials created.
+    fn prune_when_due(&mut self, assets: &Assets<GradMeshMaterial>) {
+        if self.len() >= self.prune_at.max(64) {
+            self.prune(assets);
+            self.prune_at = self.len() * 2;
+        }
+    }
+
+    /// Returns the number of cached materials (some of which may have been
+    /// freed since; [`GradMeshMaterialPool::prune`] forgets those).
     pub fn len(&self) -> usize {
         self.cache.len() + self.styles.values().map(Vec::len).sum::<usize>()
     }
@@ -279,11 +320,13 @@ impl GradMeshMaterialPool {
         self.len() == 0
     }
 
-    /// Clears the cache.  Note that the materials remain in the asset store;
-    /// only the pool's internal index is cleared.
+    /// Clears the cache.  Note that the materials remain in the asset store for
+    /// as long as something holds a handle to them; only the pool's internal
+    /// index is cleared.
     pub fn clear(&mut self) {
         self.cache.clear();
         self.styles.clear();
+        self.prune_at = 0;
         self.hits = 0;
         self.misses = 0;
         self.total_lookups = 0;
@@ -316,15 +359,40 @@ impl GradMeshMaterialPool {
 
 // ─── Material count monitoring ───
 
-/// Warning threshold for unique material count.
+/// Default warning threshold for the number of live materials.
 ///
 /// On mobile GPUs like Mali-G715, descriptor pool fragmentation occurs after
 /// ~20-30 unique shader specializations.  This threshold provides a safety
-/// margin to warn developers before the crash point.
+/// margin to warn developers before the crash point. Change it with
+/// [`MaterialWarning`].
 pub const MATERIAL_WARNING_THRESHOLD: usize = 50;
 
-/// System that monitors the number of unique `GradMeshMaterial` instances
+/// The material count above which [`warn_excessive_materials`] warns. Insert it
+/// as a resource to change the default of [`MATERIAL_WARNING_THRESHOLD`]; the
+/// warning arms again once the count falls to half of it.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MaterialWarning {
+    /// Warn above this many live materials.
+    pub threshold: usize,
+}
+
+impl Default for MaterialWarning {
+    fn default() -> Self {
+        Self {
+            threshold: MATERIAL_WARNING_THRESHOLD,
+        }
+    }
+}
+
+/// System that monitors the number of live `GradMeshMaterial` assets
 /// and logs a warning when the count exceeds the threshold.
+///
+/// Only materials that something still refers to are counted: Bevy frees an
+/// asset when its last handle is dropped, and [`GradMeshMaterialPool`] does not
+/// hold handles of its own, so colours that were animated through the pool and
+/// are no longer shown do not add up. If the warning fires anyway, something
+/// holds on to many different materials at once (for example by keeping every
+/// handle it ever asked for).
 ///
 /// Add this system to your app's `Update` schedule to enable monitoring:
 ///
@@ -333,21 +401,24 @@ pub const MATERIAL_WARNING_THRESHOLD: usize = 50;
 /// ```
 pub fn warn_excessive_materials(
     materials: bevy::ecs::system::Res<Assets<GradMeshMaterial>>,
+    config: Option<bevy::ecs::system::Res<MaterialWarning>>,
     mut warned: Local<bool>,
 ) {
+    let threshold = config.map_or(MATERIAL_WARNING_THRESHOLD, |c| c.threshold);
     let count = materials.len();
-    if count > MATERIAL_WARNING_THRESHOLD && !*warned {
+    if count > threshold && !*warned {
         bevy::log::warn!(
-            "bevy_gradmesh: {} unique GradMeshMaterial instances detected (threshold: {}). \
+            "bevy_gradmesh: {} live GradMeshMaterial instances detected (threshold: {}). \
              On mobile GPUs, this may cause descriptor pool fragmentation crashes. \
-             Consider using GradMeshMaterialPool for deduplication.",
+             Consider using GradMeshMaterialPool for deduplication, and drop the handles \
+             of materials that are no longer shown.",
             count,
-            MATERIAL_WARNING_THRESHOLD
+            threshold
         );
         *warned = true;
     }
     // Reset warning flag when count drops below threshold so it can re-trigger
-    if count <= MATERIAL_WARNING_THRESHOLD / 2 {
+    if count <= threshold / 2 {
         *warned = false;
     }
 }
@@ -590,5 +661,106 @@ mod tests {
         assert_eq!(pool.len(), 0);
         assert_eq!(pool.hits(), 0);
         assert_eq!(pool.misses(), 0);
+    }
+
+    #[cfg(feature = "pbr")]
+    mod live {
+        use super::*;
+        use crate::style::Style;
+        use bevy::app::App;
+        use bevy::asset::{AssetApp, AssetPlugin};
+        use bevy::color::Color;
+        use bevy::app::TaskPoolPlugin;
+
+        fn app() -> App {
+            let mut app = App::new();
+            app.add_plugins((TaskPoolPlugin::default(), AssetPlugin::default()))
+                .init_asset::<GradMeshMaterial>();
+            app
+        }
+
+        fn count(app: &App) -> usize {
+            app.world().resource::<Assets<GradMeshMaterial>>().len()
+        }
+
+        #[test]
+        fn the_pool_does_not_keep_unused_materials_alive() {
+            let mut app = app();
+            let mut pool = GradMeshMaterialPool::default();
+            let style = |i: usize| Style::opaque(Color::srgb(i as f32 / 100.0, 0.5, 0.5));
+            let mut shown = Vec::new();
+            // A colour animation: a new colour every step, one shown at a time.
+            for i in 0..200 {
+                let handle = {
+                    let mut assets = app.world_mut().resource_mut::<Assets<GradMeshMaterial>>();
+                    pool.get_or_add(&style(i), &mut assets)
+                };
+                shown = vec![handle];
+                app.update();
+            }
+            assert_eq!(count(&app), 1, "only the material still shown is alive");
+            assert_eq!(shown.len(), 1);
+            // Dead entries are swept as the pool grows.
+            assert!(pool.len() < 200, "{} entries", pool.len());
+            // Equal styles share one handle while it is alive...
+            let again = {
+                let mut assets = app.world_mut().resource_mut::<Assets<GradMeshMaterial>>();
+                pool.get_or_add(&style(199), &mut assets)
+            };
+            assert_eq!(again, shown[0]);
+            // ...and once nothing holds it, the material goes away and a new one is built.
+            drop((again, shown));
+            app.update();
+            assert_eq!(count(&app), 0);
+            let fresh = {
+                let mut assets = app.world_mut().resource_mut::<Assets<GradMeshMaterial>>();
+                pool.get_or_add(&style(199), &mut assets)
+            };
+            assert_eq!(count(&app), 1);
+            assert!(app.world().resource::<Assets<GradMeshMaterial>>().contains(fresh.id()));
+        }
+
+        #[test]
+        fn a_just_released_material_is_never_handed_back_dangling() {
+            let mut app = app();
+            let mut pool = GradMeshMaterialPool::default();
+            let style = Style::opaque(Color::srgb(0.2, 0.4, 0.6));
+            let first = {
+                let mut assets = app.world_mut().resource_mut::<Assets<GradMeshMaterial>>();
+                pool.get_or_add(&style, &mut assets)
+            };
+            // Dropped, but Bevy has not processed the drop yet.
+            drop(first);
+            let second = {
+                let mut assets = app.world_mut().resource_mut::<Assets<GradMeshMaterial>>();
+                pool.get_or_add(&style, &mut assets)
+            };
+            app.update();
+            assert!(app.world().resource::<Assets<GradMeshMaterial>>().contains(second.id()));
+        }
+
+        #[test]
+        fn the_key_path_is_pooled_without_strong_handles_too() {
+            let mut app = app();
+            let mut pool = GradMeshMaterialPool::default();
+            let key = GradMeshMaterialKey::from_material(&Style::opaque(Color::WHITE).build());
+            let h = {
+                let mut assets = app.world_mut().resource_mut::<Assets<GradMeshMaterial>>();
+                pool.get_or_insert(&key, &mut assets)
+            };
+            let h2 = {
+                let mut assets = app.world_mut().resource_mut::<Assets<GradMeshMaterial>>();
+                pool.get_or_insert(&key, &mut assets)
+            };
+            assert_eq!(h, h2);
+            drop((h, h2));
+            app.update();
+            assert_eq!(count(&app), 0);
+        }
+
+        #[test]
+        fn the_warning_threshold_is_configurable() {
+            assert_eq!(MaterialWarning::default().threshold, MATERIAL_WARNING_THRESHOLD);
+        }
     }
 }
