@@ -315,6 +315,18 @@ impl GradMeshMaterialPool {
         self.cache.len() + self.styles.values().map(Vec::len).sum::<usize>()
     }
 
+    /// Returns the number of pooled materials that still exist in `assets`,
+    /// that is, that something holds a handle to.
+    pub fn live_len(&self, assets: &Assets<GradMeshMaterial>) -> usize {
+        self.cache.values().filter(|id| assets.contains(**id)).count()
+            + self
+                .styles
+                .values()
+                .flatten()
+                .filter(|(_, id)| assets.contains(*id))
+                .count()
+    }
+
     /// Returns true if the pool is empty.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
@@ -756,6 +768,24 @@ mod tests {
             drop((h, h2));
             app.update();
             assert_eq!(count(&app), 0);
+        }
+
+        #[test]
+        fn live_len_counts_only_materials_something_still_holds() {
+            let mut app = app();
+            let mut pool = GradMeshMaterialPool::default();
+            let held = {
+                let mut assets = app.world_mut().resource_mut::<Assets<GradMeshMaterial>>();
+                let held = pool.get_or_add(&Style::opaque(Color::WHITE), &mut assets);
+                drop(pool.get_or_add(&Style::opaque(Color::BLACK), &mut assets));
+                held
+            };
+            app.update();
+            let assets = app.world().resource::<Assets<GradMeshMaterial>>();
+            // The pool still lists both entries until it is pruned; one is dead.
+            assert_eq!(pool.len(), 2);
+            assert_eq!(pool.live_len(assets), 1);
+            drop(held);
         }
 
         #[test]

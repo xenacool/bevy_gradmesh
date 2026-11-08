@@ -755,7 +755,7 @@ impl Style {
     /// `transform`: `0.0` is its lowest point and `1.0` its highest, and
     /// fractions outside `0.0..=1.0` reach below or above it.
     ///
-    /// The fractions are resolved here, against [`Shape::surface_bounds`], so
+    /// The fractions are resolved here, against [`Shape::surface_bounds`](crate::Shape::surface_bounds), so
     /// they cannot be left unresolved in the style and the skirts of a
     /// heightfield (which hang below the land) never shift the bands. The
     /// resolved heights are world heights, like the absolute form: the

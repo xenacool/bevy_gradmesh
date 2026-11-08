@@ -820,6 +820,9 @@ enum ShapeKind {
         holes: Option<Arc<[bool]>>,
         border: Option<Arc<HeightfieldBorder>>,
         key: u64,
+        /// Hash of `holes` and `border`, computed once so that hashing the
+        /// shape does not walk them again.
+        fingerprint: u64,
         /// Bounds of the surface and bounds with skirts.
         bounds: (ShapeBounds, ShapeBounds),
     },
@@ -1257,6 +1260,7 @@ impl PartialEq for ShapeKind {
                     holes: h1,
                     border: b1,
                     key: k1,
+                    fingerprint: f1,
                     ..
                 },
                 Self::Heightfield {
@@ -1265,10 +1269,12 @@ impl PartialEq for ShapeKind {
                     holes: h2,
                     border: b2,
                     key: k2,
+                    fingerprint: f2,
                     ..
                 },
             ) => {
                 k1 == k2
+                    && f1 == f2
                     && s1 == s2
                     && e1.x.to_bits() == e2.x.to_bits()
                     && e1.y.to_bits() == e2.y.to_bits()
@@ -1527,16 +1533,14 @@ impl std::hash::Hash for ShapeKind {
             Self::Heightfield {
                 size,
                 extent,
-                holes,
-                border,
                 key,
+                fingerprint,
                 ..
             } => {
                 size.hash(state);
                 hash_vec2(extent, state);
                 key.hash(state);
-                holes.hash(state);
-                border.as_deref().map(HeightfieldBorder::identity_bits).hash(state);
+                fingerprint.hash(state);
             }
         }
     }
@@ -2165,10 +2169,16 @@ impl Shape {
     /// not; both ignore vertices that only touch holes.
     ///
     /// The shape is `Eq` and `Hash` by `key`, `size`, `extent`, the hole mask
-    /// and the border (both are walked, which costs one pass over them); the
-    /// heights are not walked, so change `key` when the heights change. A `size`
-    /// below 2 in either axis, a `heights` slice, hole mask or border of the
-    /// wrong length gives an empty mesh and a warning when built.
+    /// and the border, so changing only the holes or the border gives a
+    /// different shape without a new `key`. The mask and the border are walked
+    /// once, here, into a fingerprint; hashing the shape afterwards costs the
+    /// same as for a shape without them (a hash is taken on every [`MeshCache`](crate::MeshCache)
+    /// lookup) and comparing two shapes with the same fingerprint is one
+    /// memory comparison. Building the shape costs about 2 ns per mask cell
+    /// (9 µs for a 64 × 64 chunk). The heights are *not* walked, so change
+    /// `key` when the heights change. A `size` below 2 in either axis, a
+    /// `heights` slice, hole mask or border of the wrong length gives an empty
+    /// mesh and a warning when built.
     pub fn heightfield_with_options(
         heights: Arc<[f32]>,
         size: UVec2,
@@ -2178,6 +2188,13 @@ impl Shape {
     ) -> Self {
         let holes: Option<Arc<[bool]>> = options.holes.map(Arc::from);
         let border = options.border.map(Arc::new);
+        let fingerprint = {
+            use std::hash::Hasher;
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            holes.hash(&mut hasher);
+            border.as_deref().map(HeightfieldBorder::identity_bits).hash(&mut hasher);
+            hasher.finish()
+        };
         let valid =
             geometry::heightfield_check(size, heights.len(), holes.as_deref(), border.as_deref()).is_ok();
         let bounds = if valid {
@@ -2193,6 +2210,7 @@ impl Shape {
                 holes,
                 border,
                 key,
+                fingerprint,
                 bounds,
             },
             detail: ShapeDetail::default(),
@@ -2218,17 +2236,21 @@ impl Shape {
     /// Axis-aligned bounds of the geometry [`Shape::build`] produces, in local
     /// space (before any `Transform`).
     ///
-    /// The bounds are measured from the generated vertices, so they are exact
-    /// for every shape kind (rounded edges, partial tori, compounds, lathes and
-    /// curves included). The first call builds the mesh once; the result is
-    /// kept in the shape and shared with its clones, so reading it every frame
-    /// is free. [`Shape::from_mesh`] and [`Shape::heightfield`] shapes never
-    /// build anything.
+    /// The bounds are exact for every shape kind (rounded edges, partial tori,
+    /// compounds, lathes and curves included). Shapes whose box has a closed
+    /// form (sphere, ellipsoid, cuboid, cylinder, cone, capsule, rectangle, disc
+    /// and ellipse), [`Shape::from_mesh`] and [`Shape::heightfield`] never build
+    /// anything. For every other kind the first call builds the mesh once and
+    /// measures its vertices; the result is kept in the shape and shared with
+    /// its clones, so reading it every frame is free.
     pub fn bounds(&self) -> ShapeBounds {
         match &self.kind {
             ShapeKind::Mesh { bounds, .. } => *bounds,
             ShapeKind::Heightfield { bounds, .. } => bounds.1,
-            _ => *self.cache.solid.get_or_init(|| mesh_bounds(&self.build())),
+            kind => match closed_form_bounds(kind) {
+                Some(bounds) => bounds,
+                None => *self.cache.solid.get_or_init(|| mesh_bounds(&self.build())),
+            },
         }
     }
 
@@ -2266,7 +2288,11 @@ impl Shape {
         match &self.kind {
             ShapeKind::Mesh { bounds, .. } => *bounds,
             ShapeKind::Heightfield { bounds, .. } => bounds.1,
-            _ => *self.cache.flat.get_or_init(|| mesh_bounds(&self.build_2d())),
+            // `build_2d` returns the ordinary mesh for these kinds.
+            kind => match closed_form_bounds(kind) {
+                Some(bounds) => bounds,
+                None => *self.cache.flat.get_or_init(|| mesh_bounds(&self.build_2d())),
+            },
         }
     }
 
@@ -4425,6 +4451,39 @@ fn mesh_bounds(mesh: &Mesh) -> ShapeBounds {
     }
 }
 
+/// The box of the kinds whose mesh is centred on the origin and reaches its
+/// full size at every detail level (every [`ShapeDetail`] has a segment count
+/// divisible by four, so the rings hit all four axis extremes). A test compares
+/// each of them with the measured mesh.
+fn closed_form_bounds(kind: &ShapeKind) -> Option<ShapeBounds> {
+    let centered = |half: Vec3| ShapeBounds {
+        min: -half,
+        max: half,
+    };
+    Some(match kind {
+        ShapeKind::Sphere { radius } => centered(Vec3::splat(*radius)),
+        ShapeKind::Ellipsoid { size } => centered(*size / 2.0),
+        ShapeKind::Cuboid { size, .. } => centered(*size / 2.0),
+        // Rounding blunts the apex and rim of a cone and the rim of a cylinder,
+        // so only the sharp versions have this box.
+        ShapeKind::Cylinder {
+            radius,
+            height,
+            roundness,
+        }
+        | ShapeKind::Cone {
+            radius,
+            height,
+            roundness,
+        } if *roundness == 0.0 => centered(Vec3::new(*radius, *height / 2.0, *radius)),
+        ShapeKind::Capsule { radius, height } => centered(Vec3::new(*radius, *height / 2.0, *radius)),
+        ShapeKind::Rectangle { size } => centered(size.extend(0.0) / 2.0),
+        ShapeKind::Disc { radius } => centered(Vec3::new(*radius, *radius, 0.0)),
+        ShapeKind::Ellipse { radius } => centered(radius.extend(0.0)),
+        _ => return None,
+    })
+}
+
 /// Whether every vertex lies within about 5% of the ellipsoid inscribed in
 /// `bounds`, which is how [`Shape::from_mesh`] guesses [`Shape::is_round`].
 fn mesh_is_round(mesh: &Mesh, bounds: &ShapeBounds) -> bool {
@@ -5068,6 +5127,11 @@ impl Shape {
     ///   the nearer endpoint.
     ///
     /// `t == 0.0` returns a copy of `self` and `t == 1.0` a copy of `other`.
+    ///
+    /// Signed-distance-field shapes ([`SdfMaterial2d`](crate::SdfMaterial2d)) are
+    /// not `Shape`s: they are a material drawn on one shared quad, so they have
+    /// no mesh to blend. Blend them with [`SdfMaterial2d::lerp`](crate::SdfMaterial2d::lerp),
+    /// which costs no new mesh.
     ///
     /// Every distinct blended value is a distinct mesh. To animate smoothly
     /// without generating a new mesh per frame, prefer animating the
@@ -6782,6 +6846,54 @@ mod from_mesh_tests {
         let built = ShapeBounds::from_points(positions(&shape.build()).into_iter().map(Vec3::from_array));
         assert!((shape.bounds().min - built.min).length() < 1e-5);
         assert!((shape.bounds().max - built.max).length() < 1e-5);
+    }
+
+    #[test]
+    fn closed_form_bounds_match_the_built_mesh_at_every_detail() {
+        let details = [
+            ShapeDetail::Minimal,
+            ShapeDetail::Low,
+            ShapeDetail::Medium,
+            ShapeDetail::High,
+            ShapeDetail::Extreme,
+        ];
+        for d in details {
+            let shapes = [
+                ("sphere", Shape::sphere(1.5, d)),
+                ("ellipsoid", Shape::ellipsoid(Vec3::new(2.0, 3.0, 5.0), d)),
+                ("cuboid", Shape::cuboid(Vec3::new(2.0, 4.0, 6.0), 0.0, d)),
+                ("rounded cuboid", Shape::cuboid(Vec3::new(2.0, 4.0, 6.0), 0.5, d)),
+                ("cylinder", Shape::cylinder(1.5, 3.0, d)),
+                ("cone", Shape::cone(1.5, 3.0, d)),
+                ("capsule", Shape::capsule(0.75, 3.0, d)),
+                ("rectangle", Shape::rectangle(Vec2::new(3.0, 2.0), d)),
+                ("disc", Shape::disc(1.5, d)),
+                ("ellipse", Shape::ellipse(Vec2::new(2.0, 1.0), d)),
+            ];
+            for (name, shape) in shapes {
+                let closed = closed_form_bounds(&shape.kind)
+                    .unwrap_or_else(|| panic!("{name} has no closed form"));
+                let measured = mesh_bounds(&shape.build());
+                assert!(
+                    (closed.min - measured.min).length() < 1e-4
+                        && (closed.max - measured.max).length() < 1e-4,
+                    "{name} at {d:?}: closed form {closed:?}, mesh {measured:?}"
+                );
+                assert_eq!(shape.bounds(), closed);
+                assert_eq!(shape.bounds_2d(), closed);
+            }
+        }
+    }
+
+    #[test]
+    fn closed_form_bounds_never_fill_the_cache() {
+        let shape = Shape::sphere(2.0, D);
+        let _ = shape.bounds();
+        assert!(shape.cache.solid.get().is_none());
+        // A kind without a closed form measures its mesh once.
+        let star = Shape::star(5, 2.0, 1.0, D);
+        let _ = star.bounds();
+        assert!(star.cache.solid.get().is_some());
     }
 
     #[test]

@@ -201,7 +201,8 @@ fn prepare_instanced_buffers(
     render_device: Res<RenderDevice>,
     render_queue: Res<bevy::render::renderer::RenderQueue>,
     new_batches: Query<(Entity, &InstancedBatchData), Without<InstancedGpuBuffers>>,
-    dirty_batches: Query<(&InstancedBatchData, &InstancedGpuBuffers)>,
+    mut dirty_batches: Query<(&InstancedBatchData, &mut InstancedGpuBuffers)>,
+    mut stats: ResMut<InstancedStats>,
 ) {
     // Create buffers for new batches
     for (entity, batch_data) in &new_batches {
@@ -216,6 +217,9 @@ fn prepare_instanced_buffers(
             usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
         });
 
+        stats.buffer_allocations += 1;
+        stats.dirty_batch_count += 1;
+        stats.gpu_upload_bytes += combined.len() as u64;
         commands.entity(entity).insert(InstancedGpuBuffers {
             buffer,
             instance_count: batch_data.instance_count,
@@ -223,13 +227,27 @@ fn prepare_instanced_buffers(
     }
 
     // Re-upload dirty batches
-    for (batch_data, gpu_buffers) in &dirty_batches {
+    for (batch_data, mut gpu_buffers) in &mut dirty_batches {
         if !batch_data.dirty || batch_data.instance_count == 0 {
             continue;
         }
 
         let combined = build_combined_buffer(batch_data);
-        render_queue.write_buffer(&gpu_buffers.buffer, 0, bytemuck::cast_slice(&combined));
+        // A batch that grew would write past the end of its buffer, so it gets
+        // a new one; the draw call always uses the batch's current count.
+        if combined.len() as u64 > gpu_buffers.buffer.size() {
+            gpu_buffers.buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
+                label: Some("instanced batch data buffer"),
+                contents: bytemuck::cast_slice(&combined),
+                usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+            });
+            stats.buffer_reallocations += 1;
+        } else {
+            render_queue.write_buffer(&gpu_buffers.buffer, 0, bytemuck::cast_slice(&combined));
+        }
+        gpu_buffers.instance_count = batch_data.instance_count;
+        stats.dirty_batch_count += 1;
+        stats.gpu_upload_bytes += combined.len() as u64;
     }
 }
 
@@ -279,14 +297,7 @@ fn queue_instanced_batches(
     };
     let draw_instanced = opaque_draw_functions.read().id::<DrawInstancedBatch>();
 
-    // Reset stats for this frame
-    stats.total_instances = 0;
-    stats.batch_count = 0;
-    stats.dirty_batch_count = 0;
-    stats.gpu_upload_bytes = 0;
-    stats.culled_instances = 0;
-    stats.total_instances_before_cull = 0;
-
+    let mut first_view = true;
     for view in &views {
         let Some(opaque_phase) = opaque_render_phases.get_mut(&view.retained_view_entity) else {
             continue;
@@ -295,6 +306,8 @@ fn queue_instanced_batches(
         let Some(&view_key) = view_key_cache.get(&view.retained_view_entity) else {
             continue;
         };
+        stats.view_count += 1;
+        let counts_lod_changes = std::mem::take(&mut first_view);
 
         // Extract frustum planes from the view-projection matrix for culling
         let clip_from_world = view.clip_from_world.unwrap_or_else(|| {
@@ -343,6 +356,9 @@ fn queue_instanced_batches(
                     lod_cfg.compute_lod(distance, Some(batch_data.lod_level));
 
                 // Update LOD level and transition weight
+                if counts_lod_changes && computed_lod != batch_data.lod_level {
+                    stats.lod_changed_batches += 1;
+                }
                 batch_data.lod_level = computed_lod;
                 batch_data.lod_transition_weight = transition_weight;
             }
@@ -380,16 +396,17 @@ fn queue_instanced_batches(
             if lod_idx < 5 {
                 stats.lod_distribution[lod_idx] += visible_count;
             }
-            if batch_data.dirty {
-                stats.dirty_batch_count += 1;
-                stats.gpu_upload_bytes +=
-                    batch_data.transforms.len() as u64 + batch_data.properties.len() as u64;
+            if batch_data.lod_transition_weight > 0.0 && batch_data.lod_transition_weight < 1.0 {
+                stats.lod_transitioning_instances += visible_count;
             }
 
             // Skip batches where all instances are culled
             if visible_count == 0 {
+                stats.skipped_batches += 1;
                 continue;
             }
+            stats.draw_calls += 1;
+            stats.visible_triangles += visible_count as u64 * crate::render_pipeline::triangles_per_instance(mesh);
 
             // Add to the opaque render phase
             opaque_phase.add(
@@ -447,6 +464,9 @@ impl Plugin for InstancedRenderPlugin {
     fn build(&self, app: &mut App) {
         // Extract batch data from main world to render world
         app.add_plugins(ExtractComponentPlugin::<InstancedBatchData>::default());
+        if !app.is_plugin_added::<crate::render_pipeline::InstancedStatsPlugin>() {
+            app.add_plugins(crate::render_pipeline::InstancedStatsPlugin);
+        }
 
         app.sub_app_mut(RenderApp)
             .add_render_command::<Opaque3d, DrawInstancedBatch>()

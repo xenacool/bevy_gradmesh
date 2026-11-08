@@ -48,23 +48,35 @@ pub struct MeshCache {
     hits: u64,
     /// Cache lookups that required building a new mesh.
     misses: u64,
+    /// Bytes of vertex and index data in `inner`.
+    bytes: usize,
+    /// Meshes built since the last [`MeshCache::take_frame_builds`].
+    frame_builds: u32,
+    /// Microseconds spent building them.
+    frame_build_micros: u64,
 }
 
 impl MeshCache {
     /// Returns a clone of the cached mesh for `shape`, building and caching it
     /// on a miss. Increments hit/miss counters.
     pub fn get_or_build(&mut self, shape: &Shape) -> &Mesh {
-        let is_new = !self.inner.contains_key(shape);
-        let mesh = self
-            .inner
-            .entry(shape.clone())
-            .or_insert_with(|| shape.build());
-        if is_new {
-            self.misses += 1;
-        } else {
-            self.hits += 1;
+        use std::collections::hash_map::Entry;
+        match self.inner.entry(shape.clone()) {
+            Entry::Occupied(entry) => {
+                self.hits += 1;
+                entry.into_mut()
+            }
+            Entry::Vacant(entry) => {
+                let start = bevy::platform::time::Instant::now();
+                let mesh = shape.build();
+                self.frame_build_micros += start.elapsed().as_micros() as u64;
+                self.frame_builds += 1;
+                self.misses += 1;
+                self.bytes += mesh.get_vertex_buffer_size()
+                    + mesh.get_index_buffer_bytes().map_or(0, <[u8]>::len);
+                entry.insert(mesh)
+            }
         }
-        mesh
     }
 
     /// Returns the `Handle<Mesh>` for `shape`, building the mesh and adding it
@@ -111,6 +123,22 @@ impl MeshCache {
         self.handles.clear();
         self.hits = 0;
         self.misses = 0;
+        self.bytes = 0;
+    }
+
+    /// Bytes of vertex and index data held by the cache.
+    pub fn bytes(&self) -> usize {
+        self.bytes
+    }
+
+    /// Returns how many meshes were built, and the microseconds that took,
+    /// since the last call. [`InstancedStats`] calls it once per frame, so
+    /// leave it to the plugin when you read those statistics.
+    pub fn take_frame_builds(&mut self) -> (u32, u64) {
+        (
+            std::mem::take(&mut self.frame_builds),
+            std::mem::take(&mut self.frame_build_micros),
+        )
     }
 
     /// Returns the number of cache hits.
@@ -170,6 +198,50 @@ mod tests {
         let _mesh = cache.get_or_build(&shape);
         assert_eq!(cache.hits(), 2);
         assert_eq!(cache.misses(), 1);
+    }
+
+    #[test]
+    fn mesh_cache_counts_bytes_and_builds_per_frame() {
+        let mut cache = MeshCache::default();
+        let shape = Shape::sphere(1.0, ShapeDetail::Low);
+        assert_eq!(cache.bytes(), 0);
+
+        cache.get_or_build(&shape);
+        let bytes = cache.bytes();
+        assert!(bytes > 0);
+        // A hit adds nothing.
+        cache.get_or_build(&shape);
+        assert_eq!(cache.bytes(), bytes);
+        cache.get_or_build(&Shape::sphere(2.0, ShapeDetail::Low));
+        assert_eq!(cache.bytes(), bytes * 2);
+
+        // Two builds this frame, none in the next.
+        assert_eq!(cache.take_frame_builds().0, 2);
+        assert_eq!(cache.take_frame_builds(), (0, 0));
+        cache.clear();
+        assert_eq!(cache.bytes(), 0);
+    }
+
+    #[test]
+    fn plugin_publishes_cache_numbers_into_the_stats() {
+        let mut app = bevy::app::App::new();
+        app.add_plugins(crate::render_pipeline::InstancedStatsPlugin)
+            .init_resource::<MeshCache>()
+            .add_systems(bevy::app::Last, publish_cache_stats);
+        let shape = Shape::sphere(1.0, ShapeDetail::Low);
+        {
+            let mut cache = app.world_mut().resource_mut::<MeshCache>();
+            cache.get_or_build(&shape);
+            cache.get_or_build(&shape);
+        }
+        app.update();
+        let stats = app.world().resource::<InstancedStats>();
+        assert_eq!((stats.cache_hits, stats.cache_misses), (1, 1));
+        assert_eq!(stats.cached_meshes, 1);
+        assert_eq!(stats.mesh_builds, 1);
+        assert!(stats.cached_mesh_bytes > 0);
+        app.update();
+        assert_eq!(app.world().resource::<InstancedStats>().mesh_builds, 0);
     }
 
     #[test]
@@ -236,6 +308,30 @@ mod tests {
     }
 }
 
+/// Copies the mesh cache's numbers into [`InstancedStats`].
+fn publish_cache_stats(mut cache: ResMut<MeshCache>, mut stats: ResMut<InstancedStats>) {
+    let (builds, micros) = cache.take_frame_builds();
+    stats.cache_hits = cache.hits();
+    stats.cache_misses = cache.misses();
+    stats.cached_meshes = cache.len();
+    stats.cached_mesh_bytes = cache.bytes();
+    stats.mesh_builds = builds;
+    stats.mesh_build_micros = micros;
+}
+
+/// Copies the number of materials something still refers to into
+/// [`InstancedStats`].
+#[cfg(feature = "pbr")]
+fn publish_material_stats(
+    pool: Option<Res<GradMeshMaterialPool>>,
+    assets: Option<Res<Assets<crate::material::GradMeshMaterial>>>,
+    mut stats: ResMut<InstancedStats>,
+) {
+    if let (Some(pool), Some(assets)) = (pool, assets) {
+        stats.live_materials = pool.live_len(&assets);
+    }
+}
+
 /// Tick the deformation time resource each frame.
 fn tick_deformation(mut deformation: ResMut<Deformation>, time: Res<bevy::time::Time>) {
     deformation.tick(time.delta().as_secs_f32());
@@ -245,6 +341,7 @@ fn tick_deformation(mut deformation: ResMut<Deformation>, time: Res<bevy::time::
 /// the deformation clock, the standalone pipeline and the 2D material paths.
 fn build_common(app: &mut bevy::app::App) {
     app.add_plugins(StandaloneRenderPlugin)
+        .add_systems(bevy::app::Last, publish_cache_stats)
         .init_resource::<MeshCache>()
         .init_resource::<InstancedStats>()
         .init_resource::<Deformation>()
@@ -290,6 +387,7 @@ impl Plugin for GradMeshPlugin {
             // Embed the shaders so they're available when plugins load them
             bevy::asset::embedded_asset!(app, "shader/gradmesh.wesl");
             bevy::asset::embedded_asset!(app, "shader/instanced.wesl");
+            app.add_systems(bevy::app::Last, publish_material_stats);
 
             app.add_plugins(MaterialPlugin::<
                 ExtendedMaterial<StandardMaterial, GradMeshExtension>,

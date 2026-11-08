@@ -398,7 +398,8 @@ fn prepare_standalone_buffers(
     render_device: Res<RenderDevice>,
     render_queue: Res<bevy::render::renderer::RenderQueue>,
     new_batches: Query<(Entity, &StandaloneBatchData), Without<StandaloneGpuBuffers>>,
-    dirty_batches: Query<(&StandaloneBatchData, &StandaloneGpuBuffers)>,
+    mut dirty_batches: Query<(&StandaloneBatchData, &mut StandaloneGpuBuffers)>,
+    mut stats: ResMut<InstancedStats>,
 ) {
     for (entity, batch_data) in &new_batches {
         if batch_data.instance_count == 0 {
@@ -412,19 +413,36 @@ fn prepare_standalone_buffers(
             usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
         });
 
+        stats.buffer_allocations += 1;
+        stats.dirty_batch_count += 1;
+        stats.gpu_upload_bytes += combined.len() as u64;
         commands.entity(entity).insert(StandaloneGpuBuffers {
             buffer,
             instance_count: batch_data.instance_count,
         });
     }
 
-    for (batch_data, gpu_buffers) in &dirty_batches {
+    for (batch_data, mut gpu_buffers) in &mut dirty_batches {
         if !batch_data.dirty || batch_data.instance_count == 0 {
             continue;
         }
 
         let combined = build_combined_buffer(batch_data);
-        render_queue.write_buffer(&gpu_buffers.buffer, 0, bytemuck::cast_slice(&combined));
+        // A batch that grew would write past the end of its buffer, so it gets
+        // a new one; the draw call always uses the batch's current count.
+        if combined.len() as u64 > gpu_buffers.buffer.size() {
+            gpu_buffers.buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
+                label: Some("standalone instanced batch data buffer"),
+                contents: bytemuck::cast_slice(&combined),
+                usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+            });
+            stats.buffer_reallocations += 1;
+        } else {
+            render_queue.write_buffer(&gpu_buffers.buffer, 0, bytemuck::cast_slice(&combined));
+        }
+        gpu_buffers.instance_count = batch_data.instance_count;
+        stats.dirty_batch_count += 1;
+        stats.gpu_upload_bytes += combined.len() as u64;
     }
 }
 
@@ -472,18 +490,11 @@ fn queue_standalone_batches(
     };
     let draw_standalone = opaque_draw_functions.read().id::<DrawStandaloneBatch>();
 
-    // Reset stats
-    stats.total_instances = 0;
-    stats.batch_count = 0;
-    stats.dirty_batch_count = 0;
-    stats.gpu_upload_bytes = 0;
-    stats.culled_instances = 0;
-    stats.total_instances_before_cull = 0;
-
     for (view, msaa) in &views {
         let Some(opaque_phase) = opaque_render_phases.get_mut(&view.retained_view_entity) else {
             continue;
         };
+        stats.view_count += 1;
 
         let clip_from_world = view.clip_from_world.unwrap_or_else(|| {
             view.clip_from_view * bevy::math::Mat4::from(view.world_from_view.affine().inverse())
@@ -528,15 +539,18 @@ fn queue_standalone_batches(
             stats.culled_instances += culled_count;
             stats.total_instances += visible_count;
             stats.batch_count += 1;
-            if batch_data.dirty {
-                stats.dirty_batch_count += 1;
-                stats.gpu_upload_bytes +=
-                    batch_data.transforms.len() as u64 + batch_data.properties.len() as u64;
+            // No distance-based LOD here: record the level fixed at spawn time.
+            if let Some(slot) = stats.lod_distribution.get_mut(batch_data.lod_level as usize) {
+                *slot += visible_count;
             }
 
             if visible_count == 0 {
+                stats.skipped_batches += 1;
                 continue;
             }
+            stats.draw_calls += 1;
+            stats.visible_triangles +=
+                visible_count as u64 * crate::render_pipeline::triangles_per_instance(mesh);
 
             opaque_phase.add(
                 Opaque3dBatchSetKey {
@@ -597,6 +611,9 @@ impl Plugin for StandaloneRenderPlugin {
         bevy::asset::embedded_asset!(app, "shader/standalone.wesl");
 
         app.add_plugins(ExtractComponentPlugin::<StandaloneBatchData>::default());
+        if !app.is_plugin_added::<crate::render_pipeline::InstancedStatsPlugin>() {
+            app.add_plugins(crate::render_pipeline::InstancedStatsPlugin);
+        }
 
         app.sub_app_mut(RenderApp)
             .add_render_command::<Opaque3d, DrawStandaloneBatch>()
