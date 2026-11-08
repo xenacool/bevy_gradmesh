@@ -53,12 +53,12 @@ pub mod mix_space;
 pub mod outline;
 pub mod plugin;
 pub mod polyline_gpu;
-pub mod render_pipeline;
+mod render_pipeline;
 pub mod retained;
 pub mod sdf2d;
 pub mod shape;
 pub mod spline;
-pub mod standalone_pipeline;
+mod standalone_pipeline;
 pub mod style;
 
 pub use appearance::{AppearanceSnapshot, AppearanceType};
@@ -78,7 +78,7 @@ pub use material::{
     dual_radial_alpha, gradmesh_to_standard, multiplicative, opaque, screen, transparent,
     with_gradient_bounds, with_mix_space,
 };
-pub use material::{GradMeshUniform, GradMeshUniformBuffer, Vec4};
+pub use material::Vec4;
 #[cfg(feature = "pbr")]
 pub use material_interning::{
     GradMeshMaterialKey, GradMeshMaterialPool, MATERIAL_WARNING_THRESHOLD, MaterialWarning,
@@ -88,20 +88,17 @@ pub use material2d::{GradMesh2dPlugin, GradMeshMaterial2d};
 pub use mix_space::MixSpace;
 pub use outline::{arch, blob, rounded_rectangle};
 pub use plugin::{GradMeshMobilePlugin, GradMeshPlugin, MeshCache};
-pub use render_pipeline::{GradMeshBatchItem, InstancedBatch, InstancedBufferData, InstancedStats};
+pub use render_pipeline::InstancedStats;
 pub use retained::{GradMeshHandle, RetainedWorld};
 pub use sdf2d::{
-    Dash2d, DashSnap, SdfGradient, SdfKind, SdfMaterial2d, SdfMaterial2dPlugin, SdfUniform, unit_quad,
+    Dash2d, DashSnap, SdfGradient, SdfKind, SdfMaterial2d, SdfMaterial2dPlugin, unit_quad,
 };
 pub use shape::{
     HeightfieldBorder, HeightfieldOptions, Shape, ShapeBounds, ShapeDetail, ShapePart, SweepFrame,
     SweepOpening, SweepOptions,
 };
 pub use spline::{BakedSpline, CatmullRomSpline, SplineFrame};
-pub use standalone_pipeline::{
-    StandaloneBatchData, StandalonePipeline, StandalonePipelineKey, StandaloneRenderPlugin,
-    render_standalone_batches,
-};
+pub use standalone_pipeline::{StandaloneRenderPlugin, render_standalone_batches};
 pub use style::{
     BlendMode, ColorMode, Dash, DashType, DirectionSpace, Noise, Rim, ShapeType, Stripes, Style,
 };

@@ -78,14 +78,10 @@ pub struct StandaloneBatchData {
     pub properties: Vec<u8>,
     /// Whether this batch needs GPU upload this frame.
     pub dirty: bool,
-    /// Render state for depth settings.
-    pub render_state: crate::RenderState,
     /// Mesh AABB in local space for frustum culling.
     pub mesh_aabb: Option<AABB>,
     /// LOD level index.
     pub lod_level: u8,
-    /// LOD transition weight.
-    pub lod_transition_weight: f32,
 }
 
 /// GPU buffers for a single standalone instanced batch.
@@ -681,7 +677,7 @@ pub fn render_standalone_batches(
 
     let mut spawned = Vec::new();
 
-    for (key, batch) in recorder.batches.iter() {
+    for batch in recorder.batches.values() {
         if batch.is_empty() {
             continue;
         }
@@ -717,10 +713,8 @@ pub fn render_standalone_batches(
                     transforms: buffer_data.transforms,
                     properties: buffer_data.properties,
                     dirty: batch.is_dirty(),
-                    render_state: key.render_state,
                     mesh_aabb,
                     lod_level,
-                    lod_transition_weight: 0.0,
                 },
                 Transform::default(),
                 GlobalTransform::default(),

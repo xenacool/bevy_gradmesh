@@ -819,9 +819,8 @@ enum ShapeKind {
         heights: Arc<[f32]>,
         holes: Option<Arc<[bool]>>,
         border: Option<Arc<HeightfieldBorder>>,
-        key: u64,
-        /// Hash of `holes` and `border`, computed once so that hashing the
-        /// shape does not walk them again.
+        /// Hash of `heights`, `holes` and `border`, computed once so that
+        /// hashing the shape does not walk them again.
         fingerprint: u64,
         /// Bounds of the surface and bounds with skirts.
         bounds: (ShapeBounds, ShapeBounds),
@@ -1259,7 +1258,7 @@ impl PartialEq for ShapeKind {
                     extent: e1,
                     holes: h1,
                     border: b1,
-                    key: k1,
+                    heights: g1,
                     fingerprint: f1,
                     ..
                 },
@@ -1268,14 +1267,16 @@ impl PartialEq for ShapeKind {
                     extent: e2,
                     holes: h2,
                     border: b2,
-                    key: k2,
+                    heights: g2,
                     fingerprint: f2,
                     ..
                 },
             ) => {
-                k1 == k2
-                    && f1 == f2
+                f1 == f2
                     && s1 == s2
+                    && (Arc::ptr_eq(g1, g2)
+                        || (g1.len() == g2.len()
+                            && g1.iter().zip(g2.iter()).all(|(a, b)| a.to_bits() == b.to_bits())))
                     && e1.x.to_bits() == e2.x.to_bits()
                     && e1.y.to_bits() == e2.y.to_bits()
                     && h1 == h2
@@ -1533,13 +1534,11 @@ impl std::hash::Hash for ShapeKind {
             Self::Heightfield {
                 size,
                 extent,
-                key,
                 fingerprint,
                 ..
             } => {
                 size.hash(state);
                 hash_vec2(extent, state);
-                key.hash(state);
                 fingerprint.hash(state);
             }
         }
@@ -2148,8 +2147,8 @@ impl Shape {
     /// A terrain chunk: a grid of `size.x * size.y` height samples spread over
     /// `extent` world units and centred on the origin in XZ. Shorthand for
     /// [`Shape::heightfield_with_options`] with no holes and no border.
-    pub fn heightfield(heights: Arc<[f32]>, size: UVec2, extent: Vec2, key: u64) -> Self {
-        Self::heightfield_with_options(heights, size, extent, key, HeightfieldOptions::default())
+    pub fn heightfield(heights: Arc<[f32]>, size: UVec2, extent: Vec2) -> Self {
+        Self::heightfield_with_options(heights, size, extent, HeightfieldOptions::default())
     }
 
     /// A terrain chunk: a grid of `size.x * size.y` height samples spread over
@@ -2168,22 +2167,22 @@ impl Shape {
     /// [`Shape::bounds`] includes the skirts and [`Shape::surface_bounds`] does
     /// not; both ignore vertices that only touch holes.
     ///
-    /// The shape is `Eq` and `Hash` by `key`, `size`, `extent`, the hole mask
-    /// and the border, so changing only the holes or the border gives a
-    /// different shape without a new `key`. The mask and the border are walked
-    /// once, here, into a fingerprint; hashing the shape afterwards costs the
-    /// same as for a shape without them (a hash is taken on every [`MeshCache`](crate::MeshCache)
-    /// lookup) and comparing two shapes with the same fingerprint is one
-    /// memory comparison. Building the shape costs about 2 ns per mask cell
-    /// (9 µs for a 64 × 64 chunk). The heights are *not* walked, so change
-    /// `key` when the heights change. A `size` below 2 in either axis, a
+    /// The shape is `Eq` and `Hash` by `size`, `extent`, the heights, the hole
+    /// mask and the border, all compared by value: there is no key to keep in
+    /// step, so changing anything that changes the mesh gives a different shape
+    /// and a stale mesh can never be shared. The heights, mask and border are
+    /// walked once, here, into a fingerprint, so hashing the shape afterwards
+    /// costs the same at any size (a hash is taken on every
+    /// [`MeshCache`](crate::MeshCache) lookup). Building the shape costs
+    /// about 1 ns per sample (4 µs for a 65 × 65 chunk); comparing two shapes
+    /// that share the same `Arc` of heights is free, and comparing two equal
+    /// but separate ones walks the heights once. A `size` below 2 in either axis, a
     /// `heights` slice, hole mask or border of the wrong length gives an empty
     /// mesh and a warning when built.
     pub fn heightfield_with_options(
         heights: Arc<[f32]>,
         size: UVec2,
         extent: Vec2,
-        key: u64,
         options: HeightfieldOptions,
     ) -> Self {
         let holes: Option<Arc<[bool]>> = options.holes.map(Arc::from);
@@ -2191,6 +2190,10 @@ impl Shape {
         let fingerprint = {
             use std::hash::Hasher;
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            heights.len().hash(&mut hasher);
+            for h in heights.iter() {
+                h.to_bits().hash(&mut hasher);
+            }
             holes.hash(&mut hasher);
             border.as_deref().map(HeightfieldBorder::identity_bits).hash(&mut hasher);
             hasher.finish()
@@ -2209,7 +2212,6 @@ impl Shape {
                 heights,
                 holes,
                 border,
-                key,
                 fingerprint,
                 bounds,
             },
@@ -6804,11 +6806,11 @@ mod from_mesh_tests {
     }
 
     fn heightfield(sx: u32, sy: u32, f: impl Fn(u32, u32) -> f32) -> Shape {
-        Shape::heightfield(field(sx, sy, f), UVec2::new(sx, sy), Vec2::new(8.0, 6.0), 1)
+        Shape::heightfield(field(sx, sy, f), UVec2::new(sx, sy), Vec2::new(8.0, 6.0))
     }
 
     fn with_options(sx: u32, sy: u32, f: impl Fn(u32, u32) -> f32, o: HeightfieldOptions) -> Shape {
-        Shape::heightfield_with_options(field(sx, sy, f), UVec2::new(sx, sy), Vec2::new(8.0, 6.0), 1, o)
+        Shape::heightfield_with_options(field(sx, sy, f), UVec2::new(sx, sy), Vec2::new(8.0, 6.0), o)
     }
 
     fn tri_count(mesh: &Mesh) -> usize {
@@ -6940,7 +6942,7 @@ mod from_mesh_tests {
             let heights: Arc<[f32]> = (0..3).flat_map(|_| (0..3).map(|x| h(x0 + x))).collect::<Vec<_>>().into();
             let mut o = HeightfieldOptions::default();
             o.border = border;
-            Shape::heightfield_with_options(heights, UVec2::new(3, 3), Vec2::new(2.0, 2.0), 1, o)
+            Shape::heightfield_with_options(heights, UVec2::new(3, 3), Vec2::new(2.0, 2.0), o)
         };
         let left_border = HeightfieldBorder::new(vec![h(-1); 3], vec![h(3); 3], vec![h(0), h(1), h(2)], vec![h(0), h(1), h(2)]);
         let right_border = HeightfieldBorder::new(vec![h(1); 3], vec![h(5); 3], vec![h(2), h(3), h(4)], vec![h(2), h(3), h(4)]);
@@ -7033,15 +7035,23 @@ mod from_mesh_tests {
         let b = heightfield(3, 3, |_, _| 0.0);
         assert_eq!(a, b);
         assert_eq!(hash_of(&a), hash_of(&b));
-        let moved = Shape::heightfield(field(3, 3, |_, _| 0.0), UVec2::new(3, 3), Vec2::new(8.0, 6.0), 2);
+        let moved = Shape::heightfield(field(3, 3, |_, _| 0.0), UVec2::new(3, 3), Vec2::new(8.0, 7.0));
         assert_ne!(a, moved);
+        // Different heights are a different shape, with no key to bump.
+        let raised = heightfield(3, 3, |x, y| if x == 1 && y == 1 { 0.5 } else { 0.0 });
+        assert_ne!(a, raised);
+        assert_ne!(hash_of(&a), hash_of(&raised));
+        // The same heights in a separate allocation are the same shape.
+        let again = Shape::heightfield(field(3, 3, |_, _| 0.0), UVec2::new(3, 3), Vec2::new(8.0, 6.0));
+        assert_eq!(a, again);
+        assert_eq!(hash_of(&a), hash_of(&again));
     }
 
     #[test]
     fn invalid_heightfield_builds_an_empty_mesh() {
         let one_wide = heightfield(1, 4, |_, _| 0.0);
         assert!(positions(&one_wide.build()).is_empty());
-        let wrong_len = Shape::heightfield(vec![0.0; 5].into(), UVec2::new(3, 3), Vec2::splat(1.0), 1);
+        let wrong_len = Shape::heightfield(vec![0.0; 5].into(), UVec2::new(3, 3), Vec2::splat(1.0));
         assert!(positions(&wrong_len.build()).is_empty());
         assert_eq!(wrong_len.bounds(), ShapeBounds::default());
     }

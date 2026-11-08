@@ -24,7 +24,6 @@ let chunk = Shape::heightfield(
     heights.into(),          // Arc<[f32]>, heights[x + y * size.x]
     UVec2::new(17, 17),      // samples
     Vec2::splat(16.0),       // world extent
-    chunk_key,
 );
 ```
 
@@ -32,9 +31,12 @@ A terrain chunk centred on the origin in XZ, with smooth normals from central
 differences and UVs from 0 to 1. Skirts hang below the edges (a tenth of the
 larger extent) to hide cracks between neighbouring chunks of different detail;
 the depth is not an option, because a chunk without skirts shows cracks.
-Equality and hashing use `key`, `size`, `extent` (and the holes and border
-below), not the heights, so change `key` when the heights change. A size below 2
-in either axis, or a wrong `heights` length, gives an empty mesh and a warning.
+Equality and hashing cover `size`, `extent`, the heights and the holes and
+border below, all by value, so there is no key to keep in step: changing a height
+gives a different shape and a stale mesh is never shared. The heights are hashed
+once, when the shape is built (about 4 µs for 65 × 65 samples), so keep the
+`Shape` and reuse it rather than rebuilding it every frame. A size below 2 in
+either axis, or a wrong `heights` length, gives an empty mesh and a warning.
 
 `Shape::bounds()` includes the skirts, as it measures the mesh;
 `Shape::surface_bounds()` is the land alone. Neither builds anything.
@@ -43,7 +45,7 @@ in either axis, or a wrong `heights` length, gives an empty mesh and a warning.
 
 ```rust
 let chunk = Shape::heightfield_with_options(
-    heights.into(), size, extent, key,
+    heights.into(), size, extent,
     HeightfieldOptions::default()
         .with_holes(holes)          // Vec<bool>, (size.x - 1) * (size.y - 1) cells
         .with_border(HeightfieldBorder::new(west, east, north, south)),
@@ -57,9 +59,8 @@ heights just outside the chunk (`west` and `east` hold `size.y` heights, `north`
 and `south` hold `size.x`; corners are not needed). It is used for the normals of
 the edge vertices only and is never meshed, so two chunks that share an edge
 share its normals exactly and a crest on the border shows no crease. The mask and
-the border are part of the shape's identity, so changing only them needs no new
-key (they are walked when hashing; the heights are not). A mask or border of the
-wrong length gives an empty mesh and a warning, like wrong heights.
+the border are part of the shape's identity like the heights, so changing only
+them gives a different shape. A mask or border of the wrong length gives an empty mesh and a warning, like wrong heights.
 
 ## `Shape::sweep`
 

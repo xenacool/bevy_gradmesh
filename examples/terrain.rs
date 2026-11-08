@@ -134,7 +134,6 @@ fn setup(
             Arc::from(heights),
             size,
             extent,
-            0,
             HeightfieldOptions::default().with_border(border),
         )
     };
@@ -160,7 +159,6 @@ fn setup(
             Arc::from(heights),
             size,
             extent,
-            index as u64 + 1,
             options,
         );
         commands.spawn((

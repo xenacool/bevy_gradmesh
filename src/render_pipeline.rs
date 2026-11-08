@@ -17,13 +17,9 @@
 //!    and issues `draw_indexed(instance_count, 1, ...)` for instanced rendering.
 
 use bevy::ecs::prelude::*;
-use bevy::render::mesh::Mesh;
 
 use crate::batch::{InstanceProperties, InstanceTransform};
 use crate::deformation::DeformationParams;
-
-/// Path to the instanced shader.
-pub const INSTANCED_SHADER_PATH: &str = "src/shader/gradmesh.wesl";
 
 // ─── GPU Buffer Data ───
 
@@ -39,48 +35,6 @@ pub struct InstancedBufferData {
 }
 
 impl InstancedBufferData {
-    /// Create buffer data from transform and property slices.
-    pub fn from_slices(
-        transforms: &[InstanceTransform],
-        properties: &[InstanceProperties],
-    ) -> Self {
-        let instance_count = transforms.len().min(properties.len());
-
-        // Flatten transforms - use the slice's contiguous memory directly
-        let transforms_bytes = if instance_count > 0 {
-            let ptr = transforms.as_ptr();
-            unsafe {
-                std::slice::from_raw_parts(
-                    ptr as *const u8,
-                    instance_count * std::mem::size_of::<InstanceTransform>(),
-                )
-            }
-            .to_vec()
-        } else {
-            Vec::new()
-        };
-
-        // Flatten properties (now includes deformation vec4)
-        let properties_bytes = if instance_count > 0 {
-            let ptr = properties.as_ptr();
-            unsafe {
-                std::slice::from_raw_parts(
-                    ptr as *const u8,
-                    instance_count * std::mem::size_of::<InstanceProperties>(),
-                )
-            }
-            .to_vec()
-        } else {
-            Vec::new()
-        };
-
-        Self {
-            transforms: transforms_bytes,
-            properties: properties_bytes,
-            instance_count: instance_count as u32,
-        }
-    }
-
     /// Create buffer data from transforms, properties, and deformation slices.
     pub fn from_slices_with_deformation(
         transforms: &[InstanceTransform],
@@ -131,38 +85,6 @@ impl InstancedBufferData {
             instance_count: instance_count as u32,
         }
     }
-
-    /// Returns the total size in bytes for the transform buffer.
-    pub fn transform_size(&self) -> u64 {
-        self.transforms.len() as u64
-    }
-
-    /// Returns the total size in bytes for the property buffer.
-    pub fn property_size(&self) -> u64 {
-        self.properties.len() as u64
-    }
-}
-
-// ─── Batch Item for Render Phase ───
-
-/// A render phase item representing one instanced batch.
-#[derive(Clone, Debug)]
-pub struct GradMeshBatchItem {
-    /// Mesh asset ID.
-    pub mesh_id: bevy::asset::AssetId<Mesh>,
-    /// Number of instances to draw.
-    pub instance_count: u32,
-}
-
-// ─── Component ───
-
-/// Component that marks an entity as an instanced GradMesh batch.
-#[derive(Component)]
-pub struct InstancedBatch {
-    /// Mesh ID for the batch.
-    pub mesh_id: bevy::asset::AssetId<Mesh>,
-    /// Number of instances.
-    pub instance_count: u32,
 }
 
 // ─── Statistics ───

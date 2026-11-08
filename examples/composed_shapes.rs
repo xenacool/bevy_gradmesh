@@ -198,7 +198,7 @@ fn setup(
     // chunk is sampled more coarsely, so its edge does not meet the left one's and
     // the skirts have a real crack to hide.
     let hills = |x: f32, z: f32| 0.55 + 0.45 * (x * 1.3).sin() * (z * 1.1).cos();
-    let chunk = |centre: Vec2, samples: u32, key: u64| {
+    let chunk = |centre: Vec2, samples: u32| {
         let extent = Vec2::splat(2.5);
         let heights: Vec<f32> = (0..samples)
             .flat_map(|j| (0..samples).map(move |i| (i, j)))
@@ -208,7 +208,7 @@ fn setup(
                 hills(centre.x + u * extent.x, centre.y + v * extent.y)
             })
             .collect();
-        Shape::heightfield(heights.into(), UVec2::splat(samples), extent, key)
+        Shape::heightfield(heights.into(), UVec2::splat(samples), extent)
     };
     // Grass, rock and snow by world height: the bands follow the terrain, so the
     // two chunks agree on colour at their shared edge.
@@ -219,13 +219,10 @@ fn setup(
             (0.98, Color::srgb(0.95, 0.96, 1.0)),
         ])
         .with_perceptual_roughness(0.95);
-    for (centre, samples, key) in [
-        (Vec2::new(5.0, -2.0), 17, 1),
-        (Vec2::new(7.5, -2.0), 6, 2),
-    ] {
+    for (centre, samples) in [(Vec2::new(5.0, -2.0), 17), (Vec2::new(7.5, -2.0), 6)] {
         piece(
             &mut commands,
-            &chunk(centre, samples, key),
+            &chunk(centre, samples),
             &terrain_style,
             Transform::from_xyz(centre.x, 0.0, centre.y),
             true,

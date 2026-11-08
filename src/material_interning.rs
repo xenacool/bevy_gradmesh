@@ -207,6 +207,9 @@ impl GradMeshMaterialKey {
 /// as the material is shown; asking again for an equal style while it is alive
 /// returns the same handle.
 ///
+/// There is nothing to manage: no entry needs to be removed by hand and the pool
+/// has no `clear`, because dead entries are swept as it grows.
+///
 /// # Example
 ///
 /// ```ignore
@@ -330,18 +333,6 @@ impl GradMeshMaterialPool {
     /// Returns true if the pool is empty.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
-    }
-
-    /// Clears the cache.  Note that the materials remain in the asset store for
-    /// as long as something holds a handle to them; only the pool's internal
-    /// index is cleared.
-    pub fn clear(&mut self) {
-        self.cache.clear();
-        self.styles.clear();
-        self.prune_at = 0;
-        self.hits = 0;
-        self.misses = 0;
-        self.total_lookups = 0;
     }
 
     /// Returns the total number of lookups.
@@ -645,34 +636,6 @@ mod tests {
         assert_eq!(key.color, Vec4::new(1.0, 0.5, 0.0, 1.0));
         assert_eq!(key.secondary_color, Vec4::new(0.0, 0.5, 1.0, 1.0));
         assert_eq!(key.direction, Vec4::new(0.0, 1.0, 0.0, 0.0));
-    }
-
-    #[test]
-    fn material_pool_clear() {
-        let mut pool = GradMeshMaterialPool::default();
-        let mut assets = Assets::<GradMeshMaterial>::default();
-
-        let key = GradMeshMaterialKey {
-            color: Vec4::new(1.0, 0.0, 0.0, 1.0),
-            secondary_color: Vec4::new(0.0, 1.0, 0.0, 1.0),
-            direction: Vec4::new(0.0, 1.0, 0.0, 0.0),
-            flags: Vec4::new(1.0, 0.0, 0.0, 0.0),
-            dash: Vec4::new(0.0, 0.0, 0.0, 0.0),
-            noise: Vec4::default(),
-            stripes: Vec4::default(),
-            stripes_amount: Vec4::default(),
-            rim: Vec4::default(),
-            bands: [Vec4::default(); 4],
-            band_heights: Vec4::default(),
-        };
-
-        pool.get_or_insert(&key, &mut assets);
-        assert_eq!(pool.len(), 1);
-
-        pool.clear();
-        assert_eq!(pool.len(), 0);
-        assert_eq!(pool.hits(), 0);
-        assert_eq!(pool.misses(), 0);
     }
 
     #[cfg(feature = "pbr")]

@@ -532,13 +532,15 @@ impl BakedSpline {
             .collect()
     }
 
-    /// Normalized progress `t` of the baked point nearest `point` (compared in XZ).
+    /// Normalized progress `t` of the baked point nearest `point`, in 3D.
     ///
-    /// This searches the whole curve, so a point under a bridge may match the
-    /// bridge; follow a moving object with [`BakedSpline::nearest_distance_near`].
+    /// Heights count, so a point on a road below a bridge matches the road and
+    /// not the bridge, unless the bridge is closer. This searches the whole
+    /// curve; to follow a moving object across a road that crosses itself
+    /// within a few metres, use [`BakedSpline::nearest_distance_near`].
     pub fn nearest_t(&self, point: Vec3) -> f32 {
         let count = self.frames.len() - usize::from(self.closed); // ignore the duplicated closing frame
-        let dist_sq = |i: usize| (point.xz() - self.frames[i % count].position.xz()).length_squared();
+        let dist_sq = |i: usize| (point - self.frames[i % count].position).length_squared();
 
         let step = (count / 100).max(1);
         let coarse = (0..count)
@@ -551,16 +553,16 @@ impl BakedSpline {
         self.nearest_distance_near(point, self.frames[coarse].distance, window) / self.length
     }
 
-    /// Normalized progress `t` of the point of the curve nearest `point` (compared
-    /// in XZ) among those with `t` in `range`. On a closed loop `range` may run
+    /// Normalized progress `t` of the point of the curve nearest `point` (in 3D)
+    /// among those with `t` in `range`. On a closed loop `range` may run
     /// past `1.0` or below `0.0` and wraps; on an open path it is clamped to
     /// `0.0..=1.0`. A reversed range is read the other way round.
     pub fn nearest_t_in(&self, point: Vec3, range: Range<f32>) -> f32 {
         self.nearest_between(point, range.start * self.length, range.end * self.length) / self.length
     }
 
-    /// Arc-length distance of the point of the curve nearest `point` (compared in
-    /// XZ) within `window` of the distance `around`, on either side: a search
+    /// Arc-length distance of the point of the curve nearest `point` (in 3D)
+    /// within `window` of the distance `around`, on either side: a search
     /// that stays on the right part of a road that crosses over itself. Feed it
     /// the previous answer to follow a kart. On a closed loop the window wraps.
     pub fn nearest_distance_near(&self, point: Vec3, around: f32, window: f32) -> f32 {
@@ -568,10 +570,10 @@ impl BakedSpline {
         self.nearest_between(point, around - window, around + window)
     }
 
-    /// Nearest point in XZ among those between arc-length distances `from` and
+    /// Nearest point in 3D among those between arc-length distances `from` and
     /// `to` (unwrapped on a closed loop), refined between frames.
     fn nearest_between(&self, point: Vec3, from: f32, to: f32) -> f32 {
-        let p = point.xz();
+        let p = point;
         let len = self.length;
         let (from, to) = if to < from { (to, from) } else { (from, to) };
         let (from, to) = if self.closed {
@@ -606,7 +608,7 @@ impl BakedSpline {
                     continue;
                 }
                 let span = (b.distance - a.distance).max(1e-6);
-                let at = |d: f32| a.position.xz().lerp(b.position.xz(), (d - a.distance) / span);
+                let at = |d: f32| a.position.lerp(b.position, (d - a.distance) / span);
                 let (pa, pb) = (at(d0), at(d1));
                 let ab = pb - pa;
                 let w = if ab.length_squared() > 1e-12 {
@@ -980,6 +982,29 @@ mod open_and_channel_tests {
         assert!(baked.sample(t).position.z < 0.8);
         // A reversed range is the same range.
         assert_eq!(baked.nearest_t_in(p, 0.4..0.0), t);
+    }
+
+    #[test]
+    fn nearest_queries_count_height_so_a_road_is_not_matched_to_the_bridge_above() {
+        // The strip along z = 0 is a road, the one along z = 2 a bridge 6 m above it.
+        let bridge = CatmullRomSpline::closed([
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(33.0, 0.0, 0.0),
+            Vec3::new(66.0, 0.0, 0.0),
+            Vec3::new(100.0, 0.0, 0.0),
+            Vec3::new(100.0, 6.0, 2.0),
+            Vec3::new(66.0, 6.0, 2.0),
+            Vec3::new(33.0, 6.0, 2.0),
+            Vec3::new(0.0, 6.0, 2.0),
+        ])
+        .bake(0.5);
+        // In XZ this point is nearer the bridge (z = 2); in 3D it is on the road.
+        let on_the_road = Vec3::new(50.0, 0.1, 1.2);
+        let found = bridge.sample(bridge.nearest_t(on_the_road)).position;
+        assert!(found.y < 1.0, "matched the bridge: {found:?}");
+        let on_the_bridge = Vec3::new(50.0, 5.9, 1.2);
+        let found = bridge.sample(bridge.nearest_t(on_the_bridge)).position;
+        assert!(found.y > 5.0, "matched the road: {found:?}");
     }
 
     #[test]

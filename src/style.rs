@@ -783,6 +783,30 @@ impl Style {
         self.with_height_bands(&absolute)
     }
 
+    /// Like [`Style::with_height_bands`], with each band's height given as a
+    /// fraction of an explicit world height range `lowest..highest`: `0.0` is
+    /// `lowest` and `1.0` is `highest`, and fractions outside `0.0..=1.0` reach
+    /// below or above the range.
+    ///
+    /// Use it for terrain made of several chunks: the range belongs to the
+    /// whole terrain, so every chunk resolves the same fractions to the same
+    /// world heights and colours agree along shared edges, which
+    /// [`Style::with_height_bands_on`] cannot promise because it measures one
+    /// shape. Re-scaling the terrain's heights then only means changing the
+    /// range. A range that is empty, reversed or not finite has nothing to
+    /// spread the fractions over, so all bands start at `lowest` (or at `0.0`
+    /// if that is not finite) and only the highest shows.
+    #[must_use]
+    pub fn with_height_bands_in(self, bands: &[(f32, Color)], lowest: f32, highest: f32) -> Self {
+        let lowest = if lowest.is_finite() { lowest } else { 0.0 };
+        let span = if highest.is_finite() { (highest - lowest).max(0.0) } else { 0.0 };
+        let absolute: Vec<(f32, Color)> = bands
+            .iter()
+            .map(|&(f, col)| (lowest + span * if f.is_nan() { 0.0 } else { f }, col))
+            .collect();
+        self.with_height_bands(&absolute)
+    }
+
     /// Multiplies the alpha of both gradient colours by `alpha` (clamped to
     /// `0.0..=1.0`). [`Style::lerp`] blends the resulting colours, so the alpha
     /// fades smoothly.
@@ -1709,7 +1733,7 @@ mod height_band_tests {
         use bevy::math::{UVec2, Vec2};
         // Heights 0 and `top`, with skirts hanging 0.1 * 10 = 1 below.
         let heights: std::sync::Arc<[f32]> = vec![0.0, top, 0.0, top].into();
-        crate::shape::Shape::heightfield(heights, UVec2::new(2, 2), Vec2::splat(10.0), 1)
+        crate::shape::Shape::heightfield(heights, UVec2::new(2, 2), Vec2::splat(10.0))
     }
 
     fn palette(shape: &crate::shape::Shape, transform: &bevy::transform::components::Transform) -> Style {
@@ -1751,6 +1775,25 @@ mod height_band_tests {
             &Transform::IDENTITY,
         );
         assert_eq!(s.height_bands.unwrap().heights[..2], [-4.0, 12.0]);
+    }
+
+    #[test]
+    fn bands_in_an_explicit_range_agree_between_chunks() {
+        let bands = [(0.0, GRASS), (0.5, ROCK), (1.0, SNOW)];
+        // Two chunks of one terrain with different local heights get the same
+        // bands from the terrain's range, which `with_height_bands_on` would not give.
+        let a = Style::opaque(Color::WHITE).with_height_bands_in(&bands, -10.0, 30.0);
+        let b = Style::opaque(Color::WHITE).with_height_bands_in(&bands, -10.0, 30.0);
+        assert_eq!(a, b);
+        assert_eq!(a.height_bands.unwrap().heights[..3], [-10.0, 10.0, 30.0]);
+        // Fractions outside the range reach past it.
+        let past = Style::opaque(Color::WHITE).with_height_bands_in(&[(-0.5, GRASS), (1.5, SNOW)], 0.0, 8.0);
+        assert_eq!(past.height_bands.unwrap().heights[..2], [-4.0, 12.0]);
+        // A bad range collapses to its lowest point instead of producing NaN.
+        for (lo, hi) in [(5.0, 5.0), (5.0, 1.0), (5.0, f32::NAN), (f32::NAN, 1.0)] {
+            let s = Style::opaque(Color::WHITE).with_height_bands_in(&bands, lo, hi).height_bands.unwrap();
+            assert!(s.heights[..3].iter().all(|h| h.is_finite()), "{lo} {hi}");
+        }
     }
 
     #[test]
