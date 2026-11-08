@@ -38,6 +38,8 @@
 
 pub mod appearance;
 pub mod batch;
+#[cfg(feature = "clipmap")]
+pub mod clipmap;
 pub mod culling;
 pub mod deformation;
 mod geometry;
@@ -65,6 +67,10 @@ pub use appearance::{AppearanceSnapshot, AppearanceType};
 pub use batch::{Batch, BatchKey, BatchRecorder, InstanceProperties, InstanceTransform};
 pub use deformation::{Deformation, DeformationParams, DeformationType};
 pub use immediate::{BillboardMode, DepthTest, DepthWrite, RenderState};
+#[cfg(feature = "clipmap")]
+pub use clipmap::{
+    Clipmap, ClipmapPlugin, ClipmapSettings, HeightSource, MAX_CLIPMAP_BANDS, MAX_CLIPMAP_LEVELS,
+};
 #[cfg(feature = "pbr")]
 pub use immediate::{
     ImmediateRecorder, imm_additive, imm_dual_directional, imm_opaque, imm_transparent,

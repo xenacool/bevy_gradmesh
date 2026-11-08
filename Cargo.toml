@@ -28,6 +28,8 @@ too_many_arguments = "allow"
 default = ["pbr"]
 # PBR-based paths (ExtendedMaterial, instanced PBR pipeline). Disable for mobile / PBR-free builds.
 pbr = ["bevy/bevy_pbr"]
+# GPU geometry-clipmap terrain (`Clipmap`, `ClipmapPlugin`). Needs the PBR path.
+clipmap = ["pbr"]
 
 [dependencies]
 bevy = { version = "0.20", default-features = false, features = ["bevy_render", "bevy_sprite_render", "bevy_log", "bevy_text", "bevy_ui", "debug", "default_font"] }
@@ -98,6 +100,11 @@ path = "examples/terrain.rs"
 [[example]]
 name = "road"
 path = "examples/road.rs"
+
+[[example]]
+name = "clipmap"
+path = "examples/clipmap.rs"
+required-features = ["clipmap"]
 
 [[example]]
 name = "composed_shapes"
