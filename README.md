@@ -1,13 +1,11 @@
 # BevyGradmesh
 
 [![Crates.io](https://img.shields.io/crates/v/bevy_gradmesh.svg)](https://crates.io/crates/bevy_gradmesh)
-[![Downloads](https://img.shields.io/crates/d/bevy_gradmesh.svg)](https://crates.io/crates/bevy_gradmesh)
 [![docs.rs](https://img.shields.io/docsrs/bevy_gradmesh)](https://docs.rs/bevy_gradmesh)
 [![Bevy](https://img.shields.io/badge/Bevy-0.20-232326)](https://bevyengine.org/)
 [![Rust](https://img.shields.io/badge/rust-1.87%2B-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/crates/l/bevy_gradmesh.svg)](LICENSE-MIT)
 [![Last commit](https://img.shields.io/github/last-commit/xenacool/bevy_gradmesh)](https://github.com/xenacool/bevy_gradmesh/commits)
-[![Stars](https://img.shields.io/github/stars/xenacool/bevy_gradmesh?style=flat)](https://github.com/xenacool/bevy_gradmesh)
 
 Procedural mesh generation and gradient materials for [Bevy](https://bevyengine.org/).
 
