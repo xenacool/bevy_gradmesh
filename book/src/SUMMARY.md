@@ -14,3 +14,4 @@
 - [Level of Detail](./lod.md)
 - [Custom Pipeline](./custom-pipeline.md)
 - [Advanced Topics](./advanced.md)
+- [Gallery](./gallery.md)

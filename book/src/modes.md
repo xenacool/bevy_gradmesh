@@ -23,12 +23,13 @@ Per-frame draw/dispose pattern using `ImmediateRecorder`. Supports push/pop stat
 ```rust
 use bevy_gradmesh::{ImmediateRecorder, imm_opaque};
 
-fn draw_frame(mut recorder: ResMut<ImmediateRecorder>) {
+fn draw_frame(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>,
+              mut recorder: ResMut<ImmediateRecorder>) {
     recorder.begin();
     
     recorder.push_state();
     recorder.set_position(Vec3::new(1.0, 0.0, 0.0));
-    recorder.sphere(0.5, ShapeDetail::Medium, imm_opaque([1.0, 0.0, 0.0, 1.0]));
+    recorder.sphere(0.5, ShapeDetail::Medium, imm_opaque(1.0, 0.0, 0.0));
     recorder.pop_state();
     
     recorder.render(&mut commands, &mut meshes);
@@ -48,15 +49,19 @@ Persistent shapes managed by handle. Create once, update per-frame.
 ```rust
 use bevy_gradmesh::{RetainedWorld, GradMeshHandle};
 
-fn setup(mut retained: ResMut<RetainedWorld>) {
-    let handle = retained.create(
-        Shape::sphere(1.0, ShapeDetail::Medium),
-        imm_opaque([1.0, 0.0, 0.0, 1.0]),
+fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>,
+         mut retained: ResMut<RetainedWorld>,
+         mut handles: ResMut<Assets<GradMeshHandle>>) {
+    let handle = retained.sphere(
+        &mut commands, &mut meshes, 1.0, ShapeDetail::Medium,
+        [1.0, 0.0, 0.0, 1.0],
     );
+    let handle_res = handles.add(handle);
 }
 
-fn update(mut retained: ResMut<RetainedWorld>, handle: Res<GradMeshHandle>) {
-    retained.set_position(*handle, Vec3::new(0.0, time.sin(), 0.0));
+fn update(mut retained: ResMut<RetainedWorld>, time: Res<Time>,
+          handle: Res<GradMeshHandle>) {
+    retained.set_position(*handle, Vec3::new(0.0, time.elapsed_secs().sin(), 0.0));
 }
 ```
 

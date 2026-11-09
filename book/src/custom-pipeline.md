@@ -68,7 +68,7 @@ fn render(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
 
 | Feature | PBR Pipeline (`InstancedBatchData`) | Standalone Pipeline (`StandaloneBatchData`) |
 |---|---|---|
-| Shader | `gradmesh.wesl` (PBR imports) | `standalone.wgsl` (no imports) |
+| Shader | `gradmesh.wgsl` (PBR imports) | `standalone.wgsl` (no imports) |
 | Descriptor sets | One per material specialization | One shared across all batches |
 | Lighting | Full PBR lighting | None (gradient shading only) |
 | Shadows | Supported | Not supported |

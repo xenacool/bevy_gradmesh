@@ -26,6 +26,14 @@ BevyGradmesh follows these principles:
 3. **Performance-first**: GPU instancing and dirty tracking minimize draw calls
 4. **Flexible**: Multiple rendering modes for different patterns
 
+## Key Terms
+
+- **Gradient direction**: A 3D vector defining which axis the gradient runs along. Vertices on one side of the shape get the dark color; vertices on the opposite side get the light color.
+- **OKLAB**: A color space designed so that equal distances correspond to equal perceived color differences. Gradients in OKLAB look smoother and more natural than linear RGB interpolation. OKLCH is the same space in polar form (lightness, chroma, hue), so blends sweep around the hue wheel.
+- **Blend mode**: How a shape's color combines with what's behind it. Common modes include *opaque* (solid, no transparency), *transparent* (alpha-blended), *additive* (colors add together, creating a glow effect), *multiplicative* (colors multiply, darkening the result), *screen* (the opposite of multiply, lightening the result), and *dither* (uses a pattern to simulate intermediate alpha levels).
+- **PBR (Physically-Based Rendering)**: A shading model that simulates how light interacts with real-world materials. Parameters include *roughness* (how smooth or rough a surface is), *metallicity* (whether a surface is metallic or dielectric), and *emissive* (light the material emits on its own, like a glowing screen).
+- **Detail level**: Controls the number of vertices and triangles in a generated mesh. Higher detail produces smoother curves but uses more GPU memory and processing.
+
 ## Compatibility
 
 | bevy_gradmesh | Bevy | Rust |

@@ -14,7 +14,7 @@ bevy_gradmesh = "0.3"
 
 ```rust
 use bevy::prelude::*;
-use bevy_gradmesh::{GradMeshPlugin, Shape, ShapeDetail, dual_directional};
+use bevy_gradmesh::{GradMeshMaterial, GradMeshPlugin, Shape, ShapeDetail, dual_directional};
 
 fn main() {
     App::new()
@@ -27,7 +27,7 @@ fn main() {
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<GradMeshMaterial>>,
 ) {
     // Camera
     commands.spawn(Camera3d::from_transform(

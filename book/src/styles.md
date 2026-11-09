@@ -88,45 +88,48 @@ let mat = dual_radial(
 ### Opaque
 ```rust
 use bevy_gradmesh::opaque;
-let mat = opaque([1.0, 0.0, 0.0, 1.0]);
+let mat = opaque(1.0, 0.0, 0.0);
 ```
 
 ### Transparent
 ```rust
 use bevy_gradmesh::transparent;
-let mat = transparent([1.0, 0.0, 0.0, 0.5]);
+let mat = transparent(1.0, 0.0, 0.0, 0.5);
 ```
 
 ### Additive (Glow Effect)
 ```rust
 use bevy_gradmesh::additive;
-let mat = additive([1.0, 0.5, 0.0, 1.0]);
+let mat = additive(1.0, 0.5, 0.0);
 ```
 
 ### Multiplicative
 ```rust
 use bevy_gradmesh::multiplicative;
-let mat = multiplicative([0.5, 0.5, 0.5, 1.0]);
+let mat = multiplicative(0.5, 0.5, 0.5);
 ```
 
 ### Screen
 ```rust
 use bevy_gradmesh::screen;
-let mat = screen([1.0, 1.0, 0.0, 1.0]);
+let mat = screen(1.0, 1.0, 0.0);
 ```
 
 ### Dither
 ```rust
 use bevy_gradmesh::dither;
-let mat = dither([1.0, 0.0, 0.0, 0.5]);
+let mat = dither(1.0, 0.0, 0.0, 0.5);
 ```
 
 ### Dashed Outlines
+
+Use `Style::with_dash` to add a dash pattern to any style:
+
 ```rust
-use bevy_gradmesh::{dashed, Dash, DashType};
-let mat = dashed(
-    [1.0, 1.0, 1.0, 1.0],
-    Dash::new(4, DashType::Normal, 0.2, 0.0),
+use bevy_gradmesh::{Style, Dash};
+
+let style = Style::opaque(Color::WHITE).with_dash(
+    Dash::fixed(4, 0.2),
 );
 ```
 

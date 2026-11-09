@@ -81,3 +81,7 @@ let collider = Collider::convex_hull_from_mesh(&mesh);
 - No visual editor integration (Bevy has no editor)
 - NURBS curves not supported (only cubic Bézier)
 - No secondary LOD membership during transitions
+
+## License
+
+Dual-licensed under MIT or Apache-2.0.
