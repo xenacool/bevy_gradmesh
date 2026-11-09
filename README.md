@@ -9,7 +9,7 @@
 
 Procedural mesh generation and gradient materials for [Bevy](https://bevyengine.org/).
 
-BevyGradmesh provides a clean API for generating procedural 3D primitives with proper geometry, detail levels, and gradient shading — inspired by Freya Holmér's work.
+BevyGradmesh provides a clean API for generating procedural 3D primitives with proper geometry, detail levels, and gradient shading inspired by Freya Holmér's work.
 
 ## Quick Start
 
