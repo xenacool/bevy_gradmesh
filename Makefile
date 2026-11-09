@@ -1,66 +1,70 @@
+EXAMPLES = shapes styles mix_spaces curves pbr_effects arbitrary_shapes composed_shapes sdf_dash_gallery sweep terrain road character_creator immediate polyline deformation retained gradient_2d sdf_2d standalone instanced appearance
 
-EXAMPLES = shapes styles mix_spaces character_creator immediate curves polyline pbr_effects deformation retained arbitrary_shapes gradient_2d composed_shapes sweep terrain road sdf_2d sdf_dash_gallery standalone instanced
+# Examples that change over time are recorded as animated WebP; the rest are still PNGs.
+STILLS = shapes styles mix_spaces curves pbr_effects arbitrary_shapes composed_shapes sdf_dash_gallery sweep terrain road
+# Animations are lossy and downscaled to keep each file well under a megabyte.
+ANIMATION_WIDTH = 480
+ANIMATION_QUALITY = 30
+ANIMATIONS = character_creator immediate polyline deformation retained gradient_2d sdf_2d standalone instanced appearance
 
 .PHONY: $(EXAMPLES) all-examples screenshots clean
 
 all-examples:
 	cargo build --examples
-shapes:
-	cargo run --example shapes
 
-styles:
-	cargo run --example styles
-
-character:
-	cargo run --example character_creator
-
-immediate:
-	cargo run --example immediate
-
-mix_spaces:
-	cargo run --example mix_spaces
-
-curves:
-	cargo run --example curves
-
-polyline:
-	cargo run --example polyline
-
-pbr_effects:
-	cargo run --example pbr_effects
-
-deformation:
-	cargo run --example deformation
-
-retained:
-	cargo run --example retained
-
-arbitrary_shapes:
-	cargo run --example arbitrary_shapes
-
-gradient_2d:
-	cargo run --example gradient_2d
-
-composed_shapes:
-	cargo run --example composed_shapes
-
-SCREENSHOTS = screenshot_shapes.png screenshot_styles.png screenshot_mix_spaces.png screenshot_character_creator.png screenshot_immediate.png screenshot_curves.png screenshot_polyline.png screenshot_pbr_effects.png screenshot_deformation.png screenshot_retained.png screenshot_arbitrary_shapes.png screenshot_gradient_2d.png screenshot_composed_shapes.png screenshot_sdf_2d.png screenshot_sdf_dash_gallery.png screenshot_sweep.png screenshot_terrain.png screenshot_road.png screenshot_standalone.png screenshot_instanced.png
+$(EXAMPLES):
+	cargo run --example $@
 
 # Detect whether we need a virtual display for screenshot capture
 # XVFB_RUN is set to "xvfb-run --auto-servernum --server-args='-screen 0 1280x720x24'" when no display is found
 XVFB_RUN := $(shell if [ -z "$$DISPLAY" ] && [ -z "$$WAYLAND_DISPLAY" ] && [ -z "$$WAYLAND_SOCKET" ] && command -v xvfb-run >/dev/null 2>&1; then echo "xvfb-run --auto-servernum --server-args='-screen 0 1280x720x24'"; fi)
 
+# Arguments: example name. Still screenshot saved to screenshots/screenshot_<name>.png.
 define capture_screenshot
 	@echo "=== Capturing $(1) screenshot ==="
 	$(XVFB_RUN) env DSD_SCREENSHOT=1 timeout 120 cargo run --example $(1) 2>&1 || true
 	@if [ -f screenshot_$(1).png ]; then \
 		if command -v pngcrush >/dev/null 2>&1; then \
 			pngcrush -rem all -reduce screenshot_$(1).png screenshots/screenshot_$(1).png; \
+			rm -f screenshot_$(1).png; \
 		else \
 			mv screenshot_$(1).png screenshots/; \
 		fi \
+	else \
+		echo "Warning: no screenshot produced for $(1)"; \
 	fi
 endef
+
+# Arguments: example name. Frames are captured on a fixed 30fps clock (one app tick is one
+# frame), so they are encoded at 30fps and the animation plays back in real time. Frames are
+# saved in the gitignored `frames/` directory and removed after encoding.
+define capture_animation
+	@echo "=== Capturing $(1) animation ==="
+	@mkdir -p frames
+	@rm -f frames/screenshot_$(1)_frame_*.png
+	$(XVFB_RUN) env DSD_SCREENSHOT=1 timeout 600 cargo run --example $(1) 2>&1 || true
+	@if ls frames/screenshot_$(1)_frame_*.png 1>/dev/null 2>&1; then \
+		echo "Encoding frames to WebP..."; \
+		ffmpeg -y -framerate 30 -i frames/screenshot_$(1)_frame_%04d.png \
+			-vf "scale=$(ANIMATION_WIDTH):-2:flags=lanczos" \
+			-vcodec libwebp -lossless 0 -quality $(ANIMATION_QUALITY) -compression_level 6 -loop 0 \
+			screenshots/screenshot_$(1).webp 2>/dev/null && \
+		echo "Saved screenshots/screenshot_$(1).webp" || \
+		echo "Warning: ffmpeg WebP encoding failed for $(1)"; \
+		rm -f frames/screenshot_$(1)_frame_*.png; \
+	else \
+		echo "Warning: no frames found for $(1)"; \
+	fi
+endef
+
+# One target per example: `make screenshot-<name>` refreshes just that file.
+$(addprefix screenshot-,$(STILLS)): screenshot-%:
+	@mkdir -p screenshots
+	$(call capture_screenshot,$*)
+
+$(addprefix screenshot-,$(ANIMATIONS)): screenshot-%:
+	@mkdir -p screenshots
+	$(call capture_animation,$*)
 
 screenshots:
 	@echo "=== Building all examples ==="
@@ -71,27 +75,15 @@ screenshots:
 	@echo ""
 	$(call capture_screenshot,styles)
 	@echo ""
-	$(call capture_screenshot,character_creator)
-	@echo ""
-	$(call capture_screenshot,immediate)
+	$(call capture_screenshot,mix_spaces)
 	@echo ""
 	$(call capture_screenshot,curves)
 	@echo ""
-	$(call capture_screenshot,polyline)
-	@echo ""
 	$(call capture_screenshot,pbr_effects)
-	@echo ""
-	$(call capture_screenshot,deformation)
-	@echo ""
-	$(call capture_screenshot,retained)
 	@echo ""
 	$(call capture_screenshot,arbitrary_shapes)
 	@echo ""
-	$(call capture_screenshot,gradient_2d)
-	@echo ""
 	$(call capture_screenshot,composed_shapes)
-	@echo ""
-	$(call capture_screenshot,sdf_2d)
 	@echo ""
 	$(call capture_screenshot,sdf_dash_gallery)
 	@echo ""
@@ -101,9 +93,25 @@ screenshots:
 	@echo ""
 	$(call capture_screenshot,road)
 	@echo ""
-	$(call capture_screenshot,standalone)
+	$(call capture_animation,character_creator)
 	@echo ""
-	$(call capture_screenshot,instanced)
+	$(call capture_animation,immediate)
+	@echo ""
+	$(call capture_animation,polyline)
+	@echo ""
+	$(call capture_animation,deformation)
+	@echo ""
+	$(call capture_animation,retained)
+	@echo ""
+	$(call capture_animation,gradient_2d)
+	@echo ""
+	$(call capture_animation,sdf_2d)
+	@echo ""
+	$(call capture_animation,standalone)
+	@echo ""
+	$(call capture_animation,instanced)
+	@echo ""
+	$(call capture_animation,appearance)
 	@echo ""
 	@echo "=== Screenshots saved to screenshots/ ==="
 	@ls -la screenshots/

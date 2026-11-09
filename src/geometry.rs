@@ -202,11 +202,17 @@ pub(crate) fn heightfield_mesh(
     extent: Vec2,
     heights: &[f32],
     holes: Option<&[bool]>,
+    hole_edge: crate::shape::HoleEdge,
     border: Option<&crate::shape::HeightfieldBorder>,
 ) -> Mesh {
     if let Err(why) = heightfield_check(size, heights.len(), holes, border) {
         bevy::log::warn!("heightfield: {why}; building an empty mesh");
         return MeshData::default().into_mesh(false);
+    }
+    if let Some(holes) = holes
+        && hole_edge != crate::shape::HoleEdge::Cells
+    {
+        return heightfield_mesh_cut(size, extent, heights, holes, hole_edge, border);
     }
     let (sx, sy) = (size.x as usize, size.y as usize);
     let hx = extent.x / (sx - 1) as f32;
@@ -284,6 +290,296 @@ pub(crate) fn heightfield_mesh(
         }
     }
     data.into_mesh(false)
+}
+
+// --- Heightfield hole outlines ---
+
+/// The coverage a point needs to count as land.
+const HOLE_ISO: f32 = 0.5;
+
+/// A cut this close to a vertex is moved onto it, so no sliver triangles remain.
+const CUT_SNAP: f32 = 1e-4;
+
+/// A point of the cut heightfield: a source vertex (a grid vertex, or the
+/// centre vertex of a cell, which comes after all grid vertices) or the point
+/// where the outline crosses the edge between two source vertices (lowest key
+/// first, so that both triangles sharing the edge find the same point).
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum CutPoint {
+    Source(u32),
+    Cut(u32, u32),
+}
+
+/// Source vertices of a cut heightfield with their land coverage: the outline
+/// runs where the coverage crosses [`HOLE_ISO`], linear along every edge.
+struct CutGrid {
+    pos: Vec<Vec3>,
+    nrm: Vec<Vec3>,
+    uv: Vec<Vec2>,
+    cover: Vec<f32>,
+}
+
+impl CutGrid {
+    fn cut_t(&self, lo: u32, hi: u32) -> f32 {
+        let (a, b) = (self.cover[lo as usize], self.cover[hi as usize]);
+        (HOLE_ISO - a) / (b - a)
+    }
+
+    /// Where the outline crosses the edge between `a` and `b`, which must lie
+    /// on different sides of it.
+    fn cut(&self, a: u32, b: u32) -> CutPoint {
+        let (lo, hi) = if a < b { (a, b) } else { (b, a) };
+        let t = self.cut_t(lo, hi);
+        if t <= CUT_SNAP {
+            CutPoint::Source(lo)
+        } else if t >= 1.0 - CUT_SNAP {
+            CutPoint::Source(hi)
+        } else {
+            CutPoint::Cut(lo, hi)
+        }
+    }
+
+    fn vertex(&self, p: CutPoint) -> (Vec3, Vec3, Vec2) {
+        match p {
+            CutPoint::Source(k) => (self.pos[k as usize], self.nrm[k as usize], self.uv[k as usize]),
+            CutPoint::Cut(lo, hi) => {
+                let (lo, hi) = (lo as usize, hi as usize);
+                let t = self.cut_t(lo as u32, hi as u32);
+                (
+                    self.pos[lo].lerp(self.pos[hi], t),
+                    self.nrm[lo].lerp(self.nrm[hi], t).normalize_or(Vec3::Y),
+                    self.uv[lo].lerp(self.uv[hi], t),
+                )
+            }
+        }
+    }
+}
+
+/// Mesh under construction: vertices are created the first time a point is used.
+struct CutMesh {
+    data: MeshData,
+    ids: std::collections::HashMap<CutPoint, u32>,
+    skirt_ids: std::collections::HashMap<CutPoint, u32>,
+    skirt: f32,
+}
+
+impl CutMesh {
+    fn id(&mut self, grid: &CutGrid, p: CutPoint) -> u32 {
+        if let Some(&i) = self.ids.get(&p) {
+            return i;
+        }
+        let (pos, nrm, uv) = grid.vertex(p);
+        let i = self.data.push(pos, nrm, uv, WHITE);
+        self.ids.insert(p, i);
+        i
+    }
+
+    /// A skirt under the chunk edge from `p` to `q`, walked with the land on
+    /// the left as seen from above.
+    fn skirt(&mut self, grid: &CutGrid, p: CutPoint, q: CutPoint) {
+        if p == q {
+            return;
+        }
+        let (pi, qi) = (self.id(grid, p), self.id(grid, q));
+        let drop = |mesh: &mut Self, point: CutPoint, top: u32| {
+            if let Some(&i) = mesh.skirt_ids.get(&point) {
+                return i;
+            }
+            let i = mesh.data.push(
+                mesh.data.positions[top as usize] - Vec3::Y * mesh.skirt,
+                mesh.data.normals[top as usize],
+                mesh.data.uvs[top as usize],
+                WHITE,
+            );
+            mesh.skirt_ids.insert(point, i);
+            i
+        };
+        let (pd, qd) = (drop(self, p, pi), drop(self, q, qi));
+        self.data.tri(qi, pi, qd);
+        self.data.tri(pi, pd, qd);
+    }
+}
+
+/// Land coverage of every cell centre: 1 for land, 0 for a hole. With
+/// [`HoleEdge::Smooth`](crate::shape::HoleEdge::Smooth) the mask is blurred over
+/// the 3 x 3 cells around, then pushed back to at least 0.75 on land and at most
+/// 0.25 on a hole, so that no hole and no island of land can vanish.
+fn heightfield_cell_cover(
+    sx: usize,
+    sy: usize,
+    holes: &[bool],
+    edge: crate::shape::HoleEdge,
+) -> Vec<f32> {
+    let (cw, ch) = (sx - 1, sy - 1);
+    let land = |x: usize, y: usize| if holes[x + y * cw] { 0.0 } else { 1.0 };
+    let mut cover = Vec::with_capacity(cw * ch);
+    for y in 0..ch {
+        for x in 0..cw {
+            let own = land(x, y);
+            if edge != crate::shape::HoleEdge::Smooth {
+                cover.push(own);
+                continue;
+            }
+            const WEIGHTS: [[f32; 3]; 3] = [[1.0, 2.0, 1.0], [2.0, 4.0, 2.0], [1.0, 2.0, 1.0]];
+            let mut sum = 0.0;
+            for (dy, row) in WEIGHTS.iter().enumerate() {
+                for (dx, w) in row.iter().enumerate() {
+                    let nx = (x + dx).saturating_sub(1).min(cw - 1);
+                    let ny = (y + dy).saturating_sub(1).min(ch - 1);
+                    sum += w * land(nx, ny);
+                }
+            }
+            let blurred = sum / 16.0;
+            cover.push(if own > 0.5 { blurred.max(0.75) } else { blurred.min(0.25) });
+        }
+    }
+    cover
+}
+
+/// [`heightfield_mesh`] with the outline of the holes cut through the cells.
+///
+/// Every cell that touches the outline gets a centre vertex and is built as
+/// four triangles around it, each clipped to the land. Cells that are land from
+/// corner to corner keep the two triangles of the plain mesh, so the two meshes
+/// agree away from the holes and share their edge vertices.
+fn heightfield_mesh_cut(
+    size: bevy::math::UVec2,
+    extent: Vec2,
+    heights: &[f32],
+    holes: &[bool],
+    edge: crate::shape::HoleEdge,
+    border: Option<&crate::shape::HeightfieldBorder>,
+) -> Mesh {
+    let (sx, sy) = (size.x as usize, size.y as usize);
+    let (cw, ch) = (sx - 1, sy - 1);
+    let hx = extent.x / cw as f32;
+    let hz = extent.y / ch as f32;
+    let at = |x: usize, y: usize| heights[x + y * sx];
+    let used = heightfield_used(sx, sy, Some(holes));
+    let cell_cover = heightfield_cell_cover(sx, sy, holes, edge);
+
+    let mut grid = CutGrid {
+        pos: Vec::with_capacity(sx * sy + cw * ch),
+        nrm: Vec::with_capacity(sx * sy + cw * ch),
+        uv: Vec::with_capacity(sx * sy + cw * ch),
+        cover: Vec::with_capacity(sx * sy + cw * ch),
+    };
+    for y in 0..sy {
+        for x in 0..sx {
+            let c = at(x, y);
+            let left = if x > 0 { Some(at(x - 1, y)) } else { border.map(|b| b.west[y]) };
+            let right = if x + 1 < sx { Some(at(x + 1, y)) } else { border.map(|b| b.east[y]) };
+            let back = if y > 0 { Some(at(x, y - 1)) } else { border.map(|b| b.north[x]) };
+            let front = if y + 1 < sy { Some(at(x, y + 1)) } else { border.map(|b| b.south[x]) };
+            let slope = |lo: Option<f32>, hi: Option<f32>, step: f32| match (lo, hi) {
+                (Some(l), Some(r)) => (r - l) / (2.0 * step),
+                (Some(l), None) => (c - l) / step,
+                (None, Some(r)) => (r - c) / step,
+                (None, None) => 0.0,
+            };
+            grid.nrm.push(Vec3::new(-slope(left, right, hx), 1.0, -slope(back, front, hz)).normalize());
+            grid.pos.push(Vec3::new(
+                (x as f32 / cw as f32 - 0.5) * extent.x,
+                c,
+                (y as f32 / ch as f32 - 0.5) * extent.y,
+            ));
+            grid.uv.push(Vec2::new(x as f32 / cw as f32, y as f32 / ch as f32));
+            // Coverage of a grid vertex: the mean over the cells around it.
+            let (mut sum, mut count) = (0.0, 0.0);
+            for cy in y.saturating_sub(1)..=y.min(ch - 1) {
+                for cx in x.saturating_sub(1)..=x.min(cw - 1) {
+                    sum += cell_cover[cx + cy * cw];
+                    count += 1.0;
+                }
+            }
+            grid.cover.push(sum / count);
+        }
+    }
+    let key = |x: usize, y: usize| (x + y * sx) as u32;
+    for cy in 0..ch {
+        for cx in 0..cw {
+            let corners = [key(cx, cy), key(cx, cy + 1), key(cx + 1, cy + 1), key(cx + 1, cy)];
+            let on_land: Vec<u32> = corners.iter().copied().filter(|&k| used[k as usize]).collect();
+            let from = if on_land.is_empty() { &corners[..] } else { &on_land[..] };
+            let height = from.iter().map(|&k| grid.pos[k as usize].y).sum::<f32>() / from.len() as f32;
+            let mean = |f: &dyn Fn(u32) -> Vec3| corners.iter().map(|&k| f(k)).sum::<Vec3>() / 4.0;
+            let centre = mean(&|k| grid.pos[k as usize]);
+            grid.pos.push(Vec3::new(centre.x, height, centre.z));
+            grid.nrm.push(mean(&|k| grid.nrm[k as usize]).normalize_or(Vec3::Y));
+            let uv = corners.iter().map(|&k| grid.uv[k as usize]).sum::<Vec2>() / 4.0;
+            grid.uv.push(uv);
+            grid.cover.push(cell_cover[cx + cy * cw]);
+        }
+    }
+
+    let mut mesh = CutMesh {
+        data: MeshData::default(),
+        ids: std::collections::HashMap::new(),
+        skirt_ids: std::collections::HashMap::new(),
+        skirt: heightfield_skirt_depth(extent),
+    };
+    for cy in 0..ch {
+        for cx in 0..cw {
+            let centre = (sx * sy + cx + cy * cw) as u32;
+            let corners = [key(cx, cy), key(cx, cy + 1), key(cx + 1, cy + 1), key(cx + 1, cy)];
+            // Side `i` of the cell runs from corner `i` to corner `i + 1`.
+            let on_chunk_edge = [cx == 0, cy + 1 == sy - 1, cx + 1 == sx - 1, cy == 0];
+            let land = |k: u32| grid.cover[k as usize] >= HOLE_ISO;
+            if land(centre) && corners.iter().all(|&k| land(k)) {
+                let ids = corners.map(|k| mesh.id(&grid, CutPoint::Source(k)));
+                mesh.data.tri(ids[0], ids[1], ids[3]);
+                mesh.data.tri(ids[3], ids[1], ids[2]);
+                for i in 0..4 {
+                    if on_chunk_edge[i] {
+                        let (p, q) = (corners[i], corners[(i + 1) % 4]);
+                        mesh.skirt(&grid, CutPoint::Source(p), CutPoint::Source(q));
+                    }
+                }
+                continue;
+            }
+            for i in 0..4 {
+                let (p, q) = (corners[i], corners[(i + 1) % 4]);
+                let triangle = [centre, p, q];
+                // Clip the triangle to the land.
+                let mut polygon: Vec<CutPoint> = Vec::with_capacity(4);
+                for j in 0..3 {
+                    let (a, b) = (triangle[j], triangle[(j + 1) % 3]);
+                    let (a_in, b_in) = (land(a), land(b));
+                    if a_in {
+                        polygon.push(CutPoint::Source(a));
+                    }
+                    if a_in != b_in {
+                        polygon.push(grid.cut(a, b));
+                    }
+                }
+                polygon.dedup();
+                while polygon.len() > 1 && polygon.first() == polygon.last() {
+                    polygon.pop();
+                }
+                if polygon.len() < 3 {
+                    continue;
+                }
+                let ids: Vec<u32> = polygon.iter().map(|&pt| mesh.id(&grid, pt)).collect();
+                for j in 1..ids.len() - 1 {
+                    mesh.data.tri(ids[0], ids[j], ids[j + 1]);
+                }
+                if on_chunk_edge[i] {
+                    let on_side = |pt: CutPoint| {
+                        pt == CutPoint::Source(p)
+                            || pt == CutPoint::Source(q)
+                            || pt == CutPoint::Cut(p.min(q), p.max(q))
+                    };
+                    for j in 0..polygon.len() {
+                        let (a, b) = (polygon[j], polygon[(j + 1) % polygon.len()]);
+                        if on_side(a) && on_side(b) {
+                            mesh.skirt(&grid, a, b);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    mesh.data.into_mesh(false)
 }
 
 // --- Sweep ---

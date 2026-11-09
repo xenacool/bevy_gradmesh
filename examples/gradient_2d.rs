@@ -39,6 +39,7 @@ fn main() {
         .add_plugins(GradMeshPlugin)
         .add_plugins(
             AutoScreenshotPlugin::new("screenshot_gradient_2d.png")
+                .animation(3.0)
                 .with_title("2D Gradients")
                 .with_description("Mesh2d shapes with the unlit gradient material, no 3D camera"),
         )

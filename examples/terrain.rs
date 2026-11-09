@@ -3,6 +3,11 @@
 //! holes (no triangles, no skirt, see-through), and the height bands are given
 //! as fractions of the land's own height.
 //!
+//! The front row cuts the same round hole three ways with `HoleEdge`: whole cells
+//! (a staircase, the cheapest), rounded corners and a smoothed outline. Each
+//! label shows the triangle count of that chunk; the example asserts that the
+//! cost grows with the smoothness and that no level closes the one-cell hole.
+//!
 //! Run with: `cargo run --example terrain`
 
 mod common;
@@ -11,7 +16,7 @@ use bevy::prelude::*;
 use bevy::render::RenderPlugin;
 use bevy_gradmesh::{
     GradMeshMaterial, GradMeshMaterialPool, GradMeshPlugin, HeightfieldBorder, HeightfieldOptions,
-    MeshCache, Shape, Style,
+    HoleEdge, MeshCache, Shape, Style,
 };
 use common::screenshot::{AutoScreenshotPlugin, spawn_world_label};
 use std::sync::Arc;
@@ -20,6 +25,9 @@ use std::sync::Arc;
 const SAMPLES: u32 = 25;
 /// World size of a chunk side.
 const EXTENT: f32 = 8.0;
+/// Samples and world size of a chunk side in the front row.
+const SMALL_SAMPLES: u32 = 13;
+const SMALL_EXTENT: f32 = 5.0;
 
 fn main() {
     App::new()
@@ -42,7 +50,7 @@ fn main() {
         .add_plugins(
             AutoScreenshotPlugin::new("screenshot_terrain.png")
                 .with_title("Terrain chunks")
-                .with_description("Seamless chunk edges, holes without skirts, relative height bands")
+                .with_description("Seamless chunk edges, relative height bands, three ways to cut a hole")
                 .wait_frames(3),
         )
         .add_systems(Startup, setup)
@@ -95,6 +103,42 @@ fn chunk_holes(cx: f32, cz: f32) -> Vec<bool> {
     holes
 }
 
+/// Cell mask of a small chunk: a round hole in the middle and a one-cell hole
+/// beside it, the smallest thing a hole outline must not lose.
+fn small_holes() -> Vec<bool> {
+    let step = SMALL_EXTENT / (SMALL_SAMPLES - 1) as f32;
+    let cells = SMALL_SAMPLES - 1;
+    let mut holes = Vec::with_capacity((cells * cells) as usize);
+    for row in 0..cells {
+        for col in 0..cells {
+            let x = -SMALL_EXTENT / 2.0 + (col as f32 + 0.5) * step;
+            let z = -SMALL_EXTENT / 2.0 + (row as f32 + 0.5) * step;
+            let round = Vec2::new(x + 0.3, z).length() < 1.25;
+            let single = (col, row) == (cells - 2, 2);
+            holes.push(round || single);
+        }
+    }
+    holes
+}
+
+/// A gentle rise, so the cut cells are not all flat.
+fn small_heights() -> Vec<f32> {
+    let step = SMALL_EXTENT / (SMALL_SAMPLES - 1) as f32;
+    let mut heights = Vec::with_capacity((SMALL_SAMPLES * SMALL_SAMPLES) as usize);
+    for row in 0..SMALL_SAMPLES {
+        for col in 0..SMALL_SAMPLES {
+            let x = -SMALL_EXTENT / 2.0 + col as f32 * step;
+            let z = -SMALL_EXTENT / 2.0 + row as f32 * step;
+            heights.push(0.35 + 0.12 * (x * 1.3).sin() * (z * 1.1).cos());
+        }
+    }
+    heights
+}
+
+fn triangle_count(meshes: &Assets<Mesh>, handle: &Handle<Mesh>) -> usize {
+    meshes.get(handle).and_then(|mesh| mesh.indices()).map_or(0, |indices| indices.len() / 3)
+}
+
 fn setup(
     mut commands: Commands,
     mut cache: ResMut<MeshCache>,
@@ -104,7 +148,7 @@ fn setup(
 ) {
     commands.spawn((
         Camera3d::default(),
-        Transform::from_xyz(0.0, 13.5, 17.0).looking_at(Vec3::new(0.0, -0.8, 1.0), Vec3::Y),
+        Transform::from_xyz(0.0, 19.0, 25.0).looking_at(Vec3::new(0.0, -0.8, 3.2), Vec3::Y),
     ));
     commands.spawn((
         DirectionalLight {
@@ -153,7 +197,9 @@ fn setup(
         // Only the chunk in the +X/+Z corner gets holes.
         let mut options = HeightfieldOptions::default().with_border(border);
         if index == 3 {
-            options = options.with_holes(chunk_holes(cx, cz));
+            options = options
+                .with_holes(chunk_holes(cx, cz))
+                .with_hole_edge(HoleEdge::Smooth);
         }
         let shape = Shape::heightfield_with_options(
             Arc::from(heights),
@@ -168,12 +214,48 @@ fn setup(
         ));
     }
 
+    // The same round hole cut three ways, cheapest first.
+    let small_style = Style::shaded(Color::srgb(0.42, 0.62, 0.32), 0.5).with_perceptual_roughness(0.9);
+    let levels = [
+        (HoleEdge::Cells, "HoleEdge::Cells"),
+        (HoleEdge::Rounded, "HoleEdge::Rounded"),
+        (HoleEdge::Smooth, "HoleEdge::Smooth"),
+    ];
+    let mut counts = Vec::new();
+    for (index, (edge, name)) in levels.into_iter().enumerate() {
+        let x = (index as f32 - 1.0) * 6.6;
+        let z = 12.5;
+        let shape = Shape::heightfield_with_options(
+            Arc::from(small_heights()),
+            UVec2::splat(SMALL_SAMPLES),
+            Vec2::splat(SMALL_EXTENT),
+            HeightfieldOptions::default()
+                .with_holes(small_holes())
+                .with_hole_edge(edge),
+        );
+        let handle = cache.get_or_build_handle(&shape, &mut meshes);
+        let triangles = triangle_count(&meshes, &handle);
+        counts.push(triangles);
+        commands.spawn((
+            Mesh3d(handle),
+            MeshMaterial3d(pool.get_or_add(&small_style, &mut materials)),
+            Transform::from_xyz(x, 0.0, z),
+        ));
+        spawn_world_label(
+            &mut commands,
+            &format!("{name}: {triangles} triangles"),
+            Vec3::new(x, 0.9, z + SMALL_EXTENT / 2.0 + 0.4),
+        );
+    }
+    // Smoother costs more, and the three chunks differ.
+    assert!(counts[0] < counts[1] && counts[1] <= counts[2], "triangles per level: {counts:?}");
+
     // A dark floor far below, so the holes read as holes.
-    let floor = Shape::cuboid(Vec3::new(15.0, 0.2, 15.0), 0.0, bevy_gradmesh::ShapeDetail::Low);
+    let floor = Shape::cuboid(Vec3::new(24.0, 0.2, 31.0), 0.0, bevy_gradmesh::ShapeDetail::Low);
     commands.spawn((
         Mesh3d(cache.get_or_build_handle(&floor, &mut meshes)),
         MeshMaterial3d(pool.get_or_add(&Style::shaded(Color::srgb(0.12, 0.1, 0.16), 0.5), &mut materials)),
-        Transform::from_xyz(0.0, -1.0, 0.0),
+        Transform::from_xyz(0.0, -1.0, 4.0),
     ));
 
     spawn_world_label(&mut commands, "Crest on the chunk corner: no crease", Vec3::new(0.0, 5.4, 0.0));

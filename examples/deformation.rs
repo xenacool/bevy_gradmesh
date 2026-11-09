@@ -35,6 +35,7 @@ fn main() {
         .add_plugins(GradMeshPlugin)
         .add_plugins(
             AutoScreenshotPlugin::new("screenshot_deformation.png")
+                .animation(3.0)
                 .with_title("Deformation")
                 .with_description("Wobble, pulse, and morph vertex shader animations")
                 .wait_frames(10),

@@ -26,6 +26,10 @@ let material = Style::dual_radial(Color::WHITE, Color::srgb(0.9, 0.4, 0.5)).buil
 - `Shape::polyline_2d` and `Shape::bezier_2d` build flat curves with thickness (`u` runs along the
   curve, `v` across it).
 
+![2D gradients](screenshots/screenshot_gradient_2d.webp)
+
+*Gradient cards, a translucent dragged card layered by z, a radial disc, a pulsing star, a dashed ring and a polygon with a hole. Run `cargo run --example gradient_2d` to reproduce it.*
+
 ## Outlines, extrusion, holes
 
 `arch`, `rounded_rectangle` and `blob` return counter-clockwise outlines centred on the origin.
@@ -55,6 +59,10 @@ Compounds are `Hash + Eq` and work with `MeshCache`.
 
 `Shape::lathe(profile, segments, detail)` revolves `(radius, height)` points around Y. Crisp corners stay
 crisp, gentle ones are smoothed, and open ends away from the axis get caps.
+
+![Composed shapes](screenshots/screenshot_composed_shapes.png)
+
+*A compound tower, a wall with an arched opening, extruded cobbles, an emissive torch, a metallic gem and a ghost piece that casts no shadow. Run `cargo run --example composed_shapes` to reproduce it.*
 
 ## Sharing meshes and materials
 

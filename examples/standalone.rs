@@ -32,6 +32,7 @@ fn main() {
         .add_plugins(GradMeshPlugin)
         .add_plugins(
             AutoScreenshotPlugin::new("screenshot_standalone.png")
+                .animation(3.0)
                 .with_title("Standalone Pipeline")
                 .with_description("Spheres and boxes drawn without any PBR material"),
         )

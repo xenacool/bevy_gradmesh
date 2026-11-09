@@ -94,8 +94,8 @@ pub use sdf2d::{
     Dash2d, DashSnap, SdfGradient, SdfKind, SdfMaterial2d, SdfMaterial2dPlugin, unit_quad,
 };
 pub use shape::{
-    HeightfieldBorder, HeightfieldOptions, Shape, ShapeBounds, ShapeDetail, ShapePart, SweepFrame,
-    SweepOpening, SweepOptions,
+    HeightfieldBorder, HeightfieldOptions, HoleEdge, Shape, ShapeBounds, ShapeDetail, ShapePart,
+    SweepFrame, SweepOpening, SweepOptions,
 };
 pub use spline::{BakedSpline, CatmullRomSpline, SplineError, SplineFrame};
 pub use standalone_pipeline::{StandaloneRenderPlugin, render_standalone_batches};

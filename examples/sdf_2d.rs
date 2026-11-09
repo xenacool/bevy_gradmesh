@@ -37,6 +37,7 @@ fn main() {
         .add_plugins(GradMeshPlugin)
         .add_plugins(
             AutoScreenshotPlugin::new("screenshot_sdf_2d.png")
+                .animation(4.0)
                 .with_title("SDF 2D")
                 .with_description("One shared quad: discs, rims, arcs, rounded rects, no MSAA"),
         )

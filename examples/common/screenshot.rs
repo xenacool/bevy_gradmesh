@@ -44,9 +44,13 @@
 //!
 //! The screenshot will only be taken when `DSD_SCREENSHOT=1` is set in the environment.
 
+use std::path::PathBuf;
+use std::time::Duration;
+
 use bevy::diagnostic::FrameCount;
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk};
+use bevy::time::TimeUpdateStrategy;
 
 /// Plugin that adds automatic screenshot capture when `DSD_SCREENSHOT` is set.
 ///
@@ -59,6 +63,9 @@ pub struct AutoScreenshotPlugin {
     /// Minimum frame count to wait before taking the screenshot (default 1).
     /// Complex 3D scenes may need more frames for shaders to compile.
     wait_frames: u32,
+    /// If set, capture this many frames of animation instead of a single screenshot.
+    /// Frames are saved as `frames/{stem}_frame_0000.png`, etc.
+    animation_frames: Option<u32>,
 }
 
 impl AutoScreenshotPlugin {
@@ -72,6 +79,7 @@ impl AutoScreenshotPlugin {
             title: None,
             description: None,
             wait_frames: 1,
+            animation_frames: None,
         }
     }
 
@@ -96,6 +104,17 @@ impl AutoScreenshotPlugin {
         self.wait_frames = frames.max(1);
         self
     }
+
+    /// Capture `seconds` of animation instead of a single screenshot.
+    ///
+    /// The clock is stepped by exactly `1 / ANIMATION_FPS` seconds per app tick, so one tick is
+    /// one frame of the animation however slow the renderer or the PNG writer is. The frames
+    /// encode to an animated WebP that plays back at real speed (see `make screenshots`).
+    #[allow(dead_code)]
+    pub fn animation(mut self, seconds: f32) -> Self {
+        self.animation_frames = Some(((seconds * ANIMATION_FPS).round() as u32).max(2));
+        self
+    }
 }
 
 impl Plugin for AutoScreenshotPlugin {
@@ -109,7 +128,12 @@ impl Plugin for AutoScreenshotPlugin {
 
         app.insert_resource(AutoScreenshotFilename(self.filename.clone()))
             .insert_resource(ScreenshotState::default())
-            .insert_resource(WaitFrames(self.wait_frames));
+            .insert_resource(WaitFrames(self.wait_frames))
+            .insert_resource(AnimationConfig {
+                total_frames: self.animation_frames.unwrap_or(0),
+                captured: 0,
+                saved: 0,
+            });
 
         // Add title overlay if configured
         if self.title.is_some() || self.description.is_some() {
@@ -120,10 +144,84 @@ impl Plugin for AutoScreenshotPlugin {
             .add_systems(Startup, spawn_title_overlay);
         }
 
-        app.add_systems(
-            Update,
-            (wait_for_first_frame, quit_after_screenshot_saved).chain(),
-        );
+        if self.animation_frames.is_some() {
+            app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f32(
+                1.0 / ANIMATION_FPS,
+            )))
+            .add_systems(
+                Update,
+                (capture_animation_frames, quit_after_animation_saved).chain(),
+            );
+        } else {
+            app.add_systems(
+                Update,
+                (wait_for_first_frame, quit_after_screenshot_saved).chain(),
+            );
+        }
+    }
+}
+
+/// Frame rate of animation captures, in frames per second of simulated time.
+const ANIMATION_FPS: f32 = 30.0;
+
+/// Animation capture progress.
+#[derive(Resource)]
+struct AnimationConfig {
+    total_frames: u32,
+    captured: u32,
+    saved: u32,
+}
+
+/// Captures one frame per app tick once the scene has had `WaitFrames` frames to settle.
+///
+/// Captures are not gated on the previous one finishing: a screenshot takes several frames to
+/// read back from the GPU, and each frame has its own file, so completion order is irrelevant.
+fn capture_animation_frames(
+    mut config: ResMut<AnimationConfig>,
+    filename: Res<AutoScreenshotFilename>,
+    wait_frames: Res<WaitFrames>,
+    frame_count: Res<FrameCount>,
+    mut commands: Commands,
+    window_query: Query<Entity, With<Window>>,
+) {
+    if window_query.is_empty()
+        || frame_count.0 < wait_frames.0
+        || config.captured >= config.total_frames
+    {
+        return;
+    }
+    let index = config.captured;
+    config.captured += 1;
+    let path = animation_frame_path(&filename.0, index).display().to_string();
+    info!("Capturing animation frame {}/{} -> {}", index + 1, config.total_frames, path);
+    commands
+        .spawn(Screenshot::primary_window())
+        .observe(save_to_disk(path))
+        .observe(|_trigger: On<ScreenshotCaptured>, mut config: ResMut<AnimationConfig>| {
+            config.saved += 1;
+        });
+}
+
+/// Path of the PNG for animation frame `index`, in a `frames/` subdirectory next to the base
+/// filename. The directory is gitignored so intermediate frames never reach the repository.
+fn animation_frame_path(base: &str, index: u32) -> PathBuf {
+    let path = PathBuf::from(base);
+    let stem = path
+        .file_stem()
+        .unwrap_or_else(|| std::ffi::OsStr::new("frame"));
+    let dir = path.parent().unwrap_or(".".as_ref());
+    dir.join("frames")
+        .join(format!("{}_frame_{:04}.png", stem.to_string_lossy(), index))
+}
+
+/// Exit once every frame has been captured and written to disk.
+fn quit_after_animation_saved(
+    config: Res<AnimationConfig>,
+    mut app_exit: bevy::ecs::message::MessageWriter<AppExit>,
+) {
+    if config.captured >= config.total_frames && config.saved >= config.captured {
+        info!("All {} animation frames saved. Exiting.", config.captured);
+        app_exit.write(AppExit::Success);
     }
 }
 

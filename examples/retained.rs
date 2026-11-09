@@ -32,6 +32,7 @@ fn main() {
         .add_plugins(GradMeshPlugin)
         .add_plugins(
             AutoScreenshotPlugin::new("screenshot_retained.png")
+                .animation(3.0)
                 .with_title("Retained World")
                 .with_description("Persistent shapes updated via handles each frame"),
         )

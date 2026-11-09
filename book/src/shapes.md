@@ -63,6 +63,10 @@ Shape::tapered_cylinder(top_radius, bottom_radius, height, detail)
 ```
 A cone-frustum with flat top and bottom. When radii are equal, equivalent to a regular cylinder.
 
+![Shape showcase](screenshots/screenshot_shapes.png)
+
+*The 3D primitives, shaded with dual-directional gradients. Run `cargo run --example shapes` to reproduce it.*
+
 ## 2D Primitives
 
 All 2D shapes are flat quads facing the camera (billboarded).
@@ -104,6 +108,10 @@ Annulus (2D donut with a hole).
 Shape::wedge(radius, angle, detail)
 ```
 Pie-slice shape. Angle is in radians (0 to 2π).
+
+![Arbitrary shapes](screenshots/screenshot_arbitrary_shapes.png)
+
+*Custom polygons with per-vertex colours, stars, rings, wedges and a tapered cylinder. Run `cargo run --example arbitrary_shapes` to reproduce it.*
 
 ### Arbitrary Polygon
 ```rust

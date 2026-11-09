@@ -7,7 +7,7 @@ Add `bevy_gradmesh` to your `Cargo.toml`:
 ```toml
 [dependencies]
 bevy = "0.20"
-bevy_gradmesh = "0.1"
+bevy_gradmesh = "0.3"
 ```
 
 ## Your First Shape
@@ -51,6 +51,10 @@ fn setup(
     commands.spawn((Mesh3d(mesh), MeshMaterial3d(mat)));
 }
 ```
+
+![Character creator](screenshots/screenshot_character_creator.webp)
+
+*Character parts built from gradient-shaded primitives. Run `cargo run --example character_creator` to reproduce it.*
 
 ## Understanding the API
 

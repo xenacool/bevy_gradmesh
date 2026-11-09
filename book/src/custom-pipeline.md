@@ -60,6 +60,10 @@ fn render(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
 }
 ```
 
+![Standalone pipeline](screenshots/screenshot_standalone.webp)
+
+*The standalone pipeline: one shader pipeline and one bind group. Run `cargo run --example standalone` to reproduce it.*
+
 ### Standalone vs PBR Pipeline
 
 | Feature | PBR Pipeline (`InstancedBatchData`) | Standalone Pipeline (`StandaloneBatchData`) |

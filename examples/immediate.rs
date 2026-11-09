@@ -35,6 +35,7 @@ fn main() {
         .add_plugins(GradMeshPlugin)
         .add_plugins(
             AutoScreenshotPlugin::new("screenshot_immediate.png")
+                .animation(3.0)
                 .with_title("Immediate Mode")
                 .with_description(
                     "Per-frame drawing with particles, billboarding, and line drawing",

@@ -34,6 +34,7 @@ fn main() {
         .add_plugins(GradMeshPlugin)
         .add_plugins(
             AutoScreenshotPlugin::new("screenshot_polyline.png")
+                .animation(4.0)
                 .with_title("Polyline")
                 .with_description("3D polyline primitives with tube geometry"),
         )

@@ -31,7 +31,7 @@ fn oklab_to_linear(c: vec3<f32>) -> vec3<f32> {
 
 fn linear_to_oklab(c: vec3<f32>) -> vec3<f32> {
     let lms_in = vec3<f32>(
-        0.4122214708 * c.x + 0.5363325363 * c.y + 0.0614459929 * c.z,
+        0.4122214708 * c.x + 0.5363325363 * c.y + 0.0514459929 * c.z,
         0.2119034982 * c.x + 0.6806995451 * c.y + 0.1073969566 * c.z,
         0.0883024619 * c.x + 0.2817188376 * c.y + 0.6299787005 * c.z,
     );
@@ -322,12 +322,12 @@ struct VertexOutput {
     @location(0) world_position: vec4<f32>,
     @location(1) world_normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
-    @location(3) color: vec4<f32>,
-    @location(4) secondary_color: vec4<f32>,
-    @location(5) direction: vec4<f32>,
-    @location(6) flags: vec4<f32>,
-    @location(7) dash: vec4<f32>,
-    @location(8) appearance: vec4<f32>,
+    @location(3) @interpolate(flat) color: vec4<f32>,
+    @location(4) @interpolate(flat) secondary_color: vec4<f32>,
+    @location(5) @interpolate(flat) direction: vec4<f32>,
+    @location(6) @interpolate(flat) flags: vec4<f32>,
+    @location(7) @interpolate(flat) dash: vec4<f32>,
+    @location(8) @interpolate(flat) appearance: vec4<f32>,
 }
 
 @vertex

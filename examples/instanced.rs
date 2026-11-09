@@ -33,6 +33,7 @@ fn main() {
         .add_plugins(GradMeshPlugin)
         .add_plugins(
             AutoScreenshotPlugin::new("screenshot_instanced.png")
+                .animation(3.0)
                 .with_title("Instanced Rendering")
                 .with_description("500 spheres rendered in a single GPU batch"),
         )

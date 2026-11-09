@@ -32,7 +32,7 @@ fn oklab_to_linear(c: vec3<f32>) -> vec3<f32> {
 
 fn linear_to_oklab(c: vec3<f32>) -> vec3<f32> {
     let lms_in = vec3<f32>(
-        0.4122214708 * c.x + 0.5363325363 * c.y + 0.0614459929 * c.z,
+        0.4122214708 * c.x + 0.5363325363 * c.y + 0.0514459929 * c.z,
         0.2119034982 * c.x + 0.6806995451 * c.y + 0.1073969566 * c.z,
         0.0883024619 * c.x + 0.2817188376 * c.y + 0.6299787005 * c.z,
     );
@@ -389,12 +389,14 @@ struct InstancedVertexOutput {
     @location(1) world_normal: vec3<f32>,
     @if(VERTEX_UVS_A)
     @location(2) uv: vec2<f32>,
-    @location(3) color: vec4<f32>,
-    @location(4) secondary_color: vec4<f32>,
-    @location(5) direction: vec4<f32>,
-    @location(6) flags: vec4<f32>,
-    @location(7) dash: vec4<f32>,
-    @location(8) appearance: vec4<f32>,
+    @location(3) @interpolate(flat) color: vec4<f32>,
+    @location(4) @interpolate(flat) secondary_color: vec4<f32>,
+    @location(5) @interpolate(flat) direction: vec4<f32>,
+    @location(6) @interpolate(flat) flags: vec4<f32>,
+    @location(7) @interpolate(flat) dash: vec4<f32>,
+    @location(8) @interpolate(flat) appearance: vec4<f32>,
+    // Instance centre in world space, for gradients measured from the shape's middle.
+    @location(9) @interpolate(flat) center: vec3<f32>,
 }
 
 // ─── Vertex input ───
@@ -461,7 +463,16 @@ fn instanced_vertex(input: InstancedVertex) -> InstancedVertexOutput {
     out.flags = input.instance_flags;
     out.dash = input.instance_dash;
     out.appearance = input.instance_appearance;
+    out.center = input.instance_col3.xyz;
     return out;
+}
+
+/// Rotates the hue of a linear RGB colour by `angle` radians (in OKLAB).
+fn hue_rotate(c: vec3<f32>, angle: f32) -> vec3<f32> {
+    let lab = linear_to_oklab(c);
+    let cs = cos(angle);
+    let sn = sin(angle);
+    return oklab_to_linear(vec3<f32>(lab.x, lab.y * cs - lab.z * sn, lab.y * sn + lab.z * cs));
 }
 
 @fragment
@@ -472,25 +483,50 @@ fn instanced_fragment(
     let color_mode = i32(in.flags.x);
     let blend_mode = i32(in.flags.y);
 
+    // Appearance animation: x = speed, y = phase, z = type
+    // (0 static, 1 colour pulse, 2 colour cycle, 3 gradient shift).
+    let anim_speed = in.appearance.x;
+    let anim_type = i32(round(in.appearance.z));
+    let animated = anim_speed > 0.0;
+    let anim_angle = (globals.time * anim_speed + in.appearance.y) * TAU;
+
+    let half_extent = select(0.5, in.direction.w, in.direction.w > 0.0);
+
     // Compute gradient progress
     var progress = 0.0;
     if (color_mode == 1) {
-        // Directional gradient
-        let dir = in.direction.xyz;
+        // Directional gradient, measured from the instance centre and normalised by the
+        // shape's half-extent (`direction.w`, 0 = a unit shape), as in the material path.
+        var dir = in.direction.xyz;
+        if (animated && anim_type == 3) {
+            // Turn the gradient direction around the Y axis.
+            let cs = cos(anim_angle);
+            let sn = sin(anim_angle);
+            dir = vec3<f32>(dir.x * cs + dir.z * sn, dir.y, dir.z * cs - dir.x * sn);
+        }
         let normalized_dir = normalize(dir);
-        let world_pos = in.world_position.xyz;
-        progress = dot(world_pos, normalized_dir) * 0.1 + 0.5;
-        progress = clamp(progress, 0.0, 1.0);
+        let object_pos = in.world_position.xyz - in.center;
+        let half_range = max(abs(dot(normalized_dir, vec3<f32>(half_extent))), 0.00001);
+        progress = clamp(dot(object_pos, normalized_dir) / (2.0 * half_range) + 0.5, 0.0, 1.0);
     } else if (color_mode == 2) {
-        // Radial gradient
-        let dist = length(in.world_position.xyz);
-        progress = clamp(dist * 0.5, 0.0, 1.0);
+        // Radial gradient: distance from the instance centre, normalised by the half-extent.
+        let dist = length(in.world_position.xyz - in.center);
+        progress = clamp(dist / (half_extent * 1.41421356), 0.0, 1.0);
     }
 
     // Interpolate colors
     var base_color = srgb_to_linear(in.color.rgb);
     if (color_mode > 0) {
         base_color = mix_colors(in.color.rgb, in.secondary_color.rgb, progress, in.flags.w);
+    }
+
+    if (animated && anim_type == 1) {
+        // Colour pulse: swing towards the secondary colour and back.
+        let k = 0.5 + 0.5 * sin(anim_angle);
+        base_color = mix(base_color, srgb_to_linear(in.secondary_color.rgb), k);
+    } else if (animated && anim_type == 2) {
+        // Colour cycle: walk around the hue wheel.
+        base_color = hue_rotate(base_color, anim_angle);
     }
 
     // Apply dash pattern if enabled (requires UV attributes on the mesh)

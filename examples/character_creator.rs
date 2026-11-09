@@ -42,6 +42,7 @@ fn main() {
         .add_plugins(GradMeshPlugin)
         .add_plugins(
             AutoScreenshotPlugin::new("screenshot_character_creator.png")
+                .animation(6.0)
                 .with_title("Character Creator")
                 .with_description("7 characters with varied facial features and accessories"),
         )

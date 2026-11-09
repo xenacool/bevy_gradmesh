@@ -41,6 +41,10 @@ let appearance = AppearanceSnapshot::gradient_shift(
 let appearance = AppearanceSnapshot::static_appearance();
 ```
 
+![Appearance animation](screenshots/screenshot_appearance.webp)
+
+*Static, colour pulse, colour cycle and gradient shift rows; the phase is staggered over the instances, and the shader animates what the CPU uploaded once. Run `cargo run --example appearance` to reproduce it.*
+
 ## Using with BatchRecorder
 
 ```rust

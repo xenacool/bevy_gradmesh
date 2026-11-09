@@ -242,6 +242,35 @@ impl HeightfieldBorder {
     }
 }
 
+/// How the outline of a heightfield hole is cut, from the cheapest to the
+/// smoothest. See [`HeightfieldOptions::hole_edge`].
+///
+/// The hole mask has one flag per cell, so the outline of a hole can only follow
+/// cell borders: a round hole comes out as a staircase. The two other levels
+/// cut the cells along the outline instead. No level ever removes a hole or an
+/// island of land: a one-cell hole stays a hole (a diamond, or a small round
+/// opening) and a one-cell island stays land.
+///
+/// Only cells that border a hole cost more. Cells away from every hole keep two
+/// triangles at every level.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum HoleEdge {
+    /// Whole cells: a cell is land or hole. Two triangles per land cell, the
+    /// cheapest, and a staircase along every curved outline.
+    #[default]
+    Cells,
+    /// Cells that border a hole are cut through the midpoints of their edges,
+    /// so every staircase corner becomes a 45 degree chamfer and a one-cell
+    /// hole a diamond. Up to four triangles (and the cut) per border cell.
+    Rounded,
+    /// The mask is blurred over the neighbouring cells and the outline follows
+    /// that, so a curved hole is cut along a curve, not along a chamfered
+    /// staircase. Same triangle count as [`HoleEdge::Rounded`], more border
+    /// cells, and the outline of a hole can move by up to about a cell.
+    Smooth,
+}
+
 /// Options for [`Shape::heightfield_with_options`].
 ///
 /// `#[non_exhaustive]`: start from [`HeightfieldOptions::default`] and use the
@@ -255,6 +284,10 @@ pub struct HeightfieldOptions {
     /// there. Hole rims get no skirt (a skirt only hides seams between chunks),
     /// and vertices that touch only holes are not in the mesh.
     pub holes: Option<Vec<bool>>,
+    /// How the outline of the holes is cut: whole cells (the default, a
+    /// staircase), rounded corners or a smoothed outline. See [`HoleEdge`].
+    /// Without holes this changes nothing.
+    pub hole_edge: HoleEdge,
     /// Neighbour heights for the normals of the edge vertices, so that chunks
     /// that share an edge also share its normals exactly. See
     /// [`HeightfieldBorder`].
@@ -266,6 +299,13 @@ impl HeightfieldOptions {
     #[must_use]
     pub fn with_holes(mut self, holes: Vec<bool>) -> Self {
         self.holes = Some(holes);
+        self
+    }
+
+    /// Sets [`HeightfieldOptions::hole_edge`].
+    #[must_use]
+    pub fn with_hole_edge(mut self, hole_edge: HoleEdge) -> Self {
+        self.hole_edge = hole_edge;
         self
     }
 
@@ -818,8 +858,9 @@ enum ShapeKind {
         extent: Vec2,
         heights: Arc<[f32]>,
         holes: Option<Arc<[bool]>>,
+        hole_edge: HoleEdge,
         border: Option<Arc<HeightfieldBorder>>,
-        /// Hash of `heights`, `holes` and `border`, computed once so that
+        /// Hash of `heights`, `holes`, `hole_edge` and `border`, computed once so that
         /// hashing the shape does not walk them again.
         fingerprint: u64,
         /// Bounds of the surface and bounds with skirts.
@@ -1257,6 +1298,7 @@ impl PartialEq for ShapeKind {
                     size: s1,
                     extent: e1,
                     holes: h1,
+                    hole_edge: he1,
                     border: b1,
                     heights: g1,
                     fingerprint: f1,
@@ -1266,6 +1308,7 @@ impl PartialEq for ShapeKind {
                     size: s2,
                     extent: e2,
                     holes: h2,
+                    hole_edge: he2,
                     border: b2,
                     heights: g2,
                     fingerprint: f2,
@@ -1280,6 +1323,7 @@ impl PartialEq for ShapeKind {
                     && e1.x.to_bits() == e2.x.to_bits()
                     && e1.y.to_bits() == e2.y.to_bits()
                     && h1 == h2
+                    && he1 == he2
                     && b1.as_deref().map(HeightfieldBorder::identity_bits)
                         == b2.as_deref().map(HeightfieldBorder::identity_bits)
             }
@@ -2161,8 +2205,9 @@ impl Shape {
     /// UVs from 0 to 1 and skirts that hang a tenth of the larger extent below
     /// the edges of the chunk to hide cracks between neighbouring chunks.
     /// Cells flagged in [`HeightfieldOptions::holes`] have no triangles and no
-    /// skirt. The skirt depth is not an option: a chunk without skirts shows
-    /// cracks.
+    /// skirt; [`HeightfieldOptions::hole_edge`] picks whether the outline of a
+    /// hole is a staircase of whole cells or is cut along the outline. The skirt
+    /// depth is not an option: a chunk without skirts shows cracks.
     ///
     /// [`Shape::bounds`] includes the skirts and [`Shape::surface_bounds`] does
     /// not; both ignore vertices that only touch holes.
@@ -2186,6 +2231,7 @@ impl Shape {
         options: HeightfieldOptions,
     ) -> Self {
         let holes: Option<Arc<[bool]>> = options.holes.map(Arc::from);
+        let hole_edge = options.hole_edge;
         let border = options.border.map(Arc::new);
         let fingerprint = {
             use std::hash::Hasher;
@@ -2195,6 +2241,7 @@ impl Shape {
                 h.to_bits().hash(&mut hasher);
             }
             holes.hash(&mut hasher);
+            hole_edge.hash(&mut hasher);
             border.as_deref().map(HeightfieldBorder::identity_bits).hash(&mut hasher);
             hasher.finish()
         };
@@ -2211,6 +2258,7 @@ impl Shape {
                 extent,
                 heights,
                 holes,
+                hole_edge,
                 border,
                 fingerprint,
                 bounds,
@@ -2482,9 +2530,17 @@ impl Shape {
                 extent,
                 heights,
                 holes,
+                hole_edge,
                 border,
                 ..
-            } => geometry::heightfield_mesh(*size, *extent, heights, holes.as_deref(), border.as_deref()),
+            } => geometry::heightfield_mesh(
+                *size,
+                *extent,
+                heights,
+                holes.as_deref(),
+                *hole_edge,
+                border.as_deref(),
+            ),
         }
     }
 }
@@ -6931,6 +6987,132 @@ mod from_mesh_tests {
         let bad_border = HeightfieldBorder::new(vec![0.0; 3], vec![0.0; 2], vec![0.0; 3], vec![0.0; 3]);
         let shape = with_options(3, 3, |_, _| 0.0, HeightfieldOptions::default().with_border(bad_border));
         assert_eq!(tri_count(&shape.build()), 0);
+    }
+
+    /// A 9 x 9 grid (8 x 8 cells) over 8 x 8 world units, one unit per cell,
+    /// with `holes` given as a predicate over the cell.
+    fn edged(edge: HoleEdge, hole: impl Fn(u32, u32) -> bool) -> Shape {
+        let holes: Vec<bool> = (0..8).flat_map(|y| (0..8).map(move |x| (x, y))).map(|(x, y)| hole(x, y)).collect();
+        let heights: Arc<[f32]> = (0..9).flat_map(|y| (0..9).map(move |x| 0.1 * (x + y) as f32)).collect::<Vec<_>>().into();
+        Shape::heightfield_with_options(
+            heights,
+            UVec2::new(9, 9),
+            Vec2::new(8.0, 8.0),
+            HeightfieldOptions::default().with_holes(holes).with_hole_edge(edge),
+        )
+    }
+
+    fn triangles(mesh: &Mesh) -> Vec<[Vec3; 3]> {
+        let p: Vec<Vec3> = positions(mesh).into_iter().map(Vec3::from_array).collect();
+        let idx: Vec<u32> = mesh.indices().unwrap().iter().map(|i| i as u32).collect();
+        idx.chunks(3).map(|t| [p[t[0] as usize], p[t[1] as usize], p[t[2] as usize]]).collect()
+    }
+
+    fn face_normal(t: &[Vec3; 3]) -> Vec3 {
+        (t[1] - t[0]).cross(t[2] - t[0])
+    }
+
+    /// Area of the land seen from above, and the triangles that cover `at`.
+    fn land_area(mesh: &Mesh) -> f32 {
+        triangles(mesh).iter().map(|t| face_normal(t)).filter(|n| n.y > 1e-6).map(|n| n.y * 0.5).sum()
+    }
+
+    fn land_covers(mesh: &Mesh, at: Vec2) -> bool {
+        triangles(mesh).iter().filter(|t| face_normal(t).y > 1e-6).any(|t| {
+            let [a, b, c] = t.map(|v| Vec2::new(v.x, v.z));
+            let side = |p: Vec2, q: Vec2| (q - p).perp_dot(at - p);
+            let (s0, s1, s2) = (side(a, b), side(b, c), side(c, a));
+            (s0 <= 0.0 && s1 <= 0.0 && s2 <= 0.0) || (s0 >= 0.0 && s1 >= 0.0 && s2 >= 0.0)
+        })
+    }
+
+    fn a_blob(x: u32, y: u32) -> bool {
+        // A round hole in the middle and another one against the west edge.
+        let d = Vec2::new(x as f32 + 0.5 - 4.5, y as f32 + 0.5 - 3.5).length();
+        d < 2.2 || (x == 0 && (2..5).contains(&y))
+    }
+
+    #[test]
+    fn hole_edge_is_part_of_the_identity() {
+        let cells = edged(HoleEdge::Cells, a_blob);
+        let rounded = edged(HoleEdge::Rounded, a_blob);
+        let smooth = edged(HoleEdge::Smooth, a_blob);
+        assert_eq!(cells, edged(HoleEdge::default(), a_blob));
+        assert_ne!(cells, rounded);
+        assert_ne!(rounded, smooth);
+        assert_ne!(hash_of(&cells), hash_of(&rounded));
+        assert_ne!(hash_of(&rounded), hash_of(&smooth));
+    }
+
+    #[test]
+    fn hole_edge_changes_nothing_without_holes() {
+        let plain = heightfield(5, 5, |x, y| (x + y) as f32).build();
+        let heights: Arc<[f32]> = (0..25).map(|i| ((i % 5) + (i / 5)) as f32).collect::<Vec<_>>().into();
+        let smooth = Shape::heightfield_with_options(
+            heights,
+            UVec2::new(5, 5),
+            Vec2::new(8.0, 6.0),
+            HeightfieldOptions::default().with_hole_edge(HoleEdge::Smooth),
+        )
+        .build();
+        assert_eq!(positions(&plain), positions(&smooth));
+        assert_eq!(tri_count(&plain), tri_count(&smooth));
+    }
+
+    #[test]
+    fn cut_outlines_face_up_and_skirts_only_hang_from_the_chunk_border() {
+        for edge in [HoleEdge::Rounded, HoleEdge::Smooth] {
+            let mesh = edged(edge, a_blob).build();
+            for t in triangles(&mesh) {
+                let n = face_normal(&t);
+                assert!(n.y > -1e-5, "{edge:?}: a triangle faces down: {t:?}");
+                if n.y.abs() <= 1e-5 && n.length() > 1e-6 {
+                    // A skirt: all three corners on the same chunk border line, facing out.
+                    let on = |f: &dyn Fn(Vec3) -> f32| t.iter().all(|v| (f(*v).abs() - 4.0).abs() < 1e-4);
+                    assert!(on(&|v| v.x) || on(&|v| v.z), "{edge:?}: a wall under a hole: {t:?}");
+                    let mid = (t[0] + t[1] + t[2]) / 3.0;
+                    assert!(n.dot(Vec3::new(mid.x, 0.0, mid.z)) > 0.0, "{edge:?}: skirt faces inwards: {t:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_outline_is_cut_through_the_cells() {
+        let cells = land_area(&edged(HoleEdge::Cells, a_blob).build());
+        let rounded = land_area(&edged(HoleEdge::Rounded, a_blob).build());
+        let smooth = land_area(&edged(HoleEdge::Smooth, a_blob).build());
+        // Chamfering the staircase gives land back; a whole-cell mask never does.
+        assert!(rounded > cells + 0.5, "cells {cells}, rounded {rounded}");
+        assert!(smooth > cells + 0.5, "cells {cells}, smooth {smooth}");
+        // No level makes more land than the chunk has.
+        assert!(smooth <= 64.0 * 1.2 && rounded <= 64.0 * 1.2);
+    }
+
+    #[test]
+    fn no_level_removes_a_hole_or_an_island() {
+        for edge in [HoleEdge::Cells, HoleEdge::Rounded, HoleEdge::Smooth] {
+            let centre = Vec2::new(0.5, 0.5);
+            let hole = edged(edge, |x, y| (x, y) == (4, 4)).build();
+            assert!(!land_covers(&hole, centre), "{edge:?}: a one-cell hole closed up");
+            assert!(land_covers(&hole, Vec2::new(-2.5, -2.5)));
+            let island = edged(edge, |x, y| (x, y) != (4, 4)).build();
+            assert!(land_covers(&island, centre), "{edge:?}: a one-cell island vanished");
+            assert!(!land_covers(&island, Vec2::new(-2.5, -2.5)));
+        }
+    }
+
+    #[test]
+    fn cut_bounds_contain_the_built_mesh() {
+        for edge in [HoleEdge::Rounded, HoleEdge::Smooth] {
+            let shape = edged(edge, a_blob);
+            let built = ShapeBounds::from_points(positions(&shape.build()).into_iter().map(Vec3::from_array));
+            let b = shape.bounds();
+            assert!(
+                built.min.cmpge(b.min - Vec3::splat(1e-4)).all() && built.max.cmple(b.max + Vec3::splat(1e-4)).all(),
+                "{edge:?}: bounds {b:?}, mesh {built:?}"
+            );
+        }
     }
 
     #[test]

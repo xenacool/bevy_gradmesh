@@ -135,7 +135,7 @@ All procedural primitives with dual-directional gradient shading:
 
 Character parts built from gradient-shaded primitives:
 
-![Character Creator](screenshots/screenshot_character_creator.png)
+![Character Creator](screenshots/screenshot_character_creator.webp)
 
 ### Style Variants
 
@@ -147,7 +147,7 @@ Opaque, transparent, additive, multiplicative, screen, dither, and dashed blend 
 
 Per-frame animated particles, push/pop state stacking, billboarding, and line drawing:
 
-![Immediate Mode](screenshots/screenshot_immediate.png)
+![Immediate Mode](screenshots/screenshot_immediate.webp)
 
 ### Curves
 
@@ -159,7 +159,7 @@ Spline and parametric curves rendered as smooth tubes:
 
 Polylines with joint styles, width variation, gradient colors, and animated reveal:
 
-![Polyline](screenshots/screenshot_polyline.png)
+![Polyline](screenshots/screenshot_polyline.webp)
 
 ### PBR Effects
 
@@ -171,13 +171,13 @@ Transparency, emissive glow, metallic surfaces, and combined effects:
 
 `Camera2d` and `Mesh2d` with `GradMeshMaterial2d`: gradient cards, a translucent dragged card layered by z, a radial disc, a pulsing star, a dashed ring and a polygon with a hole:
 
-![2D Gradients](screenshots/screenshot_gradient_2d.png)
+![2D Gradients](screenshots/screenshot_gradient_2d.webp)
 
 ### SDF 2D
 
 One shared unit quad mesh: filled discs, ellipses, rounded rectangles, rims, animated partial arcs, radial and angular gradients - all shape changes are material floats, no mesh regeneration:
 
-![SDF 2D](screenshots/screenshot_sdf_2d.png)
+![SDF 2D](screenshots/screenshot_sdf_2d.webp)
 
 ### SDF Dash Gallery
 
@@ -201,13 +201,13 @@ Banked road using `Shape::sweep_frames`: an open CatmullRomSpline with width and
 
 500 spheres rendered in a single GPU batch via `BatchRecorder`:
 
-![Instanced Rendering](screenshots/screenshot_instanced.png)
+![Instanced Rendering](screenshots/screenshot_instanced.webp)
 
 ### Standalone Pipeline
 
 Gradient shapes drawn without any PBR material or lights - one shader pipeline, one bind group:
 
-![Standalone Pipeline](screenshots/screenshot_standalone.png)
+![Standalone Pipeline](screenshots/screenshot_standalone.webp)
 
 ### Composed Shapes
 
@@ -219,13 +219,25 @@ Compound tower (lathe plus roof), a wall with an arched opening, extruded cobble
 
 Vertex shader animations: wobble, pulse, and morph effects compared against static originals:
 
-![Deformation](screenshots/screenshot_deformation.png)
+![Deformation](screenshots/screenshot_deformation.webp)
 
 ### Retained World
 
 Persistent shapes updated each frame via handles without recreating entities:
 
-![Retained World](screenshots/screenshot_retained.png)
+![Retained World](screenshots/screenshot_retained.webp)
+
+### Terrain
+
+`Shape::heightfield_with_options`: four chunks meeting at a peak with shared edge normals (no crease along the borders), relative height bands, and a row of three chunks that cut the same round hole with `HoleEdge::Cells`, `HoleEdge::Rounded` and `HoleEdge::Smooth` - each labelled with its triangle count, cheapest to smoothest:
+
+![Terrain](screenshots/screenshot_terrain.png)
+
+### Appearance Animation
+
+Per-instance colour animation resolved on the GPU in one batch: `static_appearance`, `color_pulse`, `color_cycle` and `gradient_shift` rows, with the phase staggered over the instances (animated WebP):
+
+![Appearance Animation](screenshots/screenshot_appearance.webp)
 
 ### Arbitrary Shapes
 
@@ -234,8 +246,10 @@ Custom polygons with per-vertex colors, star shapes, annular rings, pie-slice we
 ![Arbitrary Shapes](screenshots/screenshot_arbitrary_shapes.png)
 
 ### Mix Spaces
-Mix color spaces:
-![Mix Space](screenshots/screenshot_mix_spaces.png)
+
+The same two-colour gradient in each `MixSpace` (OKLAB, OKLCH, linear RGB, sRGB), for two colour pairs. Blue to yellow goes grey in the middle in sRGB, OKLAB keeps the lightness steady and OKLCH sweeps through the hues in between. `tests/mix_space_screenshot.rs` checks this picture against reference pixel values and against the shader's blend maths:
+
+![Mix Spaces](screenshots/screenshot_mix_spaces.png)
 
 ### Capturing Screenshots
 
@@ -245,7 +259,9 @@ To automatically capture screenshots of all examples, run:
 make screenshots
 ```
 
-This will render each example for a few frames, save a PNG to the `screenshots/` directory, and exit. On headless systems, `xvfb-run` is auto-detected and used automatically.
+This renders every example and saves it to the `screenshots/` directory: a PNG for a still scene, and an animated WebP (lossy and downscaled to 480 px wide, under a megabyte each) for one that changes over time (the clock is stepped by exactly 1/30 s per frame, so playback is real time however slow the capture; the WebP needs `ffmpeg` with `libwebp`). Use `make screenshot-<example>` to refresh a single one, for example `make screenshot-appearance`. On headless systems, `xvfb-run` is auto-detected and used automatically.
+
+`cargo test` checks the pictures: `tests/docs_screenshots.rs` fails if an example has no picture in this README or the book, or if an animation is not a multi-frame WebP, and `tests/mix_space_screenshot.rs` compares the Mix Spaces picture with reference pixel values.
 
 ## License
 

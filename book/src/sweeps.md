@@ -48,6 +48,7 @@ let chunk = Shape::heightfield_with_options(
     heights.into(), size, extent,
     HeightfieldOptions::default()
         .with_holes(holes)          // Vec<bool>, (size.x - 1) * (size.y - 1) cells
+        .with_hole_edge(HoleEdge::Smooth)
         .with_border(HeightfieldBorder::new(west, east, north, south)),
 );
 ```
@@ -61,6 +62,33 @@ the edge vertices only and is never meshed, so two chunks that share an edge
 share its normals exactly and a crest on the border shows no crease. The mask and
 the border are part of the shape's identity like the heights, so changing only
 them gives a different shape. A mask or border of the wrong length gives an empty mesh and a warning, like wrong heights.
+
+#### Cutting the outline of a hole
+
+The mask has one flag per cell, so the outline of a round hole can only follow
+cell borders: a staircase. `HeightfieldOptions::with_hole_edge` picks how the
+outline is cut, from the cheapest to the smoothest:
+
+| `HoleEdge` | Outline | Cost |
+|---|---|---|
+| `Cells` (default) | Whole cells: a cell is land or hole, a staircase along every curve. | Two triangles per land cell. |
+| `Rounded` | Cells that border a hole are cut through the midpoints of their edges: every staircase corner becomes a 45 degree chamfer and a one-cell hole a diamond. | Up to four triangles per border cell. |
+| `Smooth` | The mask is blurred over the neighbouring cells and the outline follows that, so a curved hole is cut along a curve. | As `Rounded`, on more border cells; the outline can move by about a cell. |
+
+Only cells that border a hole cost more; every cell away from a hole keeps its
+two triangles at every level, so the three meshes agree there and share their
+edge vertices. No level ever closes a hole or removes an island of land: a
+one-cell hole stays a hole and a one-cell island stays land, and the cut never
+faces down or hangs a skirt under a hole. Without holes the option changes
+nothing, and it is part of the shape's identity like the mask.
+
+The terrain picture below cuts the same round hole and the same one-cell hole
+three ways; the labels are the triangle counts of the built meshes, which the
+example asserts grow with the smoothness.
+
+![Terrain chunks and hole edges](screenshots/screenshot_terrain.png)
+
+*Four chunks meeting at a peak with shared edge normals, and the same round hole cut three ways with `HoleEdge::Cells`, `Rounded` and `Smooth`; each label shows its triangle count. Run `cargo run --example terrain` to reproduce it.*
 
 ## `Shape::sweep`
 
@@ -131,6 +159,14 @@ as given (no parallel transport) and blends them where it needs extra rings.
 `right × up` should point along the path; a left-handed frame keeps its `up` and
 gets its `right` flipped, so the surface never turns inside out. A closed sweep
 joins the last frame to the first without correcting the frames at the seam.
+
+![Sweeps](screenshots/screenshot_sweep.png)
+
+*A wall along a baked spline loop with an arched gate, a kerbed road and a tapering pipe on a helix. Run `cargo run --example sweep` to reproduce it.*
+
+![Banked road](screenshots/screenshot_road.png)
+
+*An open spline with width and roll channels baked into `Shape::sweep_frames`, and a ribbon turning with `SweepOptions::roll_with`. Run `cargo run --example road` to reproduce it.*
 
 ### Openings
 

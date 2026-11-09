@@ -474,6 +474,13 @@ impl BatchRecorder {
 
         let transform = InstanceTransform::from_trs(self.position, self.rotation, self.scale);
 
+        // Gradients span the instance: carry its half-extent (world units) to the shader in
+        // `direction.w`, which is zero for every recorder style and otherwise unused.
+        if properties.flags.x > 0.5 {
+            let half = (shape.bounds().half_extents() * self.scale.abs()).max_element();
+            properties.direction.w = half.max(1e-4);
+        }
+
         // Apply pending deformation to properties
         let deformation = self.pending_deformation;
         properties.deformation = deformation.to_vec4();
