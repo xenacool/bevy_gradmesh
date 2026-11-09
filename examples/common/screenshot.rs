@@ -119,6 +119,10 @@ impl AutoScreenshotPlugin {
 
 impl Plugin for AutoScreenshotPlugin {
     fn build(&self, app: &mut App) {
+        // No-op on WASM — screenshots are only for headless CI builds
+        if cfg!(target_arch = "wasm32") {
+            return;
+        }
         app.add_systems(PostUpdate, position_world_labels.after(TransformSystems::Propagate));
 
         // Only enable when DSD_SCREENSHOT is set
