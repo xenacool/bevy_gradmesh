@@ -39,10 +39,6 @@ let mat = with_mix_space(
 `MixSpace::mix` / `Style::lerp` blend on the CPU in the same space, so an
 animated blend matches the shader gradient. See `examples/mix_spaces.rs`.
 
-![The same gradient in four colour spaces](screenshots/screenshot_mix_spaces.png)
-
-*One gradient in each `MixSpace` for two colour pairs: sRGB goes grey in the middle, OKLAB keeps the lightness steady and OKLCH sweeps through the hues. `tests/mix_space_screenshot.rs` checks this picture against reference pixels and against the shader's blend maths. Run `cargo run --example mix_spaces` to reproduce it.*
-
 ## Blending Styles and Shapes
 
 `Style::lerp(&other, t)` mixes colors in the style's space, interpolates
@@ -80,8 +76,6 @@ let mat = dual_radial(
 ```
 
 ## Blend Modes
-
-![Style variants](screenshots/screenshot_styles.png)
 
 *Opaque, transparent, additive, multiplicative, screen, dither and dashed styles. Run `cargo run --example styles` to reproduce it.*
 
@@ -154,7 +148,5 @@ mat.roughness = 0.1;    // Polished surface
 mat.metallic = 1.0;     // Metallic
 mat.emissive = Color::srgb(1.0, 0.0, 0.0).to_linear(); // Glow
 ```
-
-![PBR effects](screenshots/screenshot_pbr_effects.png)
 
 *Transparency, emissive glow, metallic surfaces and combinations. Run `cargo run --example pbr_effects` to reproduce it.*

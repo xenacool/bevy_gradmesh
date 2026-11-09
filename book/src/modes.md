@@ -38,8 +38,6 @@ fn draw_frame(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>,
 
 **Best for**: Particle systems, animated effects, debug visualization.
 
-![Immediate mode](screenshots/screenshot_immediate.webp)
-
 *Per-frame particles, push/pop state, billboarding and line drawing. Run `cargo run --example immediate` to reproduce it.*
 
 ## Retained Mode
@@ -66,8 +64,6 @@ fn update(mut retained: ResMut<RetainedWorld>, time: Res<Time>,
 ```
 
 **Best for**: Scenes with persistent shapes that change position or properties each frame.
-
-![Retained mode](screenshots/screenshot_retained.webp)
 
 *Persistent shapes updated each frame through handles. Run `cargo run --example retained` to reproduce it.*
 
@@ -101,8 +97,6 @@ fn draw_frame(mut recorder: ResMut<BatchRecorder>) {
 ```
 
 **Best for**: Large numbers of similar shapes (terrain, crowds, particles).
-
-![Batched mode](screenshots/screenshot_instanced.webp)
 
 *500 spheres drawn in one GPU batch with `BatchRecorder`. Run `cargo run --example instanced` to reproduce it.*
 

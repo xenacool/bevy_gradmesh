@@ -52,8 +52,6 @@ fn setup(
 }
 ```
 
-![Character creator](screenshots/screenshot_character_creator.webp)
-
 *Character parts built from gradient-shaded primitives. Run `cargo run --example character_creator` to reproduce it.*
 
 ## Understanding the API

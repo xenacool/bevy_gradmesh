@@ -39,8 +39,6 @@ let deform = DeformationParams::morph(
 );
 ```
 
-![Deformation](screenshots/screenshot_deformation.webp)
-
 *Wobble, pulse and morph compared against static originals. Run `cargo run --example deformation` to reproduce it.*
 
 ## Using with BatchRecorder

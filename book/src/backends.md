@@ -36,8 +36,6 @@ There is no lighting, no alpha blending and no culling. It is the path to use on
 GPUs where the PBR pipeline is a problem (it was verified on a Mali-G715 with
 Bevy's `PbrPlugin` disabled).
 
-![Standalone pipeline](screenshots/screenshot_standalone.webp)
-
 *Gradient shapes drawn with one shader pipeline, no PBR material and no lights. Run `cargo run --example standalone` to reproduce it.*
 
 ## Mesh2d gradient
@@ -86,11 +84,7 @@ rectangles and a partial arc. Two things to know: on an eccentric ellipse dashes
 are spaced by angle, not by arc length, and at a sharp rectangle corner the
 dashes meet in a mitre. `Transform` scale must be `SdfMaterial2d::quad_scale()`.
 
-![SDF 2D](screenshots/screenshot_sdf_2d.webp)
-
 *Discs, ellipses, rounded rectangles, rims and animated arcs on one shared quad. Run `cargo run --example sdf_2d` to reproduce it.*
-
-![SDF dash gallery](screenshots/screenshot_sdf_dash_gallery.png)
 
 *Dashed rims compared across `Off`, `Tiling`, `EndToEnd` and count-based snap modes. Run `cargo run --example sdf_dash_gallery` to reproduce it.*
 

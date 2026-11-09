@@ -39,8 +39,6 @@ fn animate_curve(mut time: Res<Time>) {
 }
 ```
 
-![Curves](screenshots/screenshot_curves.png)
-
 *Spline and parametric curves rendered as smooth tubes. Run `cargo run --example curves` to reproduce it.*
 
 ## 3D Polylines
@@ -64,8 +62,6 @@ let mesh = Shape::polyline3d(points, 0.05, false, 8, ShapeDetail::Medium).build(
 ```rust
 let mesh = Shape::polyline3d(points, 0.05, true, 8, ShapeDetail::Medium).build();
 ```
-
-![Polylines](screenshots/screenshot_polyline.webp)
 
 *Joint styles, width variation, gradient colours and an animated reveal. Run `cargo run --example polyline` to reproduce it.*
 

@@ -86,8 +86,6 @@ The terrain picture below cuts the same round hole and the same one-cell hole
 three ways; the labels are the triangle counts of the built meshes, which the
 example asserts grow with the smoothness.
 
-![Terrain chunks and hole edges](screenshots/screenshot_terrain.png)
-
 *Four chunks meeting at a peak with shared edge normals, and the same round hole cut three ways with `HoleEdge::Cells`, `Rounded` and `Smooth`; each label shows its triangle count. Run `cargo run --example terrain` to reproduce it.*
 
 ## `Shape::sweep`
@@ -160,11 +158,7 @@ as given (no parallel transport) and blends them where it needs extra rings.
 gets its `right` flipped, so the surface never turns inside out. A closed sweep
 joins the last frame to the first without correcting the frames at the seam.
 
-![Sweeps](screenshots/screenshot_sweep.png)
-
 *A wall along a baked spline loop with an arched gate, a kerbed road and a tapering pipe on a helix. Run `cargo run --example sweep` to reproduce it.*
-
-![Banked road](screenshots/screenshot_road.png)
 
 *An open spline with width and roll channels baked into `Shape::sweep_frames`, and a ribbon turning with `SweepOptions::roll_with`. Run `cargo run --example road` to reproduce it.*
 
