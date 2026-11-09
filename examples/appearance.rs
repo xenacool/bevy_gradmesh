@@ -23,6 +23,42 @@ const ROW_SPACING: f32 = 1.9;
 /// that row needs a sideways gradient; a vertical one would not change.
 const GRADIENT_ROW: usize = 3;
 
+
+/// Run this example. Called by the WASM runner.
+pub fn run(app: &mut App) {
+    app
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "BevyGradmesh Appearance Animation".into(),
+                        resolution: (1280, 720).into(),
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .set(RenderPlugin {
+                    synchronous_pipeline_compilation: true,
+                    ..default()
+                }),
+        )
+        .add_plugins(GradMeshPlugin)
+        .add_plugins(
+            AutoScreenshotPlugin::new("screenshot_appearance.png")
+                .animation(2.0)
+                .with_title("Appearance Animation")
+                .with_description(
+                    "Static, colour pulse, colour cycle and gradient shift - phase staggered per instance",
+                )
+                .wait_frames(30),
+        )
+        .insert_resource(ClearColor(Color::srgb(0.07, 0.07, 0.09)))
+        .insert_resource(Recorder(BatchRecorder::new()))
+        .add_systems(Startup, setup)
+        .add_systems(PostUpdate, draw)
+        ;
+}
+
 fn main() {
     App::new()
         .add_plugins(

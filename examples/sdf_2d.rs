@@ -17,6 +17,38 @@ use bevy::sprite_render::MeshMaterial2d;
 use bevy_gradmesh::{GradMeshPlugin, MixSpace, SdfMaterial2d, unit_quad};
 use common::screenshot::AutoScreenshotPlugin;
 
+
+/// Run this example. Called by the WASM runner.
+pub fn run(app: &mut App) {
+    app
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "BevyGradmesh SDF 2D".into(),
+                        resolution: (1280, 720).into(),
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .set(RenderPlugin {
+                    synchronous_pipeline_compilation: true,
+                    ..default()
+                }),
+        )
+        .add_plugins(GradMeshPlugin)
+        .add_plugins(
+            AutoScreenshotPlugin::new("screenshot_sdf_2d.png")
+                .animation(4.0)
+                .with_title("SDF 2D")
+                .with_description("One shared quad: discs, rims, arcs, rounded rects, no MSAA"),
+        )
+        .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.13)))
+        .add_systems(Startup, setup)
+        .add_systems(Update, animate)
+        ;
+}
+
 fn main() {
     App::new()
         .add_plugins(

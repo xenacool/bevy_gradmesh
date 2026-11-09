@@ -11,6 +11,36 @@ use bevy_gradmesh::{
 };
 use common::screenshot::AutoScreenshotPlugin;
 
+
+/// Run this example. Called by the WASM runner.
+pub fn run(app: &mut App) {
+    app
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "BevyGradmesh Shape Showcase".into(),
+                        resolution: (1280, 720).into(),
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .set(RenderPlugin {
+                    synchronous_pipeline_compilation: true,
+                    ..default()
+                }),
+        )
+        .add_plugins(GradMeshPlugin)
+        .add_plugins(
+            AutoScreenshotPlugin::new("screenshot_shapes.png")
+                .with_title("Shape Showcase")
+                .with_description("16 procedural primitives with detail levels"),
+        )
+        .add_systems(Startup, setup)
+        .add_systems(PostUpdate, (rotate_shapes, position_labels).chain())
+        ;
+}
+
 fn main() {
     App::new()
         .add_plugins(

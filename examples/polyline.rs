@@ -14,6 +14,38 @@ use bevy_gradmesh::{
 };
 use common::screenshot::AutoScreenshotPlugin;
 
+
+/// Run this example. Called by the WASM runner.
+pub fn run(app: &mut App) {
+    app
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "BevyGradmesh Polyline".into(),
+                        resolution: (1280, 720).into(),
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .set(RenderPlugin {
+                    synchronous_pipeline_compilation: true,
+                    ..default()
+                }),
+        )
+        .add_plugins(GradMeshPlugin)
+        .add_plugins(
+            AutoScreenshotPlugin::new("screenshot_polyline.png")
+                .animation(4.0)
+                .with_title("Polyline")
+                .with_description("3D polyline primitives with tube geometry"),
+        )
+        .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.12)))
+        .add_systems(Startup, setup)
+        .add_systems(PostUpdate, position_labels)
+        ;
+}
+
 fn main() {
     App::new()
         .add_plugins(

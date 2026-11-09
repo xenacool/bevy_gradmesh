@@ -12,6 +12,38 @@ use bevy::render::RenderPlugin;
 use bevy_gradmesh::{BatchRecorder, GradMeshPlugin, ShapeDetail, render_standalone_batches};
 use common::screenshot::AutoScreenshotPlugin;
 
+
+/// Run this example. Called by the WASM runner.
+pub fn run(app: &mut App) {
+    app
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "BevyGradmesh Standalone Pipeline".into(),
+                        resolution: (1280, 720).into(),
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .set(RenderPlugin {
+                    synchronous_pipeline_compilation: true,
+                    ..default()
+                }),
+        )
+        .add_plugins(GradMeshPlugin)
+        .add_plugins(
+            AutoScreenshotPlugin::new("screenshot_standalone.png")
+                .animation(3.0)
+                .with_title("Standalone Pipeline")
+                .with_description("Spheres and boxes drawn without any PBR material"),
+        )
+        .insert_resource(ClearColor(Color::srgb(0.08, 0.08, 0.1)))
+        .add_systems(Startup, setup)
+        .add_systems(PostUpdate, draw_standalone)
+        ;
+}
+
 fn main() {
     App::new()
         .add_plugins(

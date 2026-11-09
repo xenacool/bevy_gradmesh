@@ -18,6 +18,36 @@ use bevy_gradmesh::{
 use common::screenshot::{AutoScreenshotPlugin, spawn_world_label};
 use std::f32::consts::TAU;
 
+
+/// Run this example. Called by the WASM runner.
+pub fn run(app: &mut App) {
+    app
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "BevyGradmesh Road".into(),
+                        resolution: (1280, 720).into(),
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .set(RenderPlugin {
+                    synchronous_pipeline_compilation: true,
+                    ..default()
+                }),
+        )
+        .add_plugins(GradMeshPlugin)
+        .add_plugins(
+            AutoScreenshotPlugin::new("screenshot_road.png")
+                .with_title("Banked road")
+                .with_description("Spline channels for width and roll, caller-supplied sweep frames, roll along a path")
+                .wait_frames(3),
+        )
+        .add_systems(Startup, setup)
+        ;
+}
+
 fn main() {
     App::new()
         .add_plugins(

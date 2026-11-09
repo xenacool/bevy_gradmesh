@@ -13,6 +13,37 @@ use bevy::render::RenderPlugin;
 use bevy_gradmesh::{GradMeshMaterial, GradMeshPlugin, Shape, ShapeDetail, dual_directional, opaque};
 use common::screenshot::AutoScreenshotPlugin;
 
+
+/// Run this example. Called by the WASM runner.
+pub fn run(app: &mut App) {
+    app
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "BevyGradmesh Arbitrary Shapes".into(),
+                        resolution: (1280, 720).into(),
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .set(RenderPlugin {
+                    synchronous_pipeline_compilation: true,
+                    ..default()
+                }),
+        )
+        .add_plugins(GradMeshPlugin)
+        .add_plugins(
+            AutoScreenshotPlugin::new("screenshot_arbitrary_shapes.png")
+                .with_title("Arbitrary Shapes")
+                .with_description("Custom polygons, stars, rings, wedges, and tapered cylinders"),
+        )
+        .insert_resource(ClearColor(Color::srgb(0.08, 0.08, 0.1)))
+        .add_systems(Startup, setup)
+        .add_systems(PostUpdate, position_labels)
+        ;
+}
+
 fn main() {
     App::new()
         .add_plugins(

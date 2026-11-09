@@ -22,6 +22,37 @@ use bevy_gradmesh::{
 };
 use common::screenshot::AutoScreenshotPlugin;
 
+
+/// Run this example. Called by the WASM runner.
+pub fn run(app: &mut App) {
+    app
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "BevyGradmesh Character Creator".into(),
+                        resolution: (1600, 900).into(),
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .set(RenderPlugin {
+                    synchronous_pipeline_compilation: true,
+                    ..default()
+                }),
+        )
+        .add_plugins(GradMeshPlugin)
+        .add_plugins(
+            AutoScreenshotPlugin::new("screenshot_character_creator.png")
+                .animation(6.0)
+                .with_title("Character Creator")
+                .with_description("7 characters with varied facial features and accessories"),
+        )
+        .add_systems(Startup, setup)
+        .add_systems(Update, rotate_characters)
+        ;
+}
+
 fn main() {
     App::new()
         .add_plugins(

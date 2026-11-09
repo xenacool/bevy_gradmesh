@@ -29,6 +29,36 @@ const EXTENT: f32 = 8.0;
 const SMALL_SAMPLES: u32 = 13;
 const SMALL_EXTENT: f32 = 5.0;
 
+
+/// Run this example. Called by the WASM runner.
+pub fn run(app: &mut App) {
+    app
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "BevyGradmesh Terrain".into(),
+                        resolution: (1280, 720).into(),
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .set(RenderPlugin {
+                    synchronous_pipeline_compilation: true,
+                    ..default()
+                }),
+        )
+        .add_plugins(GradMeshPlugin)
+        .add_plugins(
+            AutoScreenshotPlugin::new("screenshot_terrain.png")
+                .with_title("Terrain chunks")
+                .with_description("Seamless chunk edges, relative height bands, three ways to cut a hole")
+                .wait_frames(3),
+        )
+        .add_systems(Startup, setup)
+        ;
+}
+
 fn main() {
     App::new()
         .add_plugins(

@@ -15,6 +15,36 @@ use bevy_gradmesh::{
 };
 use common::screenshot::AutoScreenshotPlugin;
 
+
+/// Run this example. Called by the WASM runner.
+pub fn run(app: &mut App) {
+    app
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "BevyGradmesh Composed Shapes".into(),
+                        resolution: (1280, 720).into(),
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .set(RenderPlugin {
+                    synchronous_pipeline_compilation: true,
+                    ..default()
+                }),
+        )
+        .add_plugins(GradMeshPlugin)
+        .add_plugins(
+            AutoScreenshotPlugin::new("screenshot_composed_shapes.png")
+                .with_title("Composed Shapes")
+                .with_description("Compound, extruded, lathe, PBR styles and a ghost preview")
+                .wait_frames(3),
+        )
+        .add_systems(Startup, setup)
+        ;
+}
+
 fn main() {
     App::new()
         .add_plugins(

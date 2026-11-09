@@ -13,6 +13,38 @@ use bevy::render::RenderPlugin;
 use bevy_gradmesh::{BatchRecorder, GradMeshPlugin, ShapeDetail};
 use common::screenshot::AutoScreenshotPlugin;
 
+
+/// Run this example. Called by the WASM runner.
+pub fn run(app: &mut App) {
+    app
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "BevyGradmesh Instanced Rendering".into(),
+                        resolution: (1280, 720).into(),
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .set(RenderPlugin {
+                    synchronous_pipeline_compilation: true,
+                    ..default()
+                }),
+        )
+        .add_plugins(GradMeshPlugin)
+        .add_plugins(
+            AutoScreenshotPlugin::new("screenshot_instanced.png")
+                .animation(3.0)
+                .with_title("Instanced Rendering")
+                .with_description("500 spheres rendered in a single GPU batch"),
+        )
+        .insert_resource(ClearColor(Color::srgb(0.08, 0.08, 0.1)))
+        .add_systems(Startup, setup)
+        .add_systems(PostUpdate, draw_instanced)
+        ;
+}
+
 fn main() {
     App::new()
         .add_plugins(
