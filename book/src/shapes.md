@@ -335,3 +335,80 @@ fn bezier_curve() -> Shape {
 }
 ```
 Supports linear (2 points), quadratic (3 points), and cubic (4+ points) Bézier curves rendered as tubes.
+
+## Shape Morphing
+
+`Shape::lerp` blends two shapes by interpolating their parameters. When the shapes share the same
+kind, every continuous parameter (radius, height, size, roundness) is interpolated. Integer counts
+(sides, segments, points) and boolean flags (capped, closed) snap at `t = 0.5` — a prism cannot
+have 6.3 sides.
+
+### Cross-kind flat shape morphing
+
+Filled flat shapes of **different kinds** morph as outlines: a polygon can turn into a star, a
+disc rim can turn into a rectangle, and a ring can turn into a disc. The blend produces an
+arbitrary polygon. Supported kinds: rectangle, disc, ellipse, polygon, star, arbitrary polygon,
+rectangle rim, disc rim, ellipse rim, polygon rim, ring and wedge. For rims and rings only the
+outer edge participates; a ring's inner hole is ignored.
+
+```rust
+# use bevy_gradmesh::{Shape, ShapeDetail};
+# fn main() {}
+let a = Shape::disc(1.2, ShapeDetail::Medium);
+let b = Shape::star(5, 1.2, 0.5, ShapeDetail::Medium);
+let mid = a.lerp(&b, 0.5); // an ArbitraryPolygon between disc and star
+```
+
+### Ring morph example
+
+A ring morphs into a disc by blending the ring's outer edge with the disc's outline:
+
+```rust
+# use bevy_gradmesh::{Shape, ShapeDetail};
+# fn main() {}
+let ring = Shape::ring(1.2, 0.5, ShapeDetail::Medium);
+let disc = Shape::disc(1.2, ShapeDetail::Medium);
+let mid = ring.lerp(&disc, 0.5); // fills the hole gradually
+```
+
+A wedge morphs into a disc similarly:
+
+```rust
+# use bevy_gradmesh::{Shape, ShapeDetail};
+# fn main() {}
+let wedge = Shape::wedge(1.2, std::f32::consts::PI, ShapeDetail::Medium);
+let disc = Shape::disc(1.2, ShapeDetail::Medium);
+let mid = wedge.lerp(&disc, 0.5);
+```
+
+### Performance: pre-computing keyframe tables
+
+Calling `lerp` with a different `t` each frame produces a new mesh each frame. At 60 Hz this is
+60 new meshes per second. To avoid this cost:
+
+1. **Animate a continuous proxy**: Keep a fixed mesh and animate its `Transform` (scale,
+   position, rotation) instead of morphing the shape.
+
+2. **Pre-compute a keyframe table**: Build intermediate shapes once at fixed `t` values and
+   switch between them each frame:
+
+   ```rust
+   # use bevy_gradmesh::{Shape, ShapeDetail};
+   # let a = Shape::disc(1.0, ShapeDetail::Medium);
+   # let b = Shape::star(5, 1.0, 0.4, ShapeDetail::Medium);
+   // Build once (e.g. in Startup system)
+   let keyframes: Vec<Shape> = (0..=10)
+       .map(|i| a.lerp(&b, i as f32 / 10.0))
+       .collect();
+   // Each frame, pick the nearest keyframe
+   let idx = (t * 10.0).round() as usize;
+   let shape = &keyframes[idx.min(keyframes.len() - 1)];
+   ```
+
+   This limits mesh generation to the number of keyframes (11 in the example) and makes each
+   frame a cheap array lookup.
+
+3. **Quantise `t`**: Round `t` to a small set of steps before calling `lerp`, so repeated frames
+   reuse the same `Shape` value.
+
+*Six morphing shapes: disc↔star, rect↔ring, polygon↔disc rim, ring↔disc, disc rim↔rect, wedge↔disc. Run `cargo run --example lerp` to reproduce it.*

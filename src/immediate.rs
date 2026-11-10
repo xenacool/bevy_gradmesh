@@ -369,7 +369,7 @@ impl ImmediateRecorder {
         _detail: ShapeDetail,
         material: GradMeshMaterial,
     ) {
-        let mesh = meshes.add(Shape::torus(radius, thickness, start_angle, span).build());
+        let mesh = meshes.add(Shape::torus(radius, thickness, start_angle, span, _detail).build());
         let mat = materials.add(material);
         let entity = self.spawn_mesh(commands, mesh, mat);
         self.entities.push(entity);

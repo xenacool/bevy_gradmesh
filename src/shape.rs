@@ -793,6 +793,13 @@ enum ShapeKind {
         thickness: f32,
         segments: u32,
     },
+    /// Catmull-Rom spline rendered as a tube (convenience wrapper around sweep).
+    CatmullRom3D {
+        points: Vec<Vec3>,
+        thickness: f32,
+        closed: bool,
+        segments: u32,
+    },
     /// N-pointed star (2D flat quad, like polygon).
     Star {
         points: u32,
@@ -832,11 +839,13 @@ enum ShapeKind {
         points: Vec<Vec2>,
         thickness: f32,
         closed: bool,
+        segments: u32,
     },
     /// Flat thick Bézier curve in the XY plane.
     Bezier2D {
         control_points: Vec<Vec2>,
         thickness: f32,
+        segments: u32,
     },
     /// A caller-supplied mesh, identified by `key` (see [`Shape::from_mesh`]).
     Mesh {
@@ -1386,6 +1395,40 @@ impl PartialEq for ShapeKind {
                     && s1 == s2
             }
             (
+                Self::CatmullRom3D {
+                    points: p1,
+                    thickness: t1,
+                    closed: c1,
+                    segments: s1,
+                },
+                Self::CatmullRom3D {
+                    points: p2,
+                    thickness: t2,
+                    closed: c2,
+                    segments: s2,
+                },
+            ) => {
+                p1.len() == p2.len()
+                    && p1.iter().zip(p2.iter()).all(|(a, b)| {
+                        let qa = Vec3::new(
+                            (a.x * 100.0).round() / 100.0,
+                            (a.y * 100.0).round() / 100.0,
+                            (a.z * 100.0).round() / 100.0,
+                        );
+                        let qb = Vec3::new(
+                            (b.x * 100.0).round() / 100.0,
+                            (b.y * 100.0).round() / 100.0,
+                            (b.z * 100.0).round() / 100.0,
+                        );
+                        qa.x.to_bits() == qb.x.to_bits()
+                            && qa.y.to_bits() == qb.y.to_bits()
+                            && qa.z.to_bits() == qb.z.to_bits()
+                    })
+                    && t1.to_bits() == t2.to_bits()
+                    && c1 == c2
+                    && s1 == s2
+            }
+            (
                 Self::Star {
                     points: p1,
                     outer_radius: o1,
@@ -1472,23 +1515,27 @@ impl PartialEq for ShapeKind {
                     points: p1,
                     thickness: t1,
                     closed: c1,
+                    segments: s1,
                 },
                 Self::Polyline2D {
                     points: p2,
                     thickness: t2,
                     closed: c2,
+                    segments: s2,
                 },
-            ) => eq_vec2s(p1, p2) && t1.to_bits() == t2.to_bits() && c1 == c2,
+            ) => eq_vec2s(p1, p2) && t1.to_bits() == t2.to_bits() && c1 == c2 && s1 == s2,
             (
                 Self::Bezier2D {
                     control_points: p1,
                     thickness: t1,
+                    segments: s1,
                 },
                 Self::Bezier2D {
                     control_points: p2,
                     thickness: t2,
+                    segments: s2,
                 },
-            ) => eq_vec2s(p1, p2) && t1.to_bits() == t2.to_bits(),
+            ) => eq_vec2s(p1, p2) && t1.to_bits() == t2.to_bits() && s1 == s2,
             (Self::Mesh { key: k1, .. }, Self::Mesh { key: k2, .. }) => k1 == k2,
             (
                 Self::Sweep {
@@ -1708,6 +1755,25 @@ impl std::hash::Hash for ShapeKind {
                 thickness.to_bits().hash(state);
                 segments.hash(state);
             }
+            Self::CatmullRom3D {
+                points,
+                thickness,
+                closed,
+                segments,
+            } => {
+                points.len().hash(state);
+                for p in points {
+                    let qx = (p.x * 100.0).round() / 100.0;
+                    let qy = (p.y * 100.0).round() / 100.0;
+                    let qz = (p.z * 100.0).round() / 100.0;
+                    qx.to_bits().hash(state);
+                    qy.to_bits().hash(state);
+                    qz.to_bits().hash(state);
+                }
+                thickness.to_bits().hash(state);
+                closed.hash(state);
+                segments.hash(state);
+            }
             Self::Star {
                 points,
                 outer_radius,
@@ -1769,17 +1835,21 @@ impl std::hash::Hash for ShapeKind {
                 points,
                 thickness,
                 closed,
+                segments,
             } => {
                 hash_vec2s(points, state);
                 thickness.to_bits().hash(state);
                 closed.hash(state);
+                segments.hash(state);
             }
             Self::Bezier2D {
                 control_points,
                 thickness,
+                segments,
             } => {
                 hash_vec2s(control_points, state);
                 thickness.to_bits().hash(state);
+                segments.hash(state);
             }
             Self::Mesh { key, .. } => key.hash(state),
             Self::Sweep {
@@ -1895,7 +1965,8 @@ impl Shape {
 
     /// Creates a torus with the given major radius and tube thickness.
     /// `start` and `span` define the arc in radians (default: full circle).
-    pub fn torus(radius: f32, thickness: f32, start: f32, span: f32) -> Self {
+    /// `detail` controls the segment count for both the major and minor rings.
+    pub fn torus(radius: f32, thickness: f32, start: f32, span: f32, detail: ShapeDetail) -> Self {
         Self {
             kind: ShapeKind::Torus {
                 radius,
@@ -1903,7 +1974,7 @@ impl Shape {
                 start,
                 span,
             },
-            detail: ShapeDetail::Medium,
+            detail,
             cache: BoundsCache::default(),
         }
     }
@@ -2258,6 +2329,35 @@ impl Shape {
         }
     }
 
+    /// Unified constructor for extruded polygons supporting holes **and** colours
+    /// in a single call.
+    ///
+    /// This replaces the fragmented API of [`Shape::extruded_polygon`],
+    /// [`Shape::extruded_polygon_colored`], and [`Shape::extruded_polygon_with_holes`]
+    /// by accepting all options at once. When `colors` is provided, its length
+    /// must match `outer`; otherwise it is ignored.
+    pub fn extruded_polygon_with_options(
+        outer: Vec<Vec2>,
+        holes: Vec<Vec<Vec2>>,
+        colors: Option<Vec<[f32; 4]>>,
+        depth: f32,
+        roundness: f32,
+        detail: ShapeDetail,
+    ) -> Self {
+        let colors = colors.and_then(|c| (c.len() == outer.len()).then_some(c));
+        Self {
+            kind: ShapeKind::ExtrudedPolygon {
+                outer,
+                holes,
+                colors,
+                depth,
+                roundness,
+            },
+            detail,
+            cache: BoundsCache::default(),
+        }
+    }
+
     /// Merges `parts` into one mesh (one draw call).
     ///
     /// Each part is built, moved by its transform and tinted with its optional
@@ -2293,14 +2393,15 @@ impl Shape {
     ///
     /// UVs run along the line in `u` (0 to 1) and across it in `v`, so a
     /// `dual_directional` gradient along `X` fades along the curve. `closed` joins
-    /// the last point back to the first. The flat counterpart of
-    /// [`Shape::polyline3d`].
-    pub fn polyline_2d(points: Vec<Vec2>, thickness: f32, closed: bool) -> Self {
+    /// the last point back to the first. `segments` controls cross-section detail
+    /// (at least 3). The flat counterpart of [`Shape::polyline3d`].
+    pub fn polyline_2d(points: Vec<Vec2>, thickness: f32, closed: bool, segments: u32) -> Self {
         Self {
             kind: ShapeKind::Polyline2D {
                 points,
                 thickness,
                 closed,
+                segments,
             },
             detail: ShapeDetail::default(),
             cache: BoundsCache::default(),
@@ -2308,13 +2409,48 @@ impl Shape {
     }
 
     /// Creates a flat Bézier curve `thickness` wide through any number of control
-    /// points (degree = points - 1) in the XY plane. `detail` sets how finely the
-    /// curve is sampled. The flat counterpart of the 3D Bézier curve.
-    pub fn bezier_2d(control_points: Vec<Vec2>, thickness: f32, detail: ShapeDetail) -> Self {
+    /// points (degree = points - 1) in the XY plane. `segments` sets how finely the
+    /// curve is sampled (at least 4). The flat counterpart of the 3D Bézier curve.
+    pub fn bezier_2d(control_points: Vec<Vec2>, thickness: f32, segments: u32) -> Self {
         Self {
             kind: ShapeKind::Bezier2D {
                 control_points,
                 thickness,
+                segments,
+            },
+            detail: ShapeDetail::default(),
+            cache: BoundsCache::default(),
+        }
+    }
+
+    /// Creates a Catmull-Rom spline rendered as a tube along the curve path.
+    ///
+    /// This is the one-shot convenience counterpart of [`Shape::polyline3d`] and
+    /// [`Shape::bezier_curve`]: pass control points and get a smooth tube without
+    /// manually building a [`CatmullRomSpline`](crate::CatmullRomSpline).
+    ///
+    /// # Arguments
+    /// * `points` - Control points the curve passes through (minimum 2 for open, 3 for closed).
+    /// * `thickness` - Tube radius.
+    /// * `closed` - Whether the spline forms a closed loop.
+    /// * `segments` - Cross-section segments around the tube.
+    /// * `detail` - Ignored; uses `segments` for detail.
+    ///
+    /// If fewer than 2 points are given (or fewer than 3 for closed), an empty
+    /// mesh is produced with a warning.
+    pub fn catmull_rom_3d(
+        points: Vec<Vec3>,
+        thickness: f32,
+        closed: bool,
+        segments: u32,
+        detail: ShapeDetail,
+    ) -> Self {
+        Self {
+            kind: ShapeKind::CatmullRom3D {
+                points,
+                thickness,
+                closed,
+                segments,
             },
             detail,
             cache: BoundsCache::default(),
@@ -2407,6 +2543,24 @@ impl Shape {
             detail,
             cache: BoundsCache::default(),
         }
+    }
+
+    /// Alias for [`Shape::sweep`]: sweeps `profile` along a polyline `path`.
+    ///
+    /// The name makes the relationship with [`Shape::sweep_with_frames`] clearer:
+    /// `sweep_path` derives frames from a polyline, `sweep_with_frames` accepts
+    /// pre-baked frames.
+    pub fn sweep_path(profile: Vec<Vec2>, path: Vec<Vec3>, options: SweepOptions) -> Self {
+        Self::sweep(profile, path, options)
+    }
+
+    /// Alias for [`Shape::sweep_frames`]: sweeps `profile` through pre-baked frames.
+    ///
+    /// The name makes the relationship with [`Shape::sweep_path`] clearer:
+    /// `sweep_path` derives frames from a polyline, `sweep_with_frames` accepts
+    /// pre-baked frames (e.g. from a baked spline).
+    pub fn sweep_with_frames(profile: Vec<Vec2>, frames: &[SweepFrame], options: SweepOptions) -> Self {
+        Self::sweep_frames(profile, frames, options)
     }
 
     /// A terrain chunk: a grid of `size.x * size.y` height samples spread over
@@ -2701,6 +2855,12 @@ impl Shape {
                 thickness,
                 segments,
             } => build_bezier_curve(control_points.clone(), *thickness, *segments),
+            ShapeKind::CatmullRom3D {
+                points,
+                thickness,
+                closed,
+                segments,
+            } => build_catmull_rom_3d(points.clone(), *thickness, *closed, *segments),
             ShapeKind::Star {
                 points,
                 outer_radius,
@@ -2749,12 +2909,14 @@ impl Shape {
                 points,
                 thickness,
                 closed,
+                segments: _,
             } => geometry::polyline_2d_mesh(points, *thickness, *closed),
             ShapeKind::Bezier2D {
                 control_points,
                 thickness,
+                segments,
             } => geometry::polyline_2d_mesh(
-                &geometry::bezier_2d_points(control_points, self.detail.segments() * 2),
+                &geometry::bezier_2d_points(control_points, *segments),
                 *thickness,
                 false,
             ),
@@ -4488,6 +4650,56 @@ fn build_bezier_curve(control_points: Vec<Vec3>, thickness: f32, segments: u32) 
     build_polyline3d(tessellated, thickness, false, segments)
 }
 
+/// Build a Catmull-Rom spline mesh as a tube along the curve path.
+/// Uses the spline module to bake the curve, then sweeps a circular profile.
+fn build_catmull_rom_3d(points: Vec<Vec3>, thickness: f32, closed: bool, segments: u32) -> Mesh {
+    use crate::spline::CatmullRomSpline;
+    
+    // Need at least 3 points for closed, 2 for open
+    let spline = if closed {
+        CatmullRomSpline::closed(points).ok()
+    } else {
+        CatmullRomSpline::open(points).ok()
+    };
+    
+    let Some(spline) = spline else {
+        bevy::log::warn!("catmull_rom_3d requires at least 2 points (3 for closed), got fewer");
+        let mut mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        );
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, Vec::<Vec3>::new());
+        return mesh;
+    };
+    
+    // Bake the spline with a step size that gives smooth results
+    let baked = spline.bake(0.1);
+    let frames = baked.sweep_frames(None, None);
+    
+    if frames.len() < 2 {
+        let mut mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        );
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, Vec::<Vec3>::new());
+        return mesh;
+    }
+    
+    // Build a circular profile for the tube
+    let profile_segs = segments.max(4);
+    let mut profile = Vec::with_capacity(profile_segs as usize);
+    for i in 0..profile_segs {
+        let angle = i as f32 * std::f32::consts::TAU / profile_segs as f32;
+        profile.push(Vec2::new(angle.cos() * thickness, angle.sin() * thickness));
+    }
+    
+    let options = SweepOptions::default()
+        .with_closed(closed)
+        .with_caps(!closed);
+    
+    geometry::sweep_mesh(&profile, &frames.iter().map(|f| f.position).collect::<Vec<_>>(), Some(&frames), &options)
+}
+
 /// Tessellate a Bézier curve into a series of points.
 /// Supports any number of control points (degree = points - 1) using De Casteljau's algorithm,
 /// so every control point influences the curve.
@@ -4819,7 +5031,29 @@ fn lerp_vec3(a: Vec3, b: Vec3, t: f32) -> Vec3 {
     )
 }
 
-/// Counts and flags cannot be blended; they follow whichever end is nearer.
+/// Picks one of two values based on a step function at `t == 0.5`.
+///
+/// Returns `a` when `t < 0.5` and `b` otherwise. Used for integer counts
+/// (sides, segments, points) and boolean flags (capped, closed) that cannot
+/// be meaningfully interpolated — a prism cannot have 6.3 sides.
+///
+/// # Animation implications
+///
+/// Because this is a hard step, animating `t` from 0.0 to 1.0 will show the
+/// first value unchanged until `t` crosses 0.5, then instantly jump to the
+/// second value. For example, lerping a 4-sided prism to an 8-sided prism
+/// will display the 4-sided version for the first half of the animation and
+/// the 8-sided version for the second half, with no gradual transition.
+///
+/// To avoid the jump in visible animations, consider these strategies:
+///
+/// * **Quantise `t`** before calling [`Shape::lerp`]: round to a small set of
+///   steps so the switch happens at a predictable frame rather than mid-animation.
+/// * **Pre-compute a keyframe table**: build the intermediate shapes at fixed `t`
+///   values (e.g. 0.0, 0.25, 0.5, 1.0) and switch between them, rather than
+///   calling `lerp` every frame. See [`Shape::lerp`] for more on keyframing.
+/// * **Animate a continuous proxy** instead: for example, animate `Transform`
+///   scale on a fixed shape rather than morphing the shape itself.
 fn pick<T>(t: f32, a: T, b: T) -> T {
     if t < 0.5 { a } else { b }
 }
@@ -5336,12 +5570,23 @@ impl ShapeKind {
                     morph_rings(o1, c1.as_deref(), o2, c2.as_deref(), t)?
                 } else {
                     (lerp_points(o1, o2, t, lerp_vec2)?, {
+                        // When vertex counts match, blend colors directly.
+                        // If only one side has colors, treat the missing side as white,
+                        // consistent with `morph_rings` behavior for different counts.
+                        let white = [1.0, 1.0, 1.0, 1.0];
                         match (c1, c2) {
                             (None, None) => None,
-                            (Some(a), Some(b)) if a.len() == b.len() => {
+                            (Some(a), Some(b)) => {
                                 Some(a.iter().zip(b).map(|(x, y)| lerp_rgba(*x, *y, t)).collect())
                             }
-                            _ => return None,
+                            (Some(a), None) => {
+                                // Blend `a`'s colors towards white
+                                Some(a.iter().map(|x| lerp_rgba(*x, white, t)).collect())
+                            }
+                            (None, Some(b)) => {
+                                // Blend white towards `b`'s colors
+                                Some(b.iter().map(|y| lerp_rgba(white, *y, t)).collect())
+                            }
                         }
                     })
                 };
@@ -5371,29 +5616,35 @@ impl ShapeKind {
                     points: p1,
                     thickness: t1,
                     closed: c1,
+                    segments: s1,
                 },
                 K::Polyline2D {
                     points: p2,
                     thickness: t2,
                     closed: c2,
+                    segments: s2,
                 },
             ) => K::Polyline2D {
                 points: lerp_points(p1, p2, t, lerp_vec2)?,
                 thickness: l(t1, t2),
                 closed: pick(t, *c1, *c2),
+                segments: pick(t, *s1, *s2),
             },
             (
                 K::Bezier2D {
                     control_points: p1,
                     thickness: t1,
+                    segments: s1,
                 },
                 K::Bezier2D {
                     control_points: p2,
                     thickness: t2,
+                    segments: s2,
                 },
             ) => K::Bezier2D {
                 control_points: lerp_points(p1, p2, t, lerp_vec2)?,
                 thickness: l(t1, t2),
+                segments: pick(t, *s1, *s2),
             },
             _ => return None,
         })
@@ -5414,15 +5665,18 @@ impl Shape {
     ///   winding of the first and rotated to the start that moves points the
     ///   least. Per-vertex colours blend alongside (a missing list counts as
     ///   white). Polygons with fewer than three vertices cannot be morphed.
-    /// * Filled flat shapes of **different kinds** (rectangle, disc, ellipse,
-    ///   regular polygon, star and arbitrary polygon) morph as outlines, so a
-    ///   polygon can turn into a star; the blend in between is an arbitrary
-    ///   polygon, and the [`ShapeDetail`] gives the segment count of a disc or
-    ///   an ellipse.
-    /// * Other shapes of different kinds (rims and rings, solids), open point
-    ///   lists (polylines, curves, lathe profiles) of different lengths, or
-    ///   polygons with a different number of holes cannot be blended and yield
-    ///   the nearer endpoint.
+    /// * Filled flat shapes of **different kinds** morph as outlines, so a
+    ///   polygon can turn into a star, a disc rim can turn into a rectangle,
+    ///   and a ring can turn into a disc.  The blend in between is an arbitrary
+    ///   polygon, and the [`ShapeDetail`] gives the segment count of a disc,
+    ///   ellipse, ring or wedge.  Rims use their outer edge; a ring's inner
+    ///   hole is ignored.  Supported kinds: rectangle, disc, ellipse, polygon,
+    ///   star, arbitrary polygon, rectangle rim, disc rim, ellipse rim, polygon
+    ///   rim, ring and wedge.
+    /// * Other shapes of different kinds (solids), open point lists (polylines,
+    ///   curves, lathe profiles) of different lengths, or polygons with a
+    ///   different number of holes cannot be blended and yield the nearer
+    ///   endpoint.
     ///
     /// `t == 0.0` returns a copy of `self` and `t == 1.0` a copy of `other`.
     ///
@@ -5431,9 +5685,40 @@ impl Shape {
     /// no mesh to blend. Blend them with [`SdfMaterial2d::lerp`](crate::SdfMaterial2d::lerp),
     /// which costs no new mesh.
     ///
-    /// Every distinct blended value is a distinct mesh. To animate smoothly
-    /// without generating a new mesh per frame, prefer animating the
-    /// `Transform` scale of a fixed shape, or quantise `t` before calling this.
+    /// # Performance: every blended value is a distinct mesh
+    ///
+    /// Calling `lerp` with a different `t` each frame produces a new `Shape`
+    /// value each frame, which produces a new mesh on `build()`. At 60 Hz this
+    /// is 60 new meshes per second. The asset pipeline will eventually
+    /// garbage-collect old handles, but the CPU still tessellates every frame.
+    ///
+    /// To animate smoothly without this cost, use one of these strategies:
+    ///
+    /// 1. **Animate a continuous proxy**: Instead of morphing the shape, keep
+    ///    a fixed mesh and animate its `Transform` (scale, position, rotation).
+    ///    This is free — the GPU handles it with no new meshes.
+    ///
+    /// 2. **Pre-compute a keyframe table**: Build the intermediate shapes once
+    ///    at fixed `t` values, store them, and switch between each frame:
+    ///
+    ///    ```ignore
+    ///    // Build once (e.g. in Startup system)
+    ///    let keyframes: Vec<Shape> = (0..=10)
+    ///        .map(|i| a.lerp(&b, i as f32 / 10.0))
+    ///        .collect();
+    ///    // Each frame, pick the nearest keyframe
+    ///    let idx = (t * 10.0).round() as usize;
+    ///    let shape = &keyframes[idx.min(keyframes.len() - 1)];
+    ///    ```
+    ///
+    ///    This limits mesh generation to the number of keyframes (11 in the
+    ///    example) and makes each frame a cheap array lookup. Adjust the
+    ///    keyframe count to trade smoothness for performance.
+    ///
+    /// 3. **Quantise `t`**: Round `t` to a small set of steps before calling
+    ///    `lerp`, so repeated frames reuse the same `Shape` value. Combined
+    ///    with a small cache (`HashMap<f32, Shape>`), this avoids rebuilding
+    ///    meshes for repeated `t` values.
     #[must_use]
     pub fn lerp(&self, other: &Self, t: f32) -> Self {
         let t = if t.is_nan() { 0.0 } else { t.clamp(0.0, 1.0) };
@@ -5460,7 +5745,9 @@ impl Shape {
     }
 
     /// The outline of a filled flat shape, counter-clockwise, with its
-    /// per-vertex colours if it has any.
+    /// per-vertex colours if it has any.  For rims and rings the outer edge
+    /// is returned (the inner hole is ignored), so a rim can cross-morph into
+    /// a filled shape of a different kind.
     fn flat_outline(&self) -> Option<(Vec<Vec2>, Option<Vec<Rgba>>)> {
         let round = |radius: Vec2| {
             let n = self.detail.segments() as usize;
@@ -5479,8 +5766,24 @@ impl Shape {
                     None,
                 )
             }
+            ShapeKind::RectangleRim { size, rim_width } => {
+                // Outer edge of the rim
+                let h = *size * 0.5 + *rim_width;
+                (
+                    vec![Vec2::new(-h.x, -h.y), Vec2::new(h.x, -h.y), Vec2::new(h.x, h.y), Vec2::new(-h.x, h.y)],
+                    None,
+                )
+            }
             ShapeKind::Disc { radius } => (round(Vec2::splat(*radius)), None),
+            ShapeKind::DiscRim { radius, rim_width } => {
+                // Outer edge of the rim
+                (round(Vec2::splat(*radius + *rim_width)), None)
+            }
             ShapeKind::Ellipse { radius } => (round(*radius), None),
+            ShapeKind::EllipseRim { radius, rim_width } => {
+                // Outer edge of the rim (approximate: add rim_width to both axes)
+                (round(*radius + Vec2::splat(*rim_width)), None)
+            }
             ShapeKind::Polygon { sides, radius } => {
                 let n = (*sides).max(3) as usize;
                 (
@@ -5488,6 +5791,19 @@ impl Shape {
                         .map(|i| {
                             let a = i as f32 * 2.0 * PI / n as f32;
                             Vec2::new(a.cos() * radius, a.sin() * radius)
+                        })
+                        .collect(),
+                    None,
+                )
+            }
+            ShapeKind::PolygonRim { sides, radius, rim_width } => {
+                let n = (*sides).max(3) as usize;
+                // Outer edge of the rim
+                (
+                    (0..n)
+                        .map(|i| {
+                            let a = i as f32 * 2.0 * PI / n as f32;
+                            Vec2::new(a.cos() * (radius + rim_width), a.sin() * (radius + rim_width))
                         })
                         .collect(),
                     None,
@@ -5510,14 +5826,31 @@ impl Shape {
                     None,
                 )
             }
+            ShapeKind::Ring { outer_radius, inner_radius: _ } => {
+                // Outer edge only; inner hole ignored for outline morphing
+                (round(Vec2::splat(*outer_radius)), None)
+            }
+            ShapeKind::Wedge { radius, angle } => {
+                // Wedge outline: centre -> tip along start angle -> arc -> centre
+                let n = self.detail.segments() as usize;
+                let mut verts = Vec::with_capacity(n + 2);
+                verts.push(Vec2::ZERO); // centre
+                for i in 0..=n {
+                    let a = i as f32 * *angle / n as f32;
+                    verts.push(Vec2::new(a.cos() * radius, a.sin() * radius));
+                }
+                (verts, None)
+            }
             ShapeKind::ArbitraryPolygon { vertices, colors } => (vertices.clone(), colors.clone()),
             _ => return None,
         })
     }
 
-    /// Blends two different kinds of filled flat shape (rectangle, disc,
-    /// ellipse, regular polygon, star, arbitrary polygon) as outlines, the way
-    /// two arbitrary polygons of different vertex counts blend.
+    /// Blends two different kinds of filled flat shape as outlines, the way
+    /// two arbitrary polygons of different vertex counts blend.  Supported
+    /// kinds: rectangle, disc, ellipse, polygon, star, arbitrary polygon,
+    /// as well as rims (rectangle, disc, ellipse, polygon), rings and wedges.
+    /// For rims and rings only the outer edge participates in the morph.
     fn lerp_flat_outlines(&self, other: &Self, t: f32) -> Option<ShapeKind> {
         let (a, ca) = self.flat_outline()?;
         let (b, cb) = other.flat_outline()?;
@@ -5590,10 +5923,14 @@ mod lerp_tests {
             ShapeKind::ArbitraryPolygon { vertices, .. } => assert!(vertices.len() >= 12),
             other => panic!("unexpected {other:?}"),
         }
-        // Rings and solids still snap.
+        // Rings now morph as outlines (outer edge only).
         let ring = Shape::ring(2.0, 1.0, D);
-        assert_eq!(star.lerp(&ring, 0.4), star);
-        assert_eq!(star.lerp(&ring, 0.6), ring);
+        let mid = star.lerp(&ring, 0.5);
+        assert!(matches!(mid.kind, ShapeKind::ArbitraryPolygon { .. }));
+        // Solids still snap.
+        let sphere = Shape::sphere(1.0, D);
+        assert_eq!(star.lerp(&sphere, 0.4), star);
+        assert_eq!(star.lerp(&sphere, 0.6), sphere);
     }
 
     #[test]
@@ -5629,6 +5966,111 @@ mod lerp_tests {
         let a = Shape::star(5, 1.0, 0.4, D);
         let b = Shape::star(7, 2.0, 0.8, D);
         assert_eq!(a.lerp(&b, 0.25), Shape::star(5, 1.25, 0.5, D));
+    }
+
+    #[test]
+    fn rim_can_morph_into_filled_shape() {
+        // A disc rim can cross-morph into a rectangle
+        let rim = Shape::disc_rim(1.0, 0.3, D);
+        let rect = Shape::rectangle(Vec2::splat(2.6), D);
+        let mid = rim.lerp(&rect, 0.5);
+        assert!(matches!(mid.kind, ShapeKind::ArbitraryPolygon { .. }));
+        let mesh = mid.build();
+        assert!(mesh.get_vertex_buffer_size() > 0);
+
+        // A ring can cross-morph into a disc
+        let ring = Shape::ring(2.0, 1.0, D);
+        let disc = Shape::disc(2.0, D);
+        let mid = ring.lerp(&disc, 0.5);
+        assert!(matches!(mid.kind, ShapeKind::ArbitraryPolygon { .. }));
+    }
+
+    #[test]
+    fn wedge_can_morph_into_disc() {
+        let wedge = Shape::wedge(2.0, std::f32::consts::PI, D);
+        let disc = Shape::disc(2.0, D);
+        let mid = wedge.lerp(&disc, 0.5);
+        assert!(matches!(mid.kind, ShapeKind::ArbitraryPolygon { .. }));
+        let mesh = mid.build();
+        assert!(mesh.get_vertex_buffer_size() > 0);
+    }
+
+    /// Verifies that ExtrudedPolygon lerp handles missing colors consistently
+    /// regardless of vertex count: missing colors are treated as white, matching
+    /// the `morph_rings` behavior.
+    #[test]
+    fn extruded_polygon_color_blending() {
+        let outer = vec![
+            Vec2::new(-1.0, -1.0),
+            Vec2::new( 1.0, -1.0),
+            Vec2::new( 1.0,  1.0),
+            Vec2::new(-1.0,  1.0),
+        ];
+        let colors: Vec<[f32; 4]> = outer.iter().map(|_| [1.0, 0.0, 0.0, 1.0]).collect();
+
+        // Same vertex count: one has colors, the other doesn't.
+        // Missing colors are treated as white, so the blend succeeds.
+        let with_color = Shape::extruded_polygon_with_options(
+            outer.clone(), vec![], Some(colors.clone()),
+            1.0, 0.0, D,
+        );
+        let no_color = Shape::extruded_polygon_with_options(
+            outer.clone(), vec![], None,
+            1.0, 0.0, D,
+        );
+        let mid = with_color.lerp(&no_color, 0.5);
+        // The blend now succeeds: colors are blended towards white.
+        match &mid.kind {
+            ShapeKind::ExtrudedPolygon { outer: b_outer, colors: b_colors, .. } => {
+                assert_eq!(b_outer.len(), 4, "same-count lerp keeps vertex count");
+                let blended_colors = b_colors.as_ref().expect("colors should be present when blending with white");
+                assert_eq!(blended_colors.len(), 4);
+                // Red [1,0,0,1] blended with white [1,1,1,1] at t=0.5 → [1, 0.5, 0.5, 1]
+                for c in blended_colors {
+                    assert!((c[0] - 1.0).abs() < 0.01, "red channel should stay at 1.0");
+                    assert!((c[1] - 0.5).abs() < 0.01, "green channel should blend to 0.5");
+                    assert!((c[2] - 0.5).abs() < 0.01, "blue channel should blend to 0.5");
+                }
+            }
+            other => panic!("expected ExtrudedPolygon, got {other:?}"),
+        }
+
+        // Reverse direction: no color → with color
+        let mid2 = no_color.lerp(&with_color, 0.5);
+        match &mid2.kind {
+            ShapeKind::ExtrudedPolygon { colors: b_colors, .. } => {
+                let blended_colors = b_colors.as_ref().expect("colors should be present");
+                // White blended with red at t=0.5 → [1, 0.5, 0.5, 1]
+                for c in blended_colors {
+                    assert!((c[0] - 1.0).abs() < 0.01);
+                    assert!((c[1] - 0.5).abs() < 0.01);
+                    assert!((c[2] - 0.5).abs() < 0.01);
+                }
+            }
+            other => panic!("expected ExtrudedPolygon, got {other:?}"),
+        }
+
+        // Different vertex count: morph_rings treats missing colors as white,
+        // so the blend succeeds.
+        let outer_5 = vec![
+            Vec2::new(0.0, -1.0),
+            Vec2::new( 0.95, -0.31),
+            Vec2::new( 0.59,  0.81),
+            Vec2::new(-0.59,  0.81),
+            Vec2::new(-0.95, -0.31),
+        ];
+        let no_color_5 = Shape::extruded_polygon_with_options(
+            outer_5.clone(), vec![], None,
+            1.0, 0.0, D,
+        );
+        let blended = with_color.lerp(&no_color_5, 0.5);
+        match &blended.kind {
+            ShapeKind::ExtrudedPolygon { outer: b_outer, colors: b_colors, .. } => {
+                assert_eq!(b_outer.len(), 5, "morph_rings grows to the larger count");
+                assert!(b_colors.is_some(), "missing colors are treated as white, so colors should be present");
+            }
+            other => panic!("expected ExtrudedPolygon, got {other:?}"),
+        }
     }
 }
 
@@ -5743,7 +6185,7 @@ mod tests {
 
     #[test]
     fn torus_generates_mesh() {
-        let full = Shape::torus(1.0, 0.3, 0.0, std::f32::consts::TAU).build();
+        let full = Shape::torus(1.0, 0.3, 0.0, std::f32::consts::TAU, ShapeDetail::Medium).build();
         assert!(
             full.get_vertex_buffer_size() > 0,
             "Torus must have vertices"
@@ -5781,7 +6223,7 @@ mod tests {
             Shape::cone(0.5, 1.0, ShapeDetail::Medium),
             Shape::capsule(0.3, 1.0, ShapeDetail::Medium),
             Shape::hemisphere(0.5, true, ShapeDetail::Medium),
-            Shape::torus(0.5, 0.2, 0.0, std::f32::consts::TAU),
+            Shape::torus(0.5, 0.2, 0.0, std::f32::consts::TAU, ShapeDetail::Medium),
             Shape::regular_prism(6, 0.5, 1.0, 0.0, ShapeDetail::Medium),
             Shape::pyramid(4, 0.5, 1.0, ShapeDetail::Medium),
         ];
@@ -5925,8 +6367,8 @@ mod tests {
     #[test]
     fn torus_arc_has_end_caps() {
         // Partial torus should have more vertices than full torus due to end cap centers
-        let full = Shape::torus(1.0, 0.3, 0.0, std::f32::consts::TAU).build();
-        let partial = Shape::torus(1.0, 0.3, 0.0, std::f32::consts::PI).build();
+        let full = Shape::torus(1.0, 0.3, 0.0, std::f32::consts::TAU, ShapeDetail::Medium).build();
+        let partial = Shape::torus(1.0, 0.3, 0.0, std::f32::consts::PI, ShapeDetail::Medium).build();
         assert!(
             partial.count_vertices() > full.count_vertices(),
             "Partial torus should have end cap vertices: full={}, partial={}",
@@ -5938,7 +6380,7 @@ mod tests {
     #[test]
     fn torus_full_has_no_end_caps() {
         // Full torus (span = TAU) should not have end caps
-        let full = Shape::torus(1.0, 0.3, 0.0, std::f32::consts::TAU).build();
+        let full = Shape::torus(1.0, 0.3, 0.0, std::f32::consts::TAU, ShapeDetail::Medium).build();
         let segments = ShapeDetail::Medium.segments() as usize;
         let minor = (segments / 2).max(4);
         // Full torus: (major+1) * (minor+1) vertices, no caps
@@ -6611,7 +7053,7 @@ mod extended_shape_tests {
             Shape::cylinder(1.0, 2.0, D),
             Shape::cone(1.0, 2.0, D),
             Shape::capsule(0.5, 2.0, D),
-            Shape::torus(1.0, 0.2, 0.0, std::f32::consts::TAU),
+            Shape::torus(1.0, 0.2, 0.0, std::f32::consts::TAU, D),
             Shape::pyramid(4, 1.0, 1.0, D),
             Shape::disc(1.0, D),
             Shape::rectangle(Vec2::ONE, D),
@@ -6634,9 +7076,9 @@ mod extended_shape_tests {
             door_wall(),
             tower(),
             Shape::lathe(vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.5), Vec2::new(0.0, 1.0)], 12, D),
-            Shape::polyline_2d(vec![Vec2::ZERO, Vec2::new(1.0, 0.5), Vec2::new(2.0, 0.0)], 0.1, false),
-            Shape::polyline_2d(Shape::rounded_rectangle(Vec2::splat(2.0), 0.3, 3), 0.1, true),
-            Shape::bezier_2d(vec![Vec2::ZERO, Vec2::new(1.0, 2.0), Vec2::new(2.0, 0.0)], 0.1, D),
+            Shape::polyline_2d(vec![Vec2::ZERO, Vec2::new(1.0, 0.5), Vec2::new(2.0, 0.0)], 0.1, false, 8),
+            Shape::polyline_2d(Shape::rounded_rectangle(Vec2::splat(2.0), 0.3, 3), 0.1, true, 8),
+            Shape::bezier_2d(vec![Vec2::ZERO, Vec2::new(1.0, 2.0), Vec2::new(2.0, 0.0)], 0.1, 16),
         ];
         for shape in &shapes {
             assert_pickable(&shape.build());
@@ -8488,5 +8930,143 @@ mod opening_tests {
         assert_eq!(boundary_edges(&mesh), 0);
         assert!(positions(&mesh).iter().all(|p| p.is_finite()));
         assert_eq!(through(&mesh, 1.0, 0.5), 0);
+    }
+
+    // --- Catmull-Rom 3D convenience constructor tests ---
+
+    #[test]
+    fn catmull_rom_3d_closed_produces_mesh() {
+        let pts = vec![
+            Vec3::ZERO,
+            Vec3::new(2.0, 0.0, 0.0),
+            Vec3::new(2.0, 0.0, 2.0),
+            Vec3::new(0.0, 0.0, 2.0),
+        ];
+        let shape = Shape::catmull_rom_3d(pts, 0.1, true, 8, ShapeDetail::Medium);
+        let mesh = shape.build();
+        assert!(
+            mesh.get_vertex_buffer_size() > 0,
+            "Closed Catmull-Rom spline must produce vertices"
+        );
+    }
+
+    #[test]
+    fn catmull_rom_3d_open_produces_mesh() {
+        let pts = vec![
+            Vec3::ZERO,
+            Vec3::new(1.0, 0.5, 0.0),
+            Vec3::new(2.0, 0.0, 1.0),
+            Vec3::new(3.0, 0.5, 0.0),
+        ];
+        let shape = Shape::catmull_rom_3d(pts, 0.1, false, 8, ShapeDetail::Medium);
+        let mesh = shape.build();
+        assert!(
+            mesh.get_vertex_buffer_size() > 0,
+            "Open Catmull-Rom spline must produce vertices"
+        );
+    }
+
+    #[test]
+    fn catmull_rom_3d_too_few_points_empty() {
+        // Closed needs 3, open needs 2
+        let shape_closed = Shape::catmull_rom_3d(vec![Vec3::ZERO, Vec3::X], 0.1, true, 8, ShapeDetail::Medium);
+        let mesh_closed = shape_closed.build();
+        assert!(
+            mesh_closed.get_vertex_buffer_size() == 0,
+            "Closed Catmull-Rom with 2 points should be empty"
+        );
+        let shape_open = Shape::catmull_rom_3d(vec![Vec3::ZERO], 0.1, false, 8, ShapeDetail::Medium);
+        let mesh_open = shape_open.build();
+        assert!(
+            mesh_open.get_vertex_buffer_size() == 0,
+            "Open Catmull-Rom with 1 point should be empty"
+        );
+    }
+
+    #[test]
+    fn catmull_rom_3d_equality() {
+        let pts = vec![Vec3::ZERO, Vec3::X, Vec3::new(1.0, 0.0, 1.0), Vec3::Z];
+        let a = Shape::catmull_rom_3d(pts.clone(), 0.1, true, 8, ShapeDetail::Medium);
+        let b = Shape::catmull_rom_3d(pts, 0.1, true, 8, ShapeDetail::Medium);
+        assert_eq!(a, b, "Identical Catmull-Rom shapes should be equal");
+    }
+
+    // --- Torus detail tests ---
+
+    #[test]
+    fn torus_detail_affects_vertices() {
+        let low = Shape::torus(1.0, 0.3, 0.0, std::f32::consts::TAU, ShapeDetail::Low).build();
+        let high = Shape::torus(1.0, 0.3, 0.0, std::f32::consts::TAU, ShapeDetail::High).build();
+        assert!(
+            high.get_vertex_buffer_size() > low.get_vertex_buffer_size(),
+            "Higher detail torus should have more vertices"
+        );
+    }
+
+    // --- Polyline2D segments test ---
+
+    #[test]
+    fn polyline_2d_segments_param() {
+        let pts = vec![Vec2::ZERO, Vec2::X, Vec2::new(1.0, 1.0)];
+        let shape = Shape::polyline_2d(pts, 0.1, false, 8);
+        let mesh = shape.build();
+        assert!(mesh.get_vertex_buffer_size() > 0, "Polyline2D must produce vertices");
+    }
+
+    // --- Bezier2D segments test ---
+
+    #[test]
+    fn bezier_2d_segments_param() {
+        let pts = vec![Vec2::ZERO, Vec2::new(1.0, 2.0), Vec2::new(2.0, 0.0)];
+        let shape = Shape::bezier_2d(pts, 0.1, 16);
+        let mesh = shape.build();
+        assert!(mesh.get_vertex_buffer_size() > 0, "Bezier2D must produce vertices");
+    }
+
+    // --- Extruded polygon with options test ---
+
+    #[test]
+    fn extruded_polygon_with_options_holes_and_colors() {
+        let outer = vec![
+            Vec2::new(-1.0, -1.0),
+            Vec2::new(1.0, -1.0),
+            Vec2::new(1.0, 1.0),
+            Vec2::new(-1.0, 1.0),
+        ];
+        let holes = vec![vec![
+            Vec2::new(-0.3, -0.3),
+            Vec2::new(0.3, -0.3),
+            Vec2::new(0.3, 0.3),
+            Vec2::new(-0.3, 0.3),
+        ]];
+        let colors = Some(vec![[1.0, 0.0, 0.0, 1.0]; 4]);
+        let shape = Shape::extruded_polygon_with_options(outer, holes, colors, 0.5, 0.0, ShapeDetail::Medium);
+        let mesh = shape.build();
+        assert!(mesh.get_vertex_buffer_size() > 0, "Extruded polygon with options must produce vertices");
+    }
+
+    // --- Sweep alias tests ---
+
+    #[test]
+    fn sweep_path_alias_matches_sweep() {
+        let profile = vec![Vec2::new(-0.5, 0.0), Vec2::new(0.5, 0.0), Vec2::new(0.0, 1.0)];
+        let path = vec![Vec3::ZERO, Vec3::X, Vec3::new(1.0, 0.0, 1.0)];
+        let opts = SweepOptions::default();
+        let a = Shape::sweep(profile.clone(), path.clone(), opts.clone());
+        let b = Shape::sweep_path(profile, path, opts);
+        assert_eq!(a, b, "sweep_path should produce identical shape to sweep");
+    }
+
+    #[test]
+    fn sweep_with_frames_alias_matches_sweep_frames() {
+        let profile = vec![Vec2::new(-0.5, 0.0), Vec2::new(0.5, 0.0), Vec2::new(0.0, 1.0)];
+        let frames = [
+            SweepFrame::new(Vec3::ZERO, Vec3::Z, Vec3::Y),
+            SweepFrame::new(Vec3::X, Vec3::Z, Vec3::Y),
+        ];
+        let opts = SweepOptions::default();
+        let a = Shape::sweep_frames(profile.clone(), &frames, opts.clone());
+        let b = Shape::sweep_with_frames(profile, &frames, opts);
+        assert_eq!(a, b, "sweep_with_frames should produce identical shape to sweep_frames");
     }
 }

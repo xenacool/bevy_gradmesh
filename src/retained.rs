@@ -381,7 +381,7 @@ impl RetainedWorld {
         span: f32,
         color: [f32; 4],
     ) -> GradMeshHandle {
-        let shape = Shape::torus(radius, thickness, start_angle, span);
+        let shape = Shape::torus(radius, thickness, start_angle, span, ShapeDetail::Medium);
         let props = InstanceProperties::from_style(
             color,
             color,

@@ -844,6 +844,7 @@ impl CharacterConfig {
                         0.016,
                         std::f32::consts::PI * 1.1,
                         std::f32::consts::PI * 0.8,
+                        ShapeDetail::Medium,
                     ),
                     Transform::from_xyz(0.0, 0.85, z_fwd).with_rotation(Quat::from_euler(
                         EulerRot::XZY,
@@ -864,6 +865,7 @@ impl CharacterConfig {
                         0.02,
                         std::f32::consts::PI * 1.05,
                         std::f32::consts::PI * 0.95,
+                        ShapeDetail::Medium,
                     ),
                     Transform::from_xyz(0.0, 0.86, z_fwd).with_rotation(Quat::from_euler(
                         EulerRot::XZY,
@@ -894,6 +896,7 @@ impl CharacterConfig {
                         0.018,
                         std::f32::consts::PI * 1.22,
                         std::f32::consts::PI * 0.8,
+                        ShapeDetail::Medium,
                     ),
                     Transform::from_xyz(0.02, 0.84, z_fwd).with_rotation(Quat::from_euler(
                         EulerRot::XYZ,
@@ -909,7 +912,7 @@ impl CharacterConfig {
                     meshes,
                     &mouth_mat,
                     root,
-                    Shape::torus(0.035, 0.016, 0.0, 2.0 * std::f32::consts::PI),
+                    Shape::torus(0.035, 0.016, 0.0, 2.0 * std::f32::consts::PI, ShapeDetail::Medium),
                     Transform::from_xyz(0.0, 0.82, z_fwd).with_rotation(Quat::from_euler(
                         EulerRot::XZY,
                         std::f32::consts::PI / 2.0,
@@ -930,6 +933,7 @@ impl CharacterConfig {
                             0.014,
                             std::f32::consts::PI * 1.05,
                             std::f32::consts::PI * 0.95,
+                            ShapeDetail::Medium,
                         ),
                         Transform::from_xyz(side as f32 * 0.05, 0.82, z_fwd).with_rotation(
                             Quat::from_euler(EulerRot::XZY, std::f32::consts::PI / 2.0, 0.0, 0.0),
@@ -1213,7 +1217,7 @@ impl CharacterConfig {
                             meshes,
                             &tie_mat,
                             root,
-                            Shape::torus(0.08, 0.03, 0.0, 2.0 * std::f32::consts::PI),
+                            Shape::torus(0.08, 0.03, 0.0, 2.0 * std::f32::consts::PI, ShapeDetail::Medium),
                             Transform::from_xyz(0.0, head_y + 0.34, -0.44).with_rotation(
                                 Quat::from_euler(EulerRot::XZY, 65.0_f32.to_radians(), 0.0, 0.0),
                             ),
@@ -1352,7 +1356,7 @@ impl CharacterConfig {
                         meshes,
                         &frame_mat,
                         root,
-                        Shape::torus(0.11, 0.02, 0.0, 2.0 * std::f32::consts::PI),
+                        Shape::torus(0.11, 0.02, 0.0, 2.0 * std::f32::consts::PI, ShapeDetail::Medium),
                         Transform::from_xyz(side as f32 * eye_spacing, eye_height, z_fwd)
                             .with_rotation(Quat::from_euler(
                                 EulerRot::XZY,
@@ -1407,7 +1411,7 @@ impl CharacterConfig {
                     meshes,
                     &frame_mat,
                     root,
-                    Shape::torus(0.44, 0.06, 0.0, 2.0 * std::f32::consts::PI),
+                    Shape::torus(0.44, 0.06, 0.0, 2.0 * std::f32::consts::PI, ShapeDetail::Medium),
                     Transform::from_xyz(0.0, eye_height + 0.22, 0.0).with_rotation(
                         Quat::from_euler(EulerRot::XZY, 80.0_f32.to_radians(), 0.0, 0.0),
                     ),
