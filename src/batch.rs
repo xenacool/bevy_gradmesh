@@ -149,7 +149,7 @@ impl InstanceProperties {
 /// variant can share a single draw call.
 #[derive(Debug, Clone)]
 pub struct BatchKey {
-    /// Canonical mesh identifier (shape kind + detail, hashed).
+    /// Recorder-local mesh identifier, unique per distinct shape (kind + parameters + detail).
     pub mesh_id: u64,
     /// Blend mode determines the render pass and sorting.
     pub blend_mode: BlendMode,
@@ -178,22 +178,14 @@ impl Hash for BatchKey {
 // --- Mesh cache key ---
 
 /// Canonical key for procedural mesh caching.
+#[deprecated(
+    since = "0.3.3",
+    note = "unused; the recorder now keys its mesh cache on `Shape` directly"
+)]
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct MeshCacheKey {
     /// Shape descriptor (kind + parameters + detail).
     pub shape_hash: u64,
-}
-
-/// Hash a Shape by building it once and hashing its vertex count.
-/// The mesh is cached so repeated calls for the same shape don't rebuild.
-fn hash_shape(shape: &Shape) -> u64 {
-    use std::collections::hash_map::DefaultHasher;
-    let mut h = DefaultHasher::new();
-    let mesh = shape.build();
-    mesh.count_vertices().hash(&mut h);
-    // Include the shape's Debug representation for parameter-level differentiation
-    format!("{:?}", shape).hash(&mut h);
-    h.finish()
 }
 
 // --- Batch ---
@@ -353,8 +345,9 @@ impl Batch {
 pub struct BatchRecorder {
     /// The collected batches, keyed by mesh+blend+render state.
     pub batches: HashMap<BatchKey, Batch>,
-    /// Cached meshes to avoid rebuilding the same geometry.
-    mesh_cache: HashMap<u64, Mesh>,
+    /// Cached meshes keyed on the shape itself, each with a recorder-local id used in
+    /// [`BatchKey::mesh_id`]. Ids are sequential, so two shapes can never collide.
+    mesh_cache: HashMap<Shape, (u64, Mesh)>,
     /// Current transform state for relative positioning.
     position: Vec3,
     rotation: Quat,
@@ -451,19 +444,20 @@ impl BatchRecorder {
 
     // --- Drawing methods ---
 
-    fn get_or_build_mesh(&mut self, shape: &Shape) -> &Mesh {
-        let mesh_id = hash_shape(shape);
-        if !self.mesh_cache.contains_key(&mesh_id) {
-            self.mesh_cache.insert(mesh_id, shape.build());
+    /// Returns the cached mesh id for `shape`, building the mesh on first use only.
+    fn mesh_id_for(&mut self, shape: &Shape) -> u64 {
+        if let Some((id, _)) = self.mesh_cache.get(shape) {
+            return *id;
         }
-        self.mesh_cache.get(&mesh_id).unwrap()
+        let id = self.mesh_cache.len() as u64;
+        self.mesh_cache.insert(shape.clone(), (id, shape.build()));
+        id
     }
 
     /// Add an instance with the given shape and properties to the current batch.
     /// Used internally by `RetainedWorld` to replay retained slots.
     pub fn add_instance(&mut self, shape: &Shape, mut properties: InstanceProperties) {
-        let mesh_id = hash_shape(shape);
-        let mesh = self.get_or_build_mesh(shape).clone();
+        let mesh_id = self.mesh_id_for(shape);
 
         let blend_mode = Self::blend_mode_from_flags(properties.flags);
         let key = BatchKey {
@@ -491,7 +485,11 @@ impl BatchRecorder {
         properties.appearance = appearance.to_vec4();
         self.pending_appearance = AppearanceSnapshot::static_appearance();
 
-        let batch = self.batches.entry(key).or_insert_with(|| Batch::new(mesh));
+        let mesh_cache = &self.mesh_cache;
+        let batch = self
+            .batches
+            .entry(key)
+            .or_insert_with(|| Batch::new(mesh_cache[shape].1.clone()));
         batch.push(transform, properties);
     }
 
