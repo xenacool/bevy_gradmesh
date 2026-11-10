@@ -6,7 +6,7 @@ BevyGradmesh is a procedural mesh generation library for [Bevy](https://bevyengi
 
 Instead of manually creating mesh assets for every shape, BevyGradmesh generates watertight geometry at runtime with proper normals and UVs. Combined with dual-directional gradient materials, you get stylized 3D-looking characters and objects without any external assets.
 
-*Every procedural primitive with dual-directional gradient shading. Run `cargo run --example shapes` to reproduce it.*
+*Every procedural primitive with dual-directional gradient shading, drawn without PBR. Run `cargo run --example shapes` to reproduce it.*
 
 ## Key Concepts
 
@@ -20,7 +20,7 @@ Instead of manually creating mesh assets for every shape, BevyGradmesh generates
 BevyGradmesh follows these principles:
 
 1. **Zero external assets**: Everything is generated procedurally
-2. **Bevy-native**: Outputs standard `Mesh` and `StandardMaterial` types
+2. **Bevy-native**: Outputs standard `Mesh` assets and Bevy materials (`GradMeshMaterial` extends `StandardMaterial`; the 2D, SDF and standalone backends need no PBR)
 3. **Performance-first**: GPU instancing and dirty tracking minimize draw calls
 4. **Flexible**: Multiple rendering modes for different patterns
 

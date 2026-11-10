@@ -3,7 +3,7 @@
 ## Flat shapes with `Mesh2d`
 
 `Shape::build_2d()` returns geometry in the XY plane facing +Z with gradient UVs. Pair it with
-`GradMeshMaterial2d` (built from a `Style`) and a `Camera2d`:
+`GradMeshMaterial2d` (built from a `Style`) and a `Camera2d`. `build_2d()` accepts every shape, including solids that have no flat form; call `Shape::as_flat()` first when you want the compiler to prove the shape is flat (it returns `Err(NotFlat)` for solids, tubes and meshes), then `FlatShape::build_2d()`:
 
 ```rust
 # use bevy::prelude::*;
@@ -69,7 +69,7 @@ Compounds are `Hash + Eq` and work with `MeshCache`.
 `Shape::lathe(profile, segments, detail)` revolves `(radius, height)` points around Y. Crisp corners stay
 crisp, gentle ones are smoothed, and open ends away from the axis get caps.
 
-*A compound tower, a wall with an arched opening, extruded cobbles, an emissive torch, a metallic gem and a ghost piece that casts no shadow. Run `cargo run --example composed_shapes` to reproduce it.*
+*A compound tower, a wall with an arched opening, extruded cobbles, a torch, a gem and heightfield terrain, drawn unlit by the standalone pipeline (no PBR, so no emissive, metallic or ghost pieces). Run `cargo run --example composed_shapes` to reproduce it.*
 
 ## Sharing meshes and materials
 

@@ -60,8 +60,22 @@ fn setup(
 The core API has three main types:
 
 1. **`Shape`** - Describes a procedural primitive. Call `.build()` to get a Bevy `Mesh`.
-2. **`Style`** - Describes gradient material properties. Call `.build_material()` to get a `StandardMaterial`.
+2. **`Style`** - Describes gradient material properties. Call `.build_material(&mut materials)` to get a `Handle<GradMeshMaterial>` (needs the `pbr` feature), or `.build_2d()` for a `GradMeshMaterial2d`.
 3. **`GradMeshPlugin`** - Registers the custom material and mesh cache with Bevy.
+
+## Features and Examples
+
+The `pbr` feature is on by default and enables the lit 3D backends (`GradMeshMaterial` and the instanced
+PBR pipeline). Turn it off for PBR-free builds:
+
+```toml
+[dependencies]
+bevy_gradmesh = { version = "0.3", default-features = false }
+```
+
+These examples run without `pbr` (`cargo run --example <name> --no-default-features`): `shapes`, `styles`,
+`mix_spaces`, `curves`, `polyline`, `composed_shapes`, `arbitrary_shapes`, `gradient_2d`, `sdf_2d`,
+`sdf_dash_gallery` and `standalone`. The others need `pbr`, which Cargo enables by default.
 
 ## Detail Levels
 

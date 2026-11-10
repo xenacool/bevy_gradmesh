@@ -56,7 +56,7 @@ fn animate_curve(
 }
 ```
 
-*Spline and parametric curves rendered as smooth tubes. Run `cargo run --example curves` to reproduce it.*
+*Bezier curves of every degree and a 3D helix, drawn as tubes by the standalone pipeline without PBR. The standalone gradient is fixed to the world axis, so tubes far from the origin show only part of their blend. Run `cargo run --example curves` to reproduce it.*
 
 ## 3D Polylines
 
@@ -94,7 +94,7 @@ fn closed_polyline_mesh() -> Mesh {
 }
 ```
 
-*Joint styles, width variation, gradient colours and an animated reveal. Run `cargo run --example polyline` to reproduce it.*
+*Flat 2D polylines drawn as `Mesh2d` without PBR: open, closed, thick and thin, with a gradient along each line. The example is 2D only; `Shape::polyline3d` (above) builds tubes for a 3D camera. Run `cargo run --example polyline` to reproduce it.*
 
 ## Use Cases
 

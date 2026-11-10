@@ -84,6 +84,14 @@ pub struct StandaloneBatchData {
     pub lod_level: u8,
 }
 
+/// Keeps a batch's mesh asset alive for as long as the batch entity exists.
+///
+/// Only the asset id travels to the render world, so without this strong handle the mesh is
+/// freed as soon as `render_standalone_batches` returns and a batch that is spawned once
+/// would never be drawn.
+#[derive(Component)]
+pub struct StandaloneMeshHandle(#[allow(dead_code)] pub Handle<Mesh>);
+
 /// GPU buffers for a single standalone instanced batch.
 #[derive(Component)]
 pub struct StandaloneGpuBuffers {
@@ -716,6 +724,7 @@ pub fn render_standalone_batches(
                     mesh_aabb,
                     lod_level,
                 },
+                StandaloneMeshHandle(mesh_handle),
                 Transform::default(),
                 GlobalTransform::default(),
             ))
