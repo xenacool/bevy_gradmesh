@@ -10,5 +10,4 @@ site-url = "/bevy_gradmesh/"
 git-repository-url = "https://github.com/xenacool/bevy_gradmesh"
 edit-url-template = "https://github.com/xenacool/bevy_gradmesh/edit/main/book/{path}"
 
-[output.linkcheck]
-optional = true
+[output.linkcheck2]
