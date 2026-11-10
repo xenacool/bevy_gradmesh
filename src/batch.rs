@@ -28,7 +28,9 @@ use crate::culling::AABB;
 use crate::material::{GradMeshUniformBuffer, Vec4};
 use crate::mix_space::MixSpace;
 use crate::shape::{Shape, ShapeDetail};
-use crate::style::{BlendMode, ColorMode, Dash, DashType};
+use crate::style::{BlendMode, ColorMode, Dash, DashType, Style};
+use bevy::color::ColorToComponents;
+use bevy::prelude::Color;
 
 // --- Per-instance GPU data ---
 
@@ -140,6 +142,36 @@ impl InstanceProperties {
     pub fn with_appearance(mut self, appearance: AppearanceSnapshot) -> Self {
         self.appearance = appearance.to_vec4();
         self
+    }
+
+    /// Build instance properties from a [`Style`](style::Style).
+    ///
+    /// This is a convenience wrapper around [`InstanceProperties::from_style`] that extracts
+    /// the color, direction, blend mode, mix space and dash from a `Style` descriptor.
+    /// PBR-only style features (roughness, metallic, emissive, noise, stripes, rim, height bands)
+    /// are not available on the instanced path and are ignored.
+    pub fn from_style_descriptor(style: &Style) -> Self {
+        let color = style.color.to_linear().to_f32_array();
+        let secondary = style
+            .secondary_color
+            .unwrap_or(Color::WHITE)
+            .to_linear()
+            .to_f32_array();
+        let direction = [
+            style.direction.x,
+            style.direction.y,
+            style.direction.z,
+            0.0,
+        ];
+        Self::from_style(
+            color,
+            secondary,
+            direction,
+            style.color_mode,
+            style.blend_mode.clone(),
+            style.space,
+            style.dash,
+        )
     }
 }
 

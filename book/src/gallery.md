@@ -25,5 +25,6 @@ Screenshots for every example are packaged in a zip archive attached to each [Gi
 | `deformation` | Vertex shader animations: wobble, pulse, and morph effects |
 | `appearance` | Per-instance colour animation: static, pulse, cycle, and gradient shift |
 | `arbitrary_shapes` | Custom polygons with per-vertex colors, star shapes, annular rings, pie-slice wedges, and the side profiles of tapered cylinders |
+| `lerp` | Six animated shape morphs: disc↔star, rectangle↔ring, polygon↔disc rim, ring↔disc, disc rim↔rectangle, wedge↔disc |
 
 Run any example with `cargo run --example <name>`. The examples listed under Features in [Getting Started](./getting-started.md) also run with `--no-default-features`.

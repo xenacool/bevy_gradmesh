@@ -1,7 +1,7 @@
 //! Procedural mesh generation and gradient materials for Bevy.
 //!
 //! Generates watertight meshes for common 3D primitives with configurable detail levels,
-//! and provides a custom shader material for dual-directional gradient shading.
+//! and provides gradient materials for lit 3D, unlit 3D, 2D and SDF rendering.
 //!
 //! # Quick Start
 //!
@@ -25,6 +25,18 @@
 //!         .run();
 //! }
 //! ```
+//!
+//! # Backends
+//!
+//! - **Material** (`GradMeshMaterial`): lit 3D with full PBR, shadows, and picking.
+//! - **Instanced** (`BatchRecorder`, `RetainedWorld`): thousands of shapes in one draw call.
+//! - **Standalone** (`StandaloneRenderPlugin`): unlit 3D without `bevy_pbr` — one shader, one bind group.
+//! - **Mesh2d** (`GradMeshMaterial2d`): flat 2D shapes via `Shape::build_2d()` and `Camera2d`.
+//! - **SDF 2D** (`SdfMaterial2d`): discs, ellipses, rounded rectangles, polygons and stars drawn
+//!   from a signed distance field on a single shared quad.
+//!
+//! `Shape::as_flat()` proves a shape is flat (returns `Err(NotFlat)` for solids, tubes or meshes)
+//! and yields a `FlatShape` that can go to either 2D backend.
 //!
 //! # Modes
 //!

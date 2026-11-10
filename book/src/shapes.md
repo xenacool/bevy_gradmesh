@@ -75,12 +75,12 @@ When `capped` is true, the flat face is filled with geometry.
 
 ### Torus
 ```rust
-# use bevy_gradmesh::Shape;
+# use bevy_gradmesh::{Shape, ShapeDetail};
 # fn main() {}
 fn torus() -> Shape {
     let start_angle = 0.0;
     let span = std::f32::consts::TAU;
-    Shape::torus(1.0, 0.25, start_angle, span)
+    Shape::torus(1.0, 0.25, start_angle, span, ShapeDetail::Medium)
 }
 ```
 Supports partial torus arcs. Use `start_angle = 0.0` and `span = TAU` for a full torus.

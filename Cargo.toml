@@ -1,6 +1,6 @@
 [package]
 name = "bevy_gradmesh"
-version = "0.3.5"
+version = "0.3.6"
 authors = ["Jessica Collins (https://github.com/xenacool)"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
@@ -145,4 +145,9 @@ required-features = ["pbr"]
 [[example]]
 name = "retained"
 path = "examples/retained.rs"
+required-features = ["pbr"]
+
+[[example]]
+name = "lerp"
+path = "examples/lerp.rs"
 required-features = ["pbr"]

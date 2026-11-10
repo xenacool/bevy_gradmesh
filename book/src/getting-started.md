@@ -73,8 +73,8 @@ PBR pipeline). Turn it off for PBR-free builds:
 bevy_gradmesh = { version = "0.3", default-features = false }
 ```
 
-These examples run without `pbr` (`cargo run --example <name> --no-default-features`): `shapes`, `styles`,
-`mix_spaces`, `curves`, `polyline`, `composed_shapes`, `arbitrary_shapes`, `gradient_2d`, `sdf_2d`,
+These examples run without `pbr` (`cargo run --example <name> --no-default-features`): `styles`,
+`mix_spaces`, `curves`, `polyline`, `arbitrary_shapes`, `gradient_2d`, `sdf_2d`,
 `sdf_dash_gallery` and `standalone`. The others need `pbr`, which Cargo enables by default.
 
 ## Detail Levels
