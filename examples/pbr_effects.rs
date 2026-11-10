@@ -241,7 +241,7 @@ fn setup(
             &mut commands,
             &mut meshes,
             &materials.add(mat),
-            Shape::torus(0.3, 0.1, 0.0, std::f32::consts::TAU),
+            Shape::torus(0.3, 0.1, 0.0, std::f32::consts::TAU, ShapeDetail::Medium),
             Vec3::new(xs2[4], y2, 0.0),
             Quat::from_euler(EulerRot::XYZ, 0.5, 0.4, 0.0),
             "Emissive\ntorus",

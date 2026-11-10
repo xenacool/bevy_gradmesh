@@ -596,7 +596,7 @@ impl BatchRecorder {
         _detail: ShapeDetail,
         color: [f32; 4],
     ) {
-        let shape = Shape::torus(radius, thickness, start_angle, span);
+        let shape = Shape::torus(radius, thickness, start_angle, span, _detail);
         let props = InstanceProperties::from_style(
             color,
             color,

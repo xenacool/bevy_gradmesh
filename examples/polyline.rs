@@ -126,7 +126,7 @@ fn setup(
     // --- Open zigzag: butter -> pink along the path, mitred joints ---
     spawn_line(
         &mut commands,
-        Shape::polyline_2d(zigzag_points(-156.0, 156.0, 6, 54.0), 14.0, false),
+        Shape::polyline_2d(zigzag_points(-156.0, 156.0, 6, 54.0), 14.0, false, 8),
         gradient(BUTTER, PINK),
         Vec3::new(-260.0, 110.0, 0.0),
         "Open Zigzag",
@@ -136,7 +136,7 @@ fn setup(
     // --- Closed hexagon: rose -> pink around the loop ---
     spawn_line(
         &mut commands,
-        Shape::polyline_2d(hexagon_points(78.0), 12.0, true),
+        Shape::polyline_2d(hexagon_points(78.0), 12.0, true, 8),
         gradient(ROSE, PINK),
         Vec3::new(260.0, 120.0, 0.0),
         "Closed Loop",
@@ -146,7 +146,7 @@ fn setup(
     // --- Thick zigzag: lilac -> sky ---
     spawn_line(
         &mut commands,
-        Shape::polyline_2d(zigzag_points(-156.0, 156.0, 4, 60.0), 26.0, false),
+        Shape::polyline_2d(zigzag_points(-156.0, 156.0, 4, 60.0), 26.0, false, 8),
         gradient(LILAC, SKY),
         Vec3::new(-260.0, -150.0, 0.0),
         "Thick Line",
@@ -156,7 +156,7 @@ fn setup(
     // --- Thin detailed zigzag: deep plum -> pink ---
     spawn_line(
         &mut commands,
-        Shape::polyline_2d(zigzag_points(-156.0, 156.0, 8, 33.0), 5.0, false),
+        Shape::polyline_2d(zigzag_points(-156.0, 156.0, 8, 33.0), 5.0, false, 8),
         gradient(PLUM, PINK),
         Vec3::new(260.0, -150.0, 0.0),
         "Thin Line",
@@ -166,7 +166,7 @@ fn setup(
     // --- Spiral: teal -> butter from the centre outwards ---
     spawn_line(
         &mut commands,
-        Shape::polyline_2d(spiral_points(4, 90.0), 7.0, false),
+        Shape::polyline_2d(spiral_points(4, 90.0), 7.0, false, 8),
         gradient(TEAL, BUTTER),
         Vec3::new(0.0, -10.0, 0.0),
         "Spiral",

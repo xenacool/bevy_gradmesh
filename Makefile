@@ -1,11 +1,11 @@
-EXAMPLES = shapes styles mix_spaces curves pbr_effects arbitrary_shapes composed_shapes sdf_dash_gallery sweep terrain road character_creator immediate polyline deformation retained gradient_2d sdf_2d standalone instanced appearance
+EXAMPLES = shapes styles mix_spaces curves pbr_effects arbitrary_shapes composed_shapes sdf_dash_gallery sweep terrain road character_creator immediate polyline deformation retained gradient_2d sdf_2d standalone instanced appearance lerp
 
 # Examples that change over time are recorded as animated WebP; the rest are still PNGs.
 STILLS = shapes styles mix_spaces curves pbr_effects arbitrary_shapes composed_shapes sdf_dash_gallery sweep terrain road
 # Animations are lossy and downscaled to keep each file well under a megabyte.
 ANIMATION_WIDTH = 480
 ANIMATION_QUALITY = 30
-ANIMATIONS = character_creator immediate polyline deformation retained gradient_2d sdf_2d standalone instanced appearance
+ANIMATIONS = character_creator immediate polyline deformation retained gradient_2d sdf_2d standalone instanced appearance lerp
 
 # Examples that require the pbr feature (required-features in Cargo.toml).
 # The capture macros add --features pbr for these so screenshot capture doesn't fail.
@@ -135,6 +135,8 @@ screenshots:
 	$(call capture_animation,instanced)
 	@echo ""
 	$(call capture_animation,appearance)
+	@echo ""
+	$(call capture_animation,lerp)
 	@echo ""
 	@echo "=== Screenshots saved to screenshots/ ==="
 	@ls -la screenshots/
