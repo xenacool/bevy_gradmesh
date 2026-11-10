@@ -1,15 +1,16 @@
 //! Checks the committed `screenshots/screenshot_mix_spaces.png` (the last example in the
 //! README) against reference colours and against the blends the shader is meant to compute.
 //!
-//! Every strip of the example is a flat rectangle facing the camera, blended along X from a
-//! start to an end colour in one `MixSpace`. The strips are lit and tone mapped, so a pixel
-//! never equals the raw blend. Two kinds of check cover that:
+//! Every strip of the example is a flat rectangle drawn unlit by a `Camera2d` (the `Mesh2d`
+//! gradient material), blended along X from a start to an end colour in one `MixSpace`. There
+//! is no lighting or tone mapping, so a pixel is the blend itself, up to the GPU and the
+//! 8-bit output. Two kinds of check cover it:
 //!
 //! * `reference_pixels_match`: a table of pixels recorded from the verified screenshot. It
-//!   fails when the picture changes, whether a space is mixed wrongly or the lighting moved.
+//!   fails when the picture changes, whether a space is mixed wrongly or the layout moved.
 //! * the CPU tests recompute the blend of every space with the same maths as the shader and
-//!   check what lighting cannot change: which end a pixel is closer to, how the hue turns, and
-//!   which space keeps the most colour in the middle.
+//!   check which end a pixel is closer to, how the hue turns, and which space keeps the most
+//!   colour in the middle.
 //!
 //! After changing the example, run `make screenshot-mix_spaces`, look at the picture and
 //! update `REFERENCE` from it.
@@ -19,7 +20,8 @@ use bevy::image::{CompressedImageFormats, Image, ImageSampler, ImageType};
 
 const PNG: &[u8] = include_bytes!("../screenshots/screenshot_mix_spaces.png");
 
-// The scene of `examples/mix_spaces.rs`.
+// The scene of `examples/mix_spaces.rs`. Its `Camera2d` and strips are scaled so each strip
+// lands on the pixels a perspective camera at `CAMERA_Z` with this field of view would give.
 const STRIP_WIDTH: f32 = 5.0;
 const CAMERA_Z: f32 = 10.5;
 const FOV_Y: f32 = std::f32::consts::FRAC_PI_4;
@@ -42,46 +44,46 @@ const SPACES: [Space; 4] = [Space::Oklab, Space::Oklch, Space::LinearRgb, Space:
 /// `(row, pair, t, [r, g, b])`: the mean of the 5 x 5 pixels around the strip at `t` along it,
 /// in 0-255 sRGB, as recorded from the committed screenshot.
 const REFERENCE: [(usize, usize, f32, [u8; 3]); 40] = [
-    (0, 0, 0.1, [132, 172, 249]),
-    (0, 0, 0.3, [158, 194, 242]),
-    (0, 0, 0.5, [192, 212, 227]),
-    (0, 0, 0.7, [220, 223, 202]),
-    (0, 0, 0.9, [236, 226, 173]),
-    (0, 1, 0.1, [250, 162, 164]),
-    (0, 1, 0.3, [244, 184, 174]),
-    (0, 1, 0.5, [232, 206, 186]),
-    (0, 1, 0.7, [209, 220, 195]),
-    (0, 1, 0.9, [170, 226, 197]),
-    (1, 0, 0.1, [110, 182, 252]),
-    (1, 0, 0.3, [129, 207, 241]),
-    (1, 0, 0.5, [128, 224, 208]),
-    (1, 0, 0.7, [146, 228, 157]),
-    (1, 0, 0.9, [227, 230, 150]),
-    (1, 1, 0.1, [252, 157, 134]),
-    (1, 1, 0.3, [249, 180, 107]),
-    (1, 1, 0.5, [237, 204, 111]),
-    (1, 1, 0.7, [202, 222, 126]),
-    (1, 1, 0.9, [158, 227, 175]),
-    (2, 0, 0.1, [157, 171, 246]),
-    (2, 0, 0.3, [198, 193, 233]),
-    (2, 0, 0.5, [225, 214, 220]),
-    (2, 0, 0.7, [234, 222, 195]),
-    (2, 0, 0.9, [239, 226, 171]),
-    (2, 1, 0.1, [250, 163, 165]),
-    (2, 1, 0.3, [242, 189, 177]),
-    (2, 1, 0.5, [227, 210, 191]),
-    (2, 1, 0.7, [202, 222, 197]),
-    (2, 1, 0.9, [166, 227, 197]),
-    (3, 0, 0.1, [126, 160, 247]),
-    (3, 0, 0.3, [159, 177, 231]),
-    (3, 0, 0.5, [202, 205, 201]),
-    (3, 0, 0.7, [224, 216, 165]),
-    (3, 0, 0.9, [237, 224, 155]),
-    (3, 1, 0.1, [249, 148, 160]),
-    (3, 1, 0.3, [235, 165, 173]),
-    (3, 1, 0.5, [208, 197, 191]),
-    (3, 1, 0.7, [167, 214, 195]),
-    (3, 1, 0.9, [147, 224, 197]),
+    (0, 0, 0.1, [40, 92, 233]),
+    (0, 0, 0.3, [84, 132, 211]),
+    (0, 0, 0.5, [131, 163, 185]),
+    (0, 0, 0.7, [180, 189, 151]),
+    (0, 0, 0.9, [230, 213, 97]),
+    (0, 1, 0.1, [246, 83, 97]),
+    (0, 1, 0.3, [224, 124, 112]),
+    (0, 1, 0.5, [197, 155, 127]),
+    (0, 1, 0.7, [161, 181, 143]),
+    (0, 1, 0.9, [103, 205, 158]),
+    (1, 0, 0.1, [0, 102, 246]),
+    (1, 0, 0.3, [0, 160, 221]),
+    (1, 0, 0.5, [0, 198, 169]),
+    (1, 0, 0.7, [50, 218, 104]),
+    (1, 0, 0.9, [207, 224, 36]),
+    (1, 1, 0.1, [255, 71, 39]),
+    (1, 1, 0.3, [244, 116, 0]),
+    (1, 1, 0.5, [208, 158, 0]),
+    (1, 1, 0.7, [155, 190, 18]),
+    (1, 1, 0.9, [84, 211, 129]),
+    (2, 0, 0.1, [93, 97, 232]),
+    (2, 0, 0.3, [151, 140, 208]),
+    (2, 0, 0.5, [188, 170, 180]),
+    (2, 0, 0.7, [218, 194, 144]),
+    (2, 0, 0.9, [244, 215, 92]),
+    (2, 1, 0.1, [244, 88, 100]),
+    (2, 1, 0.3, [219, 132, 119]),
+    (2, 1, 0.5, [189, 162, 134]),
+    (2, 1, 0.7, [152, 186, 148]),
+    (2, 1, 0.9, [96, 207, 160]),
+    (3, 0, 0.1, [48, 80, 222]),
+    (3, 0, 0.3, [95, 112, 181]),
+    (3, 0, 0.5, [140, 144, 140]),
+    (3, 0, 0.7, [186, 176, 100]),
+    (3, 0, 0.9, [232, 208, 59]),
+    (3, 1, 0.1, [234, 67, 97]),
+    (3, 1, 0.3, [190, 101, 112]),
+    (3, 1, 0.5, [147, 134, 128]),
+    (3, 1, 0.7, [103, 167, 143]),
+    (3, 1, 0.9, [60, 200, 158]),
 ];
 
 /// Per channel, in 0-255. Re-capturing the same scene on another GPU moves pixels a little.

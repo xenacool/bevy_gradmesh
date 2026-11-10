@@ -96,8 +96,8 @@ pub use sdf2d::{
 };
 pub use sdf2d_polygon::SdfPolygonError;
 pub use shape::{
-    HeightfieldBorder, HeightfieldOptions, HoleEdge, Shape, ShapeBounds, ShapeDetail, ShapePart,
-    SweepFrame, SweepOpening, SweepOptions,
+    FlatShape, HeightfieldBorder, HeightfieldOptions, HoleEdge, NotFlat, SdfConvertError, Shape,
+    ShapeBounds, ShapeDetail, ShapePart, SweepFrame, SweepOpening, SweepOptions,
 };
 pub use spline::{BakedSpline, CatmullRomSpline, SplineError, SplineFrame};
 pub use standalone_pipeline::{StandaloneRenderPlugin, render_standalone_batches};

@@ -1,16 +1,23 @@
 //! Arbitrary shapes example - demonstrates custom polygon, star, ring, wedge, and tapered cylinder.
 //!
 //! Shows shapes that go beyond the standard primitives: user-defined polygons
-//! with per-vertex colors, star shapes, annular rings, pie-slice wedges,
-//! and tapered cylinders (frustums).
+//! with per-vertex colors, star shapes, annular rings and pie-slice wedges, all
+//! as unlit `Mesh2d` shapes with `GradMeshMaterial2d`, so no PBR is needed.
+//!
+//! Dropped from the lit 3D version: the ground plane and the shading from
+//! lights (each shape keeps a dark-to-light gradient instead). Tapered
+//! cylinders are solids with no flat form (`Shape::as_flat` refuses them), so
+//! they appear as their side profile, a trapezoid polygon.
 //!
 //! Run with: `cargo run --example arbitrary_shapes`
 
 mod common;
 
+use bevy::mesh::Mesh2d;
 use bevy::prelude::*;
 use bevy::render::RenderPlugin;
-use bevy_gradmesh::{GradMeshMaterial, GradMeshPlugin, Shape, ShapeDetail, dual_directional, opaque};
+use bevy::sprite_render::MeshMaterial2d;
+use bevy_gradmesh::{GradMeshMaterial2d, GradMeshPlugin, Shape, ShapeDetail, Style};
 use common::screenshot::AutoScreenshotPlugin;
 
 
@@ -73,178 +80,138 @@ fn main() {
         .run();
 }
 
+/// Window pixels per scene unit; the shape sizes below are in scene units.
+const UNIT: f32 = 100.0;
+/// Scene height of the middle of the four rows.
+const CENTER_Y: f32 = 3.4;
+
 #[derive(Component)]
 struct WorldLabel(Vec3);
 
+/// Side profile of a tapered cylinder: a trapezoid of the given top and bottom radius.
+fn profile(top: f32, bottom: f32, height: f32) -> Shape {
+    let half = height * 0.5;
+    Shape::arbitrary_polygon(
+        vec![
+            Vec2::new(-bottom, -half),
+            Vec2::new(bottom, -half),
+            Vec2::new(top, half),
+            Vec2::new(-top, half),
+        ],
+        ShapeDetail::Minimal,
+    )
+}
+
 fn setup(
     mut commands: Commands,
-    mut meshes: ResMut<Assets<bevy::render::mesh::Mesh>>,
-    mut materials: ResMut<Assets<GradMeshMaterial>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<GradMeshMaterial2d>>,
 ) {
-    // Camera
-    commands.spawn((
-        Camera3d::default(),
-        Transform::from_xyz(0.0, 5.0, 10.0).looking_at(Vec3::new(0.0, 1.5, 0.0), Vec3::Y),
-    ));
+    commands.spawn((Camera2d, Msaa::Off));
 
-    // Lighting
-    commands.spawn((
-        DirectionalLight {
-            illuminance: 15_000.0,
-            ..default()
-        },
-        Transform::from_xyz(5.0, 8.0, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
-    ));
-    commands.insert_resource(GlobalAmbientLight {
-        color: Color::srgb(0.5, 0.5, 0.6),
-        brightness: 200.0,
-        affects_lightmapped_meshes: false,
-    });
-
-    // Ground plane
-    let ground = meshes.add(Plane3d::new(Vec3::Y, Vec2::splat(22.0)));
-    commands.spawn((
-        Mesh3d(ground),
-        MeshMaterial3d(materials.add(opaque(0.1, 0.1, 0.12))),
-        Transform::from_translation(Vec3::new(0.0, -0.01, 0.0)),
-    ));
-
-    let mut mat = |r: f32, g: f32, b: f32| -> Handle<GradMeshMaterial> {
-        materials.add(dual_directional(
-            [r * 0.6, g * 0.6, b * 0.6],
-            [r, g, b],
-            [0.0, 1.0, 0.0],
-        ))
+    let mut piece = |commands: &mut Commands, shape: Shape, color: [f32; 3], at: Vec2| {
+        let [r, g, b] = color;
+        let style = Style::dual_directional(
+            Color::srgb(r * 0.6, g * 0.6, b * 0.6),
+            Color::srgb(r, g, b),
+            Vec3::Y,
+        );
+        let flat = shape.as_flat().expect("every shape in this example is flat");
+        commands.spawn((
+            Mesh2d(meshes.add(flat.build_2d())),
+            MeshMaterial2d(materials.add(style.build_2d())),
+            Transform::from_translation(Vec3::new(
+                at.x * UNIT,
+                (at.y - CENTER_Y) * UNIT,
+                0.0,
+            ))
+            .with_scale(Vec3::new(UNIT, UNIT, 1.0)),
+        ));
     };
 
     // --- Row 1: Star shapes (y = 0.5) ---
-    // 5-pointed star
-    let star5 = meshes.add(
-        Shape::star(5, 0.45, 0.18, ShapeDetail::High)
-            .build(),
+    piece(
+        &mut commands,
+        Shape::star(5, 0.45, 0.18, ShapeDetail::High),
+        [0.95, 0.85, 0.1],
+        Vec2::new(-3.0, 0.5),
     );
-    commands.spawn((
-        Mesh3d(star5),
-        MeshMaterial3d(mat(0.95, 0.85, 0.1)),
-        Transform::from_translation(Vec3::new(-3.0, 0.5, 0.0))
-            .with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0)),
-    ));
     spawn_label(&mut commands, "5-Point Star", Vec3::new(-3.0, 1.2, 0.0));
 
-    // 8-pointed star
-    let star8 = meshes.add(
-        Shape::star(8, 0.45, 0.22, ShapeDetail::High)
-            .build(),
+    piece(
+        &mut commands,
+        Shape::star(8, 0.45, 0.22, ShapeDetail::High),
+        [0.9, 0.3, 0.3],
+        Vec2::new(0.0, 0.5),
     );
-    commands.spawn((
-        Mesh3d(star8),
-        MeshMaterial3d(mat(0.9, 0.3, 0.3)),
-        Transform::from_translation(Vec3::new(0.0, 0.5, 0.0))
-            .with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0)),
-    ));
     spawn_label(&mut commands, "8-Point Star", Vec3::new(0.0, 1.2, 0.0));
 
-    // Deep-indent star
-    let star_deep = meshes.add(
-        Shape::star(6, 0.45, 0.08, ShapeDetail::High)
-            .build(),
+    piece(
+        &mut commands,
+        Shape::star(6, 0.45, 0.08, ShapeDetail::High),
+        [0.3, 0.85, 0.4],
+        Vec2::new(3.0, 0.5),
     );
-    commands.spawn((
-        Mesh3d(star_deep),
-        MeshMaterial3d(mat(0.3, 0.85, 0.4)),
-        Transform::from_translation(Vec3::new(3.0, 0.5, 0.0))
-            .with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0)),
-    ));
     spawn_label(&mut commands, "Deep Star", Vec3::new(3.0, 1.2, 0.0));
 
     // --- Row 2: Ring & Wedge (y = 2.2) ---
-    // Full ring
-    let ring = meshes.add(
-        Shape::ring(0.45, 0.25, ShapeDetail::High)
-            .build(),
+    piece(
+        &mut commands,
+        Shape::ring(0.45, 0.25, ShapeDetail::High),
+        [0.3, 0.4, 0.95],
+        Vec2::new(-3.0, 2.2),
     );
-    commands.spawn((
-        Mesh3d(ring),
-        MeshMaterial3d(mat(0.3, 0.4, 0.95)),
-        Transform::from_translation(Vec3::new(-3.0, 2.2, 0.0))
-            .with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0)),
-    ));
     spawn_label(&mut commands, "Ring", Vec3::new(-3.0, 2.9, 0.0));
 
-    // Thin ring
-    let thin_ring = meshes.add(
-        Shape::ring(0.45, 0.38, ShapeDetail::High)
-            .build(),
+    piece(
+        &mut commands,
+        Shape::ring(0.45, 0.38, ShapeDetail::High),
+        [0.95, 0.45, 0.6],
+        Vec2::new(0.0, 2.2),
     );
-    commands.spawn((
-        Mesh3d(thin_ring),
-        MeshMaterial3d(mat(0.95, 0.45, 0.6)),
-        Transform::from_translation(Vec3::new(0.0, 2.2, 0.0))
-            .with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0)),
-    ));
     spawn_label(&mut commands, "Thin Ring", Vec3::new(0.0, 2.9, 0.0));
 
     // Wedge (quarter circle)
-    let wedge = meshes.add(
-        Shape::wedge(0.45, std::f32::consts::FRAC_PI_2, ShapeDetail::High)
-            .build(),
+    piece(
+        &mut commands,
+        Shape::wedge(0.45, std::f32::consts::FRAC_PI_2, ShapeDetail::High),
+        [1.0, 0.6, 0.2],
+        Vec2::new(3.0, 2.2),
     );
-    commands.spawn((
-        Mesh3d(wedge),
-        MeshMaterial3d(mat(1.0, 0.6, 0.2)),
-        Transform::from_translation(Vec3::new(3.0, 2.2, 0.0))
-            .with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0)),
-    ));
     spawn_label(&mut commands, "Quarter Wedge", Vec3::new(3.0, 2.9, 0.0));
 
-    // --- Row 3: Tapered Cylinder (y = 3.9) ---
+    // --- Row 3: Tapered cylinders, as side profiles (y = 3.9) ---
     // Cup shape (narrow top, wide bottom)
-    let cup = meshes.add(
-        Shape::tapered_cylinder(0.2, 0.4, 0.7, ShapeDetail::High)
-            .build(),
+    piece(
+        &mut commands,
+        profile(0.2, 0.4, 0.7),
+        [0.4, 0.7, 0.9],
+        Vec2::new(-3.0, 3.9),
     );
-    commands.spawn((
-        Mesh3d(cup),
-        MeshMaterial3d(mat(0.4, 0.7, 0.9)),
-        Transform::from_translation(Vec3::new(-3.0, 3.9, 0.0))
-            .with_rotation(Quat::from_rotation_y(0.3)),
-    ));
     spawn_label(&mut commands, "Cup", Vec3::new(-3.0, 4.6, 0.0));
 
     // Inverted cone shape (wide top, narrow bottom)
-    let inverted = meshes.add(
-        Shape::tapered_cylinder(0.4, 0.15, 0.7, ShapeDetail::High)
-            .build(),
+    piece(
+        &mut commands,
+        profile(0.4, 0.15, 0.7),
+        [0.7, 0.4, 0.9],
+        Vec2::new(0.0, 3.9),
     );
-    commands.spawn((
-        Mesh3d(inverted),
-        MeshMaterial3d(mat(0.7, 0.4, 0.9)),
-        Transform::from_translation(Vec3::new(0.0, 3.9, 0.0))
-            .with_rotation(Quat::from_rotation_y(0.3)),
-    ));
     spawn_label(&mut commands, "Inverted", Vec3::new(0.0, 4.6, 0.0));
 
     // Barrel shape (narrow middle via two tapered cylinders)
-    let barrel_top = meshes.add(
-        Shape::tapered_cylinder(0.35, 0.25, 0.35, ShapeDetail::High)
-            .build(),
+    piece(
+        &mut commands,
+        profile(0.35, 0.25, 0.35),
+        [0.6, 0.4, 0.2],
+        Vec2::new(3.0, 4.0),
     );
-    let barrel_bot = meshes.add(
-        Shape::tapered_cylinder(0.25, 0.35, 0.35, ShapeDetail::High)
-            .build(),
+    piece(
+        &mut commands,
+        profile(0.25, 0.35, 0.35),
+        [0.6, 0.4, 0.2],
+        Vec2::new(3.0, 3.65),
     );
-    commands.spawn((
-        Mesh3d(barrel_top),
-        MeshMaterial3d(mat(0.6, 0.4, 0.2)),
-        Transform::from_translation(Vec3::new(3.0, 4.0, 0.0))
-            .with_rotation(Quat::from_rotation_y(0.3)),
-    ));
-    commands.spawn((
-        Mesh3d(barrel_bot),
-        MeshMaterial3d(mat(0.6, 0.4, 0.2)),
-        Transform::from_translation(Vec3::new(3.0, 3.65, 0.0))
-            .with_rotation(Quat::from_rotation_y(0.3)),
-    ));
     spawn_label(&mut commands, "Barrel", Vec3::new(3.0, 4.6, 0.0));
 
     // --- Row 4: Arbitrary Polygons (y = 5.6) ---
@@ -260,16 +227,12 @@ fn setup(
         Vec2::new(-0.4, 0.15), // left wing
         Vec2::new(-0.15, 0.15),// inner left
     ];
-    let arrow = meshes.add(
-        Shape::arbitrary_polygon(arrow_verts, ShapeDetail::Minimal)
-            .build(),
+    piece(
+        &mut commands,
+        Shape::arbitrary_polygon(arrow_verts, ShapeDetail::Minimal),
+        [0.9, 0.5, 0.2],
+        Vec2::new(-3.0, 5.6),
     );
-    commands.spawn((
-        Mesh3d(arrow),
-        MeshMaterial3d(mat(0.9, 0.5, 0.2)),
-        Transform::from_translation(Vec3::new(-3.0, 5.6, 0.0))
-            .with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0)),
-    ));
     spawn_label(&mut commands, "Arrow", Vec3::new(-3.0, 6.3, 0.0));
 
     // Colored diamond with per-vertex colors
@@ -285,16 +248,12 @@ fn setup(
         [0.2, 0.2, 1.0, 1.0], // blue bottom
         [1.0, 1.0, 0.2, 1.0], // yellow left
     ];
-    let diamond = meshes.add(
-        Shape::arbitrary_polygon_colored(diamond_verts, diamond_colors, ShapeDetail::Minimal)
-            .build(),
+    piece(
+        &mut commands,
+        Shape::arbitrary_polygon_colored(diamond_verts, diamond_colors, ShapeDetail::Minimal),
+        [0.8, 0.8, 0.8],
+        Vec2::new(0.0, 5.6),
     );
-    commands.spawn((
-        Mesh3d(diamond),
-        MeshMaterial3d(mat(0.8, 0.8, 0.8)),
-        Transform::from_translation(Vec3::new(0.0, 5.6, 0.0))
-            .with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0)),
-    ));
     spawn_label(&mut commands, "Colored Diamond", Vec3::new(0.0, 6.3, 0.0));
 
     // L-shape polygon
@@ -306,16 +265,12 @@ fn setup(
         Vec2::new(0.4, -0.5),
         Vec2::new(-0.3, -0.5),
     ];
-    let l_shape = meshes.add(
-        Shape::arbitrary_polygon(l_verts, ShapeDetail::Minimal)
-            .build(),
+    piece(
+        &mut commands,
+        Shape::arbitrary_polygon(l_verts, ShapeDetail::Minimal),
+        [0.3, 0.9, 0.6],
+        Vec2::new(3.0, 5.6),
     );
-    commands.spawn((
-        Mesh3d(l_shape),
-        MeshMaterial3d(mat(0.3, 0.9, 0.6)),
-        Transform::from_translation(Vec3::new(3.0, 5.6, 0.0))
-            .with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0)),
-    ));
     spawn_label(&mut commands, "L-Shape", Vec3::new(3.0, 6.3, 0.0));
 }
 
@@ -337,12 +292,12 @@ fn spawn_label(commands: &mut Commands, text: &str, position: Vec3) {
             align_items: AlignItems::Center,
             ..default()
         },
-        WorldLabel(position),
+        WorldLabel(Vec3::new(position.x, position.y - CENTER_Y, position.z) * UNIT),
     ));
 }
 
 fn position_labels(
-    camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    camera: Query<(&Camera, &GlobalTransform), With<Camera2d>>,
     mut labels: Query<(&WorldLabel, &mut Node)>,
 ) {
     let Ok((camera, camera_transform)) = camera.single() else {

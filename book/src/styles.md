@@ -83,7 +83,7 @@ fn radial_material() -> GradMeshMaterial {
 
 ## Blend Modes
 
-*Opaque, transparent, additive, multiplicative, screen, dither and dashed styles. Run `cargo run --example styles` to reproduce it.*
+*Colour modes, blend modes, dash patterns and style presets. Blends and solids use the standalone pipeline and dashed rims are `Mesh2d`, so the example runs without PBR. Run `cargo run --example styles` to reproduce it.*
 
 ### Opaque
 ```rust

@@ -7,7 +7,7 @@
 [![License](https://img.shields.io/crates/l/bevy_gradmesh.svg)](LICENSE-MIT)
 [![Last commit](https://img.shields.io/github/last-commit/xenacool/bevy_gradmesh)](https://github.com/xenacool/bevy_gradmesh/commits)
 
-Procedural mesh generation and gradient materials for [Bevy](https://bevyengine.org/).
+Procedural shapes, mesh generation and gradient materials for [Bevy](https://bevyengine.org/).
 
 BevyGradmesh provides a clean API for generating procedural 3D primitives with proper geometry, detail levels, and gradient shading inspired by Freya Holmér's work.
 
@@ -19,52 +19,70 @@ bevy_gradmesh = "0.3"
 ```
 
 ```rust
-use bevy_gradmesh::Shape;
-use bevy_gradmesh::Style;
+use bevy::prelude::*;
+use bevy_gradmesh::{GradMeshMaterial, Shape, ShapeDetail, Style};
 
-// Generate a smooth sphere mesh
-let mesh = Shape::sphere(1.0, ShapeDetail::Medium).build();
+fn setup(mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<GradMeshMaterial>>) {
+    // Generate a smooth sphere mesh
+    let mesh = meshes.add(Shape::sphere(1.0, ShapeDetail::Medium).build());
 
-// Create a dual-directional gradient material
-let material = Style::dual_directional(
-    Color::srgb(0.6, 0.4, 0.3), // dark color
-    Color::srgb(0.96, 0.8, 0.69), // light color
-    Vec3::UP, // light direction
-).build_material(&mut materials);
+    // Create a dual-directional gradient material
+    let material = Style::dual_directional(
+        Color::srgb(0.6, 0.4, 0.3),   // dark color
+        Color::srgb(0.96, 0.8, 0.69), // light color
+        Vec3::Y,                      // light direction
+    )
+    .build_material(&mut materials);
+}
 ```
+
+### Features
+
+The `pbr` feature (on by default) enables the lit `GradMeshMaterial` and the instanced PBR pipeline.
+Disable it (`default-features = false`) for PBR-free builds: the `Mesh2d`, SDF 2D and standalone backends
+need no lights and no `StandardMaterial`. These examples run without `pbr`: `shapes`, `styles`,
+`mix_spaces`, `curves`, `polyline`, `composed_shapes`, `arbitrary_shapes`, `gradient_2d`, `sdf_2d`,
+`sdf_dash_gallery` and `standalone`; the rest need it.
 
 ## Documentation
 
 Read the [book](https://xenacool.github.io/bevy_gradmesh/) for a guided tour of the API,
 or the [API reference on docs.rs](https://docs.rs/bevy_gradmesh).
 
-## Gallery
+## Screenshots
 
-| Screenshot | Example | Description |
-|---|---|---|
-| ![shapes](https://raw.githubusercontent.com/xenacool/bevy_gradmesh/main/screenshots/screenshot_shapes.png) | `shapes` | All procedural primitives with dual-directional gradient shading |
-| ![character_creator](https://raw.githubusercontent.com/xenacool/bevy_gradmesh/main/screenshots/screenshot_character_creator.webp) | `character_creator` | Character parts built from gradient-shaded primitives |
-| ![styles](https://raw.githubusercontent.com/xenacool/bevy_gradmesh/main/screenshots/screenshot_styles.png) | `styles` | Opaque, transparent, additive, multiplicative, screen, dither, and dashed blend modes |
-| ![mix_spaces](https://raw.githubusercontent.com/xenacool/bevy_gradmesh/main/screenshots/screenshot_mix_spaces.png) | `mix_spaces` | The same gradient in each `MixSpace` (OKLAB, OKLCH, linear RGB, sRGB) |
-| ![pbr_effects](https://raw.githubusercontent.com/xenacool/bevy_gradmesh/main/screenshots/screenshot_pbr_effects.png) | `pbr_effects` | Transparency, emissive glow, metallic surfaces, and combined effects |
-| ![gradient_2d](https://raw.githubusercontent.com/xenacool/bevy_gradmesh/main/screenshots/screenshot_gradient_2d.webp) | `gradient_2d` | `Camera2d` and `Mesh2d` with gradient cards, a radial disc, a pulsing star, a dashed ring and a polygon with a hole |
-| ![sdf_2d](https://raw.githubusercontent.com/xenacool/bevy_gradmesh/main/screenshots/screenshot_sdf_2d.webp) | `sdf_2d` | One shared unit quad mesh: filled discs, ellipses, rounded rectangles, rims, animated partial arcs, radial and angular gradients |
-| ![sdf_dash_gallery](https://raw.githubusercontent.com/xenacool/bevy_gradmesh/main/screenshots/screenshot_sdf_dash_gallery.png) | `sdf_dash_gallery` | Dashed rim outlines comparing `Off`, `Tiling`, `EndToEnd` and count-based snap modes |
-| ![immediate](https://raw.githubusercontent.com/xenacool/bevy_gradmesh/main/screenshots/screenshot_immediate.webp) | `immediate` | Per-frame animated particles, push/pop state stacking, billboarding, and line drawing |
-| ![retained](https://raw.githubusercontent.com/xenacool/bevy_gradmesh/main/screenshots/screenshot_retained.webp) | `retained` | Persistent shapes updated each frame via handles without recreating entities |
-| ![instanced](https://raw.githubusercontent.com/xenacool/bevy_gradmesh/main/screenshots/screenshot_instanced.webp) | `instanced` | 500 spheres rendered in a single GPU batch via `BatchRecorder` |
-| ![standalone](https://raw.githubusercontent.com/xenacool/bevy_gradmesh/main/screenshots/screenshot_standalone.webp) | `standalone` | Gradient shapes drawn without any PBR material or lights - one shader pipeline, one bind group |
-| ![curves](https://raw.githubusercontent.com/xenacool/bevy_gradmesh/main/screenshots/screenshot_curves.png) | `curves` | Spline and parametric curves rendered as smooth tubes |
-| ![polyline](https://raw.githubusercontent.com/xenacool/bevy_gradmesh/main/screenshots/screenshot_polyline.webp) | `polyline` | Polylines with joint styles, width variation, gradient colors, and animated reveal |
-| ![sweep](https://raw.githubusercontent.com/xenacool/bevy_gradmesh/main/screenshots/screenshot_sweep.png) | `sweep` | Profiles swept along 3D paths: a wall with an arched gate and windows, a kerbed road, and a tapering pipe on a helix |
-| ![road](https://raw.githubusercontent.com/xenacool/bevy_gradmesh/main/screenshots/screenshot_road.png) | `road` | Banked road using `Shape::sweep_frames` with width and roll channels |
-| ![composed_shapes](https://raw.githubusercontent.com/xenacool/bevy_gradmesh/main/screenshots/screenshot_composed_shapes.png) | `composed_shapes` | Compound tower, wall with arched opening, extruded cobbles, emissive torch, metallic gem, and translucent ghost piece |
-| ![terrain](https://raw.githubusercontent.com/xenacool/bevy_gradmesh/main/screenshots/screenshot_terrain.png) | `terrain` | Heightfield chunks with shared edge normals, relative height bands, and hole edges |
-| ![deformation](https://raw.githubusercontent.com/xenacool/bevy_gradmesh/main/screenshots/screenshot_deformation.webp) | `deformation` | Vertex shader animations: wobble, pulse, and morph effects |
-| ![appearance](https://raw.githubusercontent.com/xenacool/bevy_gradmesh/main/screenshots/screenshot_appearance.webp) | `appearance` | Per-instance colour animation: static, pulse, cycle, and gradient shift |
-| ![arbitrary_shapes](https://raw.githubusercontent.com/xenacool/bevy_gradmesh/main/screenshots/screenshot_arbitrary_shapes.png) | `arbitrary_shapes` | Custom polygons with per-vertex colors, star shapes, annular rings, pie-slice wedges, and tapered cylinders |
+All example screenshots are packaged in a zip archive attached to each [GitHub Release](https://github.com/xenacool/bevy_gradmesh/releases). Download the latest `screenshots-v*.zip` for still PNGs and animated WebPs.
 
-Run any example with `cargo run --example <name>`.
+### Examples
+
+**PBR (requires `--features pbr`):**
+
+- `shapes` — Procedural primitives at every detail level, shaded by dual-directional gradients
+- `styles` — Colour modes, blend modes, dash patterns and style presets
+- `pbr_effects` — Transparency, emissive glow, metallic surfaces, and combined effects
+- `character_creator` — Character parts built from gradient-shaded primitives
+- `immediate` — Per-frame animated particles, push/pop state stacking, billboarding, and line drawing
+- `retained` — Persistent shapes updated each frame via handles without recreating entities
+- `instanced` — 500 spheres rendered in a single GPU batch via `BatchRecorder`
+- `sweep` — Profiles swept along 3D paths: a wall with an arched gate and windows, a kerbed road, and a tapering pipe on a helix
+- `road` — Banked road using `Shape::sweep_frames` with width and roll channels
+- `terrain` — Heightfield chunks with shared edge normals, relative height bands, and hole edges
+- `deformation` — Vertex shader animations: wobble, pulse, and morph effects
+- `appearance` — Per-instance colour animation: static, pulse, cycle, and gradient shift
+
+**PBR-free (run with `--no-default-features`):**
+
+- `mix_spaces` — The same gradient in each `MixSpace` (OKLAB, OKLCH, linear RGB, sRGB)
+- `curves` — Bezier curves of every degree and a 3D helix as smooth tubes
+- `polyline` — Flat 2D polylines with gradient colors, drawn as `Mesh2d`
+- `composed_shapes` — Compound tower, wall, cobbles, torch, gem and heightfield terrain
+- `arbitrary_shapes` — Custom polygons, stars, rings, wedges, and tapered cylinder profiles
+- `gradient_2d` — `Camera2d` and `Mesh2d` with gradient cards, a radial disc, a pulsing star, a dashed ring and a polygon with a hole
+- `sdf_2d` — One shared unit quad mesh: filled discs, ellipses, rounded rectangles, rims, animated partial arcs, radial and angular gradients
+- `sdf_dash_gallery` — Dashed rim outlines comparing `Off`, `Tiling`, `EndToEnd` and count-based snap modes
+- `standalone` — Gradient shapes drawn without any PBR material or lights
+
+Run any example with `cargo run --example <name>` (add `--no-default-features` for the PBR-free ones listed above).
 
 ## License
 

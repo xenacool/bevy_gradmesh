@@ -55,6 +55,13 @@ The SDF backend draws rectangles, ellipses, regular polygons (`polygon`), stars 
 polygons from up to 16 points (`polygon_from_points`). Rings and wedges are a disc with a rim or
 an arc. Polygons with holes, polylines, Bézier curves and 3D solids need a mesh backend.
 
+`Shape::as_flat()` proves a shape is flat and returns a `FlatShape` (or `NotFlat` for a solid, tube or
+mesh). `FlatShape::sdf_2d()` then converts a rectangle, disc, ellipse, regular polygon and rim, star,
+ring, wedge, or a polygon of up to 16 vertices into the matching `SdfMaterial2d`, so the same shape can
+go to either 2D backend. It returns `Err(SdfConvertError)` saying why when the SDF backend cannot draw
+the shape (degenerate size, holes, per-vertex colours, too many vertices, a curve or compound);
+`FlatShape::build_2d()` draws all of those.
+
 ```rust
 # use bevy::prelude::*;
 # use bevy_gradmesh::{Dash2d, DashSnap, SdfMaterial2d, unit_quad};

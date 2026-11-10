@@ -1,0 +1,11 @@
+# Bevy fast-compile settings (nightly-only).
+# See: https://bevy.org/learn/quick-start/getting-started/setup
+
+[target.x86_64-unknown-linux-gnu]
+linker = "clang"
+rustflags = [
+    # (Nightly) Share monomorphized generic instantiations across crates.
+    "-Zshare-generics=y",
+    # Use mold linker for faster linking.
+    "-C", "link-arg=-fuse-ld=/usr/bin/mold",
+]

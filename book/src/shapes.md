@@ -118,7 +118,7 @@ fn tapered_cylinder() -> Shape {
 ```
 A cone-frustum with flat top and bottom. When radii are equal, equivalent to a regular cylinder.
 
-*The 3D primitives, shaded with dual-directional gradients. Run `cargo run --example shapes` to reproduce it.*
+*Every primitive at several detail levels, shaded by dual-directional gradients instead of lights. Solids go through the standalone pipeline and flat shapes are `Mesh2d` meshes, so it runs without PBR. Run `cargo run --example shapes` to reproduce it.*
 
 ## 2D Primitives
 
@@ -128,7 +128,7 @@ in world units (pixels with the default `Camera2d`), and the quad's `Transform` 
 `SdfMaterial2d::quad_scale()`. See [Choosing a Backend](./backends.md) for the full SDF API.
 
 Polygons with holes, per-vertex colours and outlines of more than 16 vertices go through the mesh
-backend with `Shape::build_2d()`. See [Arbitrary Polygon on the mesh backend](#arbitrary-polygon-on-the-mesh-backend).
+backend with `Shape::as_flat()?.build_2d()`. See [Arbitrary Polygon on the mesh backend](#arbitrary-polygon-on-the-mesh-backend).
 
 ### Rectangle
 ```rust
@@ -263,7 +263,7 @@ rim. Dashes are not supported on these kinds: a dashed rim draws solid.
 
 *Discs, ellipses, rounded rectangles, rims, arcs, polygons and stars on one shared quad. Run `cargo run --example sdf_2d` to reproduce it.*
 
-*Custom polygons with per-vertex colours, stars, rings, wedges and a tapered cylinder. Run `cargo run --example arbitrary_shapes` to reproduce it.*
+*Custom polygons with per-vertex colours, stars, rings, wedges and the side profiles of tapered cylinders (`Shape::as_flat` refuses the solid itself). Run `cargo run --example arbitrary_shapes` to reproduce it.*
 
 ### Arbitrary Polygon on the mesh backend
 ```rust

@@ -1,10 +1,10 @@
 [package]
 name = "bevy_gradmesh"
-version = "0.3.3"
+version = "0.3.4"
 authors = ["Jessica Collins (https://github.com/xenacool)"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
-description = "Procedural mesh generation and gradient materials for Bevy"
+description = "Procedural shapes, mesh generation and gradient materials for Bevy"
 repository = "https://github.com/xenacool/bevy_gradmesh"
 readme = "README.md"
 exclude = ["screenshots/", "reference/", "target/", "Cargo.lock", "Makefile", "book/"]
@@ -47,17 +47,23 @@ bytemuck = "1.21"
 [dev-dependencies]
 bevy = { version = "0.20", features = ["tonemapping_luts", "png"] }
 
+# Examples marked `required-features = ["pbr"]` draw lit 3D shapes with `GradMeshMaterial` or the
+# instanced PBR pipeline, so Cargo skips them when `pbr` is off. The rest build with
+# `--no-default-features`: they use the Mesh2d, SDF and standalone backends.
 [[example]]
 name = "character_creator"
 path = "examples/character_creator.rs"
+required-features = ["pbr"]
 
 [[example]]
 name = "shapes"
 path = "examples/shapes.rs"
+required-features = ["pbr"]
 
 [[example]]
 name = "styles"
 path = "examples/styles.rs"
+required-features = ["pbr"]
 
 [[example]]
 name = "mix_spaces"
@@ -70,6 +76,7 @@ path = "examples/curves.rs"
 [[example]]
 name = "immediate"
 path = "examples/immediate.rs"
+required-features = ["pbr"]
 
 [[example]]
 name = "polyline"
@@ -78,10 +85,12 @@ path = "examples/polyline.rs"
 [[example]]
 name = "instanced"
 path = "examples/instanced.rs"
+required-features = ["pbr"]
 
 [[example]]
 name = "pbr_effects"
 path = "examples/pbr_effects.rs"
+required-features = ["pbr"]
 
 [[example]]
 name = "gradient_2d"
@@ -98,19 +107,42 @@ path = "examples/sdf_dash_gallery.rs"
 [[example]]
 name = "sweep"
 path = "examples/sweep.rs"
+required-features = ["pbr"]
 
 [[example]]
 name = "terrain"
 path = "examples/terrain.rs"
+required-features = ["pbr"]
 
 [[example]]
 name = "road"
 path = "examples/road.rs"
+required-features = ["pbr"]
 
 [[example]]
 name = "composed_shapes"
 path = "examples/composed_shapes.rs"
+required-features = ["pbr"]
 
 [[example]]
 name = "standalone"
 path = "examples/standalone.rs"
+
+[[example]]
+name = "appearance"
+path = "examples/appearance.rs"
+required-features = ["pbr"]
+
+[[example]]
+name = "arbitrary_shapes"
+path = "examples/arbitrary_shapes.rs"
+
+[[example]]
+name = "deformation"
+path = "examples/deformation.rs"
+required-features = ["pbr"]
+
+[[example]]
+name = "retained"
+path = "examples/retained.rs"
+required-features = ["pbr"]

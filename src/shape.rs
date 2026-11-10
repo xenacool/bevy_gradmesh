@@ -868,6 +868,227 @@ enum ShapeKind {
     },
 }
 
+impl ShapeKind {
+    fn is_flat(&self) -> bool {
+        match self {
+            Self::Rectangle { .. }
+            | Self::RectangleRim { .. }
+            | Self::Disc { .. }
+            | Self::DiscRim { .. }
+            | Self::Polygon { .. }
+            | Self::PolygonRim { .. }
+            | Self::Ellipse { .. }
+            | Self::EllipseRim { .. }
+            | Self::ArbitraryPolygon { .. }
+            | Self::Star { .. }
+            | Self::Ring { .. }
+            | Self::Wedge { .. }
+            | Self::ExtrudedPolygon { .. }
+            | Self::Polyline2D { .. }
+            | Self::Bezier2D { .. } => true,
+            Self::Compound { parts } => parts.iter().all(|p| p.shape.kind.is_flat()),
+            _ => false,
+        }
+    }
+}
+
+/// [`Shape::as_flat`] refused a shape that has depth (a solid, a tube, a lathe,
+/// a sweep, a heightfield or a caller-supplied mesh).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NotFlat;
+
+impl std::fmt::Display for NotFlat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("shape is not flat, so it has no 2D form")
+    }
+}
+
+impl std::error::Error for NotFlat {}
+
+/// Why [`FlatShape::sdf_2d`] could not draw a flat shape with the SDF backend.
+///
+/// Use [`FlatShape::build_2d`] for any of these shapes: it draws all of them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SdfConvertError {
+    /// A size, radius or rim width is zero, negative or not finite, or a ring's
+    /// inner radius is not smaller than its outer radius.
+    Degenerate,
+    /// The shape has holes; the SDF backend draws one outline.
+    HasHoles,
+    /// The shape has per-vertex colours; the SDF backend colours by gradient.
+    VertexColours,
+    /// The shape is flat but has no SDF primitive: a 2D polyline or Bézier
+    /// curve, or a compound.
+    Unsupported,
+    /// A polygon outline has too few or too many vertices.
+    Polygon(crate::SdfPolygonError),
+}
+
+impl std::fmt::Display for SdfConvertError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Degenerate => f.write_str("a size, radius or rim width is not a positive finite number"),
+            Self::HasHoles => f.write_str("shapes with holes need the mesh backend"),
+            Self::VertexColours => f.write_str("per-vertex colours need the mesh backend"),
+            Self::Unsupported => f.write_str("curves, polylines and compounds need the mesh backend"),
+            Self::Polygon(e) => e.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for SdfConvertError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Polygon(e) => Some(e),
+            _ => None,
+        }
+    }
+}
+
+impl From<crate::SdfPolygonError> for SdfConvertError {
+    fn from(e: crate::SdfPolygonError) -> Self {
+        Self::Polygon(e)
+    }
+}
+
+/// A [`Shape`] known to be flat (see [`Shape::as_flat`]). The 2D conversions
+/// live here, so asking for the flat form of a sphere does not type-check
+/// instead of returning something odd.
+#[derive(Debug, Clone, Copy)]
+pub struct FlatShape<'a> {
+    shape: &'a Shape,
+}
+
+impl<'a> FlatShape<'a> {
+    /// The underlying shape.
+    #[must_use]
+    pub fn shape(&self) -> &'a Shape {
+        self.shape
+    }
+
+    /// Flat geometry for `Mesh2d`: in the XY plane, facing +Z, with gradient
+    /// UVs. Extruded polygons lose their depth. See [`Shape::build_2d`].
+    #[must_use]
+    pub fn build_2d(&self) -> Mesh {
+        self.shape.build_2d()
+    }
+
+    /// Bounds of [`FlatShape::build_2d`]. See [`Shape::bounds_2d`].
+    #[must_use]
+    pub fn bounds_2d(&self) -> ShapeBounds {
+        self.shape.bounds_2d()
+    }
+
+    /// The [`SdfMaterial2d`](crate::SdfMaterial2d) that draws this shape on the
+    /// shared [`unit_quad`](crate::unit_quad).
+    ///
+    /// Covered: rectangles, discs, ellipses, regular polygons and their rims,
+    /// stars, rings, wedges and arbitrary or extruded polygons of 3 to 16
+    /// vertices without holes or per-vertex colours (an extruded polygon is
+    /// drawn without depth, like [`FlatShape::build_2d`]).
+    ///
+    /// The material is centred on the middle of the shape's bounds, so for an
+    /// arbitrary polygon place the entity at the middle of
+    /// [`FlatShape::bounds_2d`]. Set the entity's `Transform` scale to
+    /// [`SdfMaterial2d::quad_scale`](crate::SdfMaterial2d::quad_scale). Rim
+    /// widths match the mesh builders: on a regular polygon the mesh rim is
+    /// measured along the radius, so the SDF rim is scaled by `cos(pi / sides)`
+    /// to the same thickness. [`ShapeDetail`] has no effect, because the field
+    /// is exact at any size.
+    ///
+    /// # Errors
+    ///
+    /// [`SdfConvertError`] says why the SDF backend cannot draw the shape;
+    /// [`FlatShape::build_2d`] still can.
+    pub fn sdf_2d(&self) -> Result<crate::SdfMaterial2d, SdfConvertError> {
+        use crate::SdfMaterial2d;
+        let positive = |v: f32| v.is_finite() && v > 0.0;
+        let size_ok = |v: Vec2| positive(v.x) && positive(v.y);
+        let rim_ok = |w: f32| w.is_finite();
+        let valid = |ok: bool| if ok { Ok(()) } else { Err(SdfConvertError::Degenerate) };
+        match &self.shape.kind {
+            ShapeKind::Rectangle { size } => {
+                valid(size_ok(*size))?;
+                Ok(SdfMaterial2d::rect(*size))
+            }
+            ShapeKind::RectangleRim { size, rim_width } => {
+                valid(size_ok(*size) && rim_ok(*rim_width))?;
+                Ok(SdfMaterial2d::rect(*size).with_rim(*rim_width))
+            }
+            ShapeKind::Disc { radius } => {
+                valid(positive(*radius))?;
+                Ok(SdfMaterial2d::disc(*radius))
+            }
+            ShapeKind::DiscRim { radius, rim_width } => {
+                valid(positive(*radius) && rim_ok(*rim_width))?;
+                Ok(SdfMaterial2d::disc(*radius).with_rim(*rim_width))
+            }
+            ShapeKind::Ellipse { radius } => {
+                valid(size_ok(*radius))?;
+                Ok(SdfMaterial2d::ellipse(*radius))
+            }
+            ShapeKind::EllipseRim { radius, rim_width } => {
+                valid(size_ok(*radius) && rim_ok(*rim_width))?;
+                Ok(SdfMaterial2d::ellipse(*radius).with_rim(*rim_width))
+            }
+            ShapeKind::Polygon { sides, radius } => {
+                valid(positive(*radius))?;
+                Ok(SdfMaterial2d::polygon(*sides, *radius))
+            }
+            ShapeKind::PolygonRim {
+                sides,
+                radius,
+                rim_width,
+            } => {
+                valid(positive(*radius) && rim_ok(*rim_width))?;
+                let sides = (*sides).max(3);
+                let apothem_scale = (PI / sides as f32).cos();
+                Ok(SdfMaterial2d::polygon(sides, *radius).with_rim(rim_width * apothem_scale))
+            }
+            ShapeKind::Star {
+                points,
+                outer_radius,
+                inner_radius,
+            } => {
+                valid(positive(*outer_radius) && inner_radius.is_finite())?;
+                Ok(SdfMaterial2d::star(*points, *outer_radius, *inner_radius))
+            }
+            ShapeKind::Ring {
+                outer_radius,
+                inner_radius,
+            } => {
+                valid(positive(*outer_radius) && inner_radius.is_finite() && *inner_radius < *outer_radius)?;
+                Ok(SdfMaterial2d::disc(*outer_radius).with_rim(outer_radius - inner_radius.max(0.0)))
+            }
+            ShapeKind::Wedge { radius, angle } => {
+                valid(positive(*radius) && positive(*angle))?;
+                Ok(SdfMaterial2d::disc(*radius).with_arc(0.0, *angle))
+            }
+            ShapeKind::ArbitraryPolygon { vertices, colors } => {
+                if colors.is_some() {
+                    return Err(SdfConvertError::VertexColours);
+                }
+                Ok(SdfMaterial2d::polygon_from_points(vertices)?)
+            }
+            ShapeKind::ExtrudedPolygon {
+                outer,
+                holes,
+                colors,
+                ..
+            } => {
+                if !holes.is_empty() {
+                    return Err(SdfConvertError::HasHoles);
+                }
+                if colors.is_some() {
+                    return Err(SdfConvertError::VertexColours);
+                }
+                Ok(SdfMaterial2d::polygon_from_points(outer)?)
+            }
+            _ => Err(SdfConvertError::Unsupported),
+        }
+    }
+}
+
 fn hash_vec3<H: std::hash::Hasher>(v: &Vec3, state: &mut H) {
     v.x.to_bits().hash(state);
     v.y.to_bits().hash(state);
@@ -2346,6 +2567,22 @@ impl Shape {
         }
     }
 
+    /// Proves that this shape is flat, returning a [`FlatShape`] on which the
+    /// 2D conversions ([`FlatShape::build_2d`], [`FlatShape::bounds_2d`],
+    /// [`FlatShape::sdf_2d`]) exist.
+    ///
+    /// Flat shapes are the 2D primitives (rectangle, disc, ellipse, polygon,
+    /// rims, star, ring, wedge, arbitrary polygon), extruded polygons (drawn
+    /// without depth), 2D polylines and Bézier curves, and compounds made only
+    /// of flat parts.
+    pub fn as_flat(&self) -> Result<FlatShape<'_>, NotFlat> {
+        if self.kind.is_flat() {
+            Ok(FlatShape { shape: self })
+        } else {
+            Err(NotFlat)
+        }
+    }
+
     /// Builds flat geometry for `Mesh2d`: in the XY plane, facing +Z, with
     /// gradient UVs and no billboarding. Pair it with
     /// [`GradMeshMaterial2d`](crate::GradMeshMaterial2d) (see [`Style::build_2d`](crate::Style::build_2d))
@@ -2356,6 +2593,9 @@ impl Shape {
     /// already flat. Extruded polygons return their flat outline without depth,
     /// and compounds and planar-UV wrappers apply this to their parts. Solid 3D
     /// primitives have no flat form and return their ordinary mesh.
+    ///
+    /// Prefer [`Shape::as_flat`] and [`FlatShape::build_2d`], which refuse the solids
+    /// instead of drawing them.
     ///
     /// `Transform` scale on the XY plane resizes the shape and
     /// `Transform.translation.z` orders it against other 2D meshes.
@@ -5395,6 +5635,92 @@ mod lerp_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn flat(shape: &Shape) -> FlatShape<'_> {
+        shape.as_flat().unwrap()
+    }
+
+    #[test]
+    fn solids_are_not_flat() {
+        let d = ShapeDetail::Medium;
+        assert_eq!(Shape::sphere(1.0, d).as_flat().unwrap_err(), NotFlat);
+        let mixed = Shape::compound(vec![
+            ShapePart::new(Shape::disc(1.0, d)),
+            ShapePart::new(Shape::sphere(1.0, d)),
+        ]);
+        assert!(mixed.as_flat().is_err());
+        let flat_parts = Shape::compound(vec![ShapePart::new(Shape::disc(1.0, d))]);
+        assert!(flat_parts.as_flat().is_ok());
+    }
+
+    #[test]
+    fn sdf_2d_maps_flat_shapes() {
+        let d = ShapeDetail::Medium;
+        let rect = Shape::rectangle(Vec2::new(40.0, 20.0), d);
+        assert_eq!(flat(&rect).sdf_2d().unwrap().size(), Vec2::new(40.0, 20.0));
+        let disc = Shape::disc(10.0, d);
+        assert_eq!(flat(&disc).sdf_2d().unwrap().size(), Vec2::splat(20.0));
+        let rim = Shape::disc_rim(10.0, 3.0, d);
+        assert_eq!(flat(&rim).sdf_2d().unwrap().uniform.shape.y, 3.0);
+        let ring = Shape::ring(10.0, 6.0, d);
+        let ring = flat(&ring).sdf_2d().unwrap();
+        assert_eq!(ring.uniform.shape.y, 4.0);
+        assert_eq!(ring.size(), Vec2::splat(20.0));
+        let wedge = Shape::wedge(10.0, 1.5, d);
+        let wedge = flat(&wedge).sdf_2d().unwrap();
+        assert_eq!(wedge.uniform.shape.z, 0.0);
+        assert_eq!(wedge.uniform.shape.w, 1.5);
+        for shape in [
+            Shape::ellipse(Vec2::new(8.0, 4.0), d),
+            Shape::polygon(6, 10.0, d),
+            Shape::star(5, 10.0, 4.0, d),
+        ] {
+            assert!(flat(&shape).sdf_2d().is_ok());
+        }
+    }
+
+    #[test]
+    fn sdf_2d_polygon_rim_matches_mesh_thickness() {
+        let shape = Shape::polygon_rim(6, 10.0, 2.0, ShapeDetail::Medium);
+        let rim = flat(&shape).sdf_2d().unwrap();
+        let expected = 2.0 * (PI / 6.0).cos();
+        assert!((rim.uniform.shape.y - expected).abs() < 1e-5);
+    }
+
+    #[test]
+    fn sdf_2d_arbitrary_polygon_errors_say_why() {
+        let d = ShapeDetail::Medium;
+        let triangle = vec![Vec2::ZERO, Vec2::new(4.0, 0.0), Vec2::new(0.0, 4.0)];
+        let shape = Shape::arbitrary_polygon(triangle, d);
+        assert!(flat(&shape).sdf_2d().is_ok());
+        let many: Vec<Vec2> = (0..17).map(|i| Vec2::new(i as f32, (i * i) as f32)).collect();
+        let shape = Shape::arbitrary_polygon(many, d);
+        assert_eq!(
+            flat(&shape).sdf_2d().unwrap_err(),
+            SdfConvertError::Polygon(crate::SdfPolygonError::TooManyVertices(17))
+        );
+        let shape = Shape::arbitrary_polygon(vec![Vec2::ZERO, Vec2::X], d);
+        assert_eq!(
+            flat(&shape).sdf_2d().unwrap_err(),
+            SdfConvertError::Polygon(crate::SdfPolygonError::TooFewVertices(2))
+        );
+    }
+
+    #[test]
+    fn sdf_2d_rejects_what_it_cannot_draw_with_a_reason() {
+        let d = ShapeDetail::Medium;
+        for shape in [
+            Shape::disc(0.0, d),
+            Shape::disc(f32::NAN, d),
+            Shape::ring(5.0, 5.0, d),
+            Shape::wedge(5.0, 0.0, d),
+            Shape::disc_rim(5.0, f32::INFINITY, d),
+        ] {
+            assert_eq!(flat(&shape).sdf_2d().unwrap_err(), SdfConvertError::Degenerate);
+        }
+        let compound = Shape::compound(vec![ShapePart::new(Shape::disc(1.0, d))]);
+        assert_eq!(flat(&compound).sdf_2d().unwrap_err(), SdfConvertError::Unsupported);
+    }
 
     #[test]
     fn sphere_has_valid_topology() {
