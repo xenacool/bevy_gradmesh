@@ -30,12 +30,13 @@ fn setup(
     mut materials: ResMut<Assets<GradMeshMaterial>>,
 ) {
     // Camera
-    commands.spawn(Camera3d::from_transform(
-        Transform::from_xyz(0.0, 5.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y)
+    commands.spawn((
+        Camera3d::default(),
+        Transform::from_xyz(0.0, 5.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
 
     // Light
-    commands.spawn(DirectionalLight::new_white());
+    commands.spawn(DirectionalLight::default());
 
     // Generate a sphere mesh
     let mesh = meshes.add(Shape::sphere(1.0, ShapeDetail::Medium).build());
@@ -67,11 +68,15 @@ The core API has three main types:
 Control mesh resolution with `ShapeDetail`:
 
 ```rust
-Shape::sphere(1.0, ShapeDetail::Minimal)  // 8 segments
-Shape::sphere(1.0, ShapeDetail::Low)      // 12 segments
-Shape::sphere(1.0, ShapeDetail::Medium)   // 16 segments (default)
-Shape::sphere(1.0, ShapeDetail::High)     // 24 segments
-Shape::sphere(1.0, ShapeDetail::Extreme)  // 32 segments
+# use bevy_gradmesh::{Shape, ShapeDetail};
+# fn main() {}
+fn detail_levels() {
+    Shape::sphere(1.0, ShapeDetail::Minimal); // 8 segments
+    Shape::sphere(1.0, ShapeDetail::Low); // 12 segments
+    Shape::sphere(1.0, ShapeDetail::Medium); // 16 segments (default)
+    Shape::sphere(1.0, ShapeDetail::High); // 24 segments
+    Shape::sphere(1.0, ShapeDetail::Extreme); // 32 segments
+}
 ```
 
 ## Next Steps

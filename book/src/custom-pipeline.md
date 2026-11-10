@@ -34,18 +34,23 @@ StandalonePipeline
 The standalone pipeline is automatically enabled when you add `GradMeshPlugin`:
 
 ```rust
-use bevy_gradmesh::{GradMeshPlugin, BatchRecorder, render_standalone_batches};
-
-// GradMeshPlugin includes StandaloneRenderPlugin by default
-app.add_plugins(GradMeshPlugin);
+# use bevy::prelude::*;
+# use bevy_gradmesh::GradMeshPlugin;
+# fn main() {}
+fn add_plugin(app: &mut App) {
+    // GradMeshPlugin includes StandaloneRenderPlugin by default
+    app.add_plugins(GradMeshPlugin);
+}
 ```
 
 To use the standalone pipeline for rendering, use `render_standalone_batches()` instead of `BatchRecorder::render_batches()`:
 
 ```rust
+# use bevy::prelude::*;
 use bevy_gradmesh::{BatchRecorder, ShapeDetail, render_standalone_batches};
+# fn main() {}
 
-fn render(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
+fn render(mut commands: Commands, meshes: ResMut<Assets<Mesh>>) {
     let mut recorder = BatchRecorder::new();
     recorder.begin();
 
@@ -56,6 +61,7 @@ fn render(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
     recorder.sphere(0.5, ShapeDetail::Medium, [0.0, 1.0, 0.0, 1.0]);
 
     // Use standalone pipeline - no PBR, no descriptor pool pressure
+    recorder.end();
     let _entities = render_standalone_batches(&mut recorder, &mut commands, meshes, None);
 }
 ```

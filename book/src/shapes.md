@@ -6,60 +6,115 @@ BevyGradmesh provides a wide variety of procedural primitives, all generated at 
 
 ### Sphere
 ```rust
-Shape::sphere(radius, detail)
+# use bevy_gradmesh::{Shape, ShapeDetail};
+# fn main() {}
+fn sphere() -> Shape {
+    Shape::sphere(1.0, ShapeDetail::Medium)
+}
 ```
 
 ### Ellipsoid
 ```rust
-Shape::ellipsoid(size, detail)
+# use bevy::prelude::*;
+# use bevy_gradmesh::{Shape, ShapeDetail};
+# fn main() {}
+fn ellipsoid() -> Shape {
+    Shape::ellipsoid(Vec3::new(2.0, 1.0, 1.5), ShapeDetail::Medium)
+}
 ```
 
 ### Cuboid
 ```rust
-Shape::cuboid(size, roundness, detail)
+# use bevy::prelude::*;
+# use bevy_gradmesh::{Shape, ShapeDetail};
+# fn main() {}
+fn cuboid() -> Shape {
+    let roundness = 0.2;
+    Shape::cuboid(Vec3::new(1.0, 2.0, 1.0), roundness, ShapeDetail::Medium)
+}
 ```
-The `roundness` parameter (0.0–1.0) creates rounded edges. At 0.0, produces a sharp box.
+The `roundness` parameter (0.0 to 1.0) creates rounded edges. At 0.0, produces a sharp box.
 
 ### Cylinder
 ```rust
-Shape::cylinder(radius, height, detail)
+# use bevy_gradmesh::{Shape, ShapeDetail};
+# fn main() {}
+fn cylinder() -> Shape {
+    Shape::cylinder(0.5, 2.0, ShapeDetail::Medium)
+}
 ```
 
 ### Cone
 ```rust
-Shape::cone(radius, height, detail)
+# use bevy_gradmesh::{Shape, ShapeDetail};
+# fn main() {}
+fn cone() -> Shape {
+    Shape::cone(0.5, 2.0, ShapeDetail::Medium)
+}
 ```
 
 ### Capsule
 ```rust
-Shape::capsule(radius, height, detail)
+# use bevy_gradmesh::{Shape, ShapeDetail};
+# fn main() {}
+fn capsule() -> Shape {
+    Shape::capsule(0.5, 2.0, ShapeDetail::Medium)
+}
 ```
 
 ### Hemisphere
 ```rust
-Shape::hemisphere(radius, capped, detail)
+# use bevy_gradmesh::{Shape, ShapeDetail};
+# fn main() {}
+fn hemisphere() -> Shape {
+    let capped = true;
+    Shape::hemisphere(1.0, capped, ShapeDetail::Medium)
+}
 ```
 When `capped` is true, the flat face is filled with geometry.
 
 ### Torus
 ```rust
-Shape::torus(radius, thickness, start_angle, span)
+# use bevy_gradmesh::Shape;
+# fn main() {}
+fn torus() -> Shape {
+    let start_angle = 0.0;
+    let span = std::f32::consts::TAU;
+    Shape::torus(1.0, 0.25, start_angle, span)
+}
 ```
 Supports partial torus arcs. Use `start_angle = 0.0` and `span = TAU` for a full torus.
 
 ### Regular Prism
 ```rust
-Shape::regular_prism(sides, radius, height, roundness, detail)
+# use bevy_gradmesh::{Shape, ShapeDetail};
+# fn main() {}
+fn regular_prism() -> Shape {
+    let sides = 6;
+    let roundness = 0.1;
+    Shape::regular_prism(sides, 1.0, 2.0, roundness, ShapeDetail::Medium)
+}
 ```
 
 ### Pyramid
 ```rust
-Shape::pyramid(sides, radius, height, detail)
+# use bevy_gradmesh::{Shape, ShapeDetail};
+# fn main() {}
+fn pyramid() -> Shape {
+    let sides = 4;
+    Shape::pyramid(sides, 1.0, 1.5, ShapeDetail::Medium)
+}
 ```
 
 ### Tapered Cylinder
 ```rust
-Shape::tapered_cylinder(top_radius, bottom_radius, height, detail)
+# use bevy_gradmesh::{Shape, ShapeDetail};
+# fn main() {}
+fn tapered_cylinder() -> Shape {
+    let top_radius = 0.3;
+    let bottom_radius = 0.6;
+    Shape::tapered_cylinder(top_radius, bottom_radius, 2.0, ShapeDetail::Medium)
+}
 ```
 A cone-frustum with flat top and bottom. When radii are equal, equivalent to a regular cylinder.
 
@@ -71,48 +126,108 @@ All 2D shapes are flat quads facing the camera (billboarded).
 
 ### Rectangle
 ```rust
-Shape::rectangle(size, detail)
+# use bevy::prelude::*;
+# use bevy_gradmesh::{Shape, ShapeDetail};
+# fn main() {}
+fn rectangle() -> Shape {
+    Shape::rectangle(Vec2::new(2.0, 1.0), ShapeDetail::Medium)
+}
 ```
 
 ### Disc
 ```rust
-Shape::disc(radius, detail)
+# use bevy_gradmesh::{Shape, ShapeDetail};
+# fn main() {}
+fn disc() -> Shape {
+    Shape::disc(1.0, ShapeDetail::Medium)
+}
 ```
 
 ### Polygon
 ```rust
-Shape::polygon(sides, radius, detail)
+# use bevy_gradmesh::{Shape, ShapeDetail};
+# fn main() {}
+fn polygon() -> Shape {
+    let sides = 5;
+    Shape::polygon(sides, 1.0, ShapeDetail::Medium)
+}
 ```
 
 ### Ellipse
 ```rust
-Shape::ellipse(radius, detail)
+# use bevy::prelude::*;
+# use bevy_gradmesh::{Shape, ShapeDetail};
+# fn main() {}
+fn ellipse() -> Shape {
+    Shape::ellipse(Vec2::new(1.5, 0.75), ShapeDetail::Medium)
+}
 ```
 
 ### Star
 ```rust
-Shape::star(points, outer_radius, inner_radius, detail)
+# use bevy_gradmesh::{Shape, ShapeDetail};
+# fn main() {}
+fn star() -> Shape {
+    let points = 5;
+    let outer_radius = 1.0;
+    let inner_radius = 0.4;
+    Shape::star(points, outer_radius, inner_radius, ShapeDetail::Medium)
+}
 ```
 N-pointed star. The `inner_radius` controls how deep the indentations are.
 
 ### Ring
 ```rust
-Shape::ring(outer_radius, inner_radius, detail)
+# use bevy_gradmesh::{Shape, ShapeDetail};
+# fn main() {}
+fn ring() -> Shape {
+    let outer_radius = 1.0;
+    let inner_radius = 0.6;
+    Shape::ring(outer_radius, inner_radius, ShapeDetail::Medium)
+}
 ```
 Annulus (2D donut with a hole).
 
 ### Wedge
 ```rust
-Shape::wedge(radius, angle, detail)
+# use bevy_gradmesh::{Shape, ShapeDetail};
+# fn main() {}
+fn wedge() -> Shape {
+    let angle = std::f32::consts::FRAC_PI_2;
+    Shape::wedge(1.0, angle, ShapeDetail::Medium)
+}
 ```
-Pie-slice shape. Angle is in radians (0 to 2π).
+Pie-slice shape. Angle is in radians (0 to 2 pi).
 
 *Custom polygons with per-vertex colours, stars, rings, wedges and a tapered cylinder. Run `cargo run --example arbitrary_shapes` to reproduce it.*
 
 ### Arbitrary Polygon
 ```rust
-Shape::arbitrary_polygon(vertices, detail)
-Shape::arbitrary_polygon_colored(vertices, colors, detail)
+# use bevy::prelude::*;
+# use bevy_gradmesh::{Shape, ShapeDetail};
+# fn main() {}
+fn arbitrary_polygon() -> Shape {
+    let vertices = vec![
+        Vec2::new(-1.0, -1.0),
+        Vec2::new(1.0, -1.0),
+        Vec2::new(0.0, 1.0),
+    ];
+    Shape::arbitrary_polygon(vertices, ShapeDetail::Medium)
+}
+
+fn arbitrary_polygon_colored() -> Shape {
+    let vertices = vec![
+        Vec2::new(-1.0, -1.0),
+        Vec2::new(1.0, -1.0),
+        Vec2::new(0.0, 1.0),
+    ];
+    let colors = vec![
+        [1.0, 0.0, 0.0, 1.0],
+        [0.0, 1.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0, 1.0],
+    ];
+    Shape::arbitrary_polygon_colored(vertices, colors, ShapeDetail::Medium)
+}
 ```
 Accepts any set of 2D vertices. Triangulated using ear-clipping algorithm. Supports optional per-vertex RGBA colors.
 
@@ -120,12 +235,38 @@ Accepts any set of 2D vertices. Triangulated using ear-clipping algorithm. Suppo
 
 ### 3D Polyline
 ```rust
-Shape::polyline3d(points, thickness, closed, segments, detail)
+# use bevy::prelude::*;
+# use bevy_gradmesh::{Shape, ShapeDetail};
+# fn main() {}
+fn polyline3d() -> Shape {
+    let points = vec![
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(1.0, 1.0, 0.0),
+        Vec3::new(2.0, 0.0, 1.0),
+    ];
+    let thickness = 0.1;
+    let closed = false;
+    let segments = 8;
+    Shape::polyline3d(points, thickness, closed, segments, ShapeDetail::Medium)
+}
 ```
 Renders as tube geometry along the point path.
 
-### Bézier Curve
+### Bezier Curve
 ```rust
-Shape::bezier_curve(control_points, thickness, segments, detail)
+# use bevy::prelude::*;
+# use bevy_gradmesh::{Shape, ShapeDetail};
+# fn main() {}
+fn bezier_curve() -> Shape {
+    let control_points = vec![
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(1.0, 2.0, 0.0),
+        Vec3::new(2.0, 2.0, 0.0),
+        Vec3::new(3.0, 0.0, 0.0),
+    ];
+    let thickness = 0.1;
+    let segments = 32;
+    Shape::bezier_curve(control_points, thickness, segments, ShapeDetail::Medium)
+}
 ```
-Supports linear (2 points), quadratic (3 points), and cubic (4+ points) Bézier curves rendered as tubes.
+Supports linear (2 points), quadratic (3 points), and cubic (4+ points) Bezier curves rendered as tubes.

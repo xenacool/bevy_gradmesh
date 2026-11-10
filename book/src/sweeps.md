@@ -7,7 +7,13 @@ These shape kinds build geometry from your data. Like every `Shape` they are
 ## `Shape::from_mesh`
 
 ```rust
-let shape = Shape::from_mesh(Arc::new(my_mesh), 42);
+# use std::sync::Arc;
+# use bevy_gradmesh::{Shape, ShapeDetail};
+# fn main() {}
+fn mesh_shape() -> Shape {
+    let my_mesh = Shape::sphere(1.0, ShapeDetail::Low).build();
+    Shape::from_mesh(Arc::new(my_mesh), 42)
+}
 ```
 
 Wraps a mesh you generated yourself. The shape is `Eq` and `Hash` by `key`
@@ -20,11 +26,17 @@ build anything. `build()` and `build_2d()` return a copy of the mesh, and
 ## `Shape::heightfield`
 
 ```rust
-let chunk = Shape::heightfield(
-    heights.into(),          // Arc<[f32]>, heights[x + y * size.x]
-    UVec2::new(17, 17),      // samples
-    Vec2::splat(16.0),       // world extent
-);
+# use bevy::prelude::*;
+# use bevy_gradmesh::Shape;
+# fn main() {}
+fn terrain_chunk() -> Shape {
+    let heights = vec![0.0_f32; 17 * 17];
+    Shape::heightfield(
+        heights.into(),          // Arc<[f32]>, heights[x + y * size.x]
+        UVec2::new(17, 17),      // samples
+        Vec2::splat(16.0),       // world extent
+    )
+}
 ```
 
 A terrain chunk centred on the origin in XZ, with smooth normals from central
@@ -34,7 +46,7 @@ the depth is not an option, because a chunk without skirts shows cracks.
 Equality and hashing cover `size`, `extent`, the heights and the holes and
 border below, all by value, so there is no key to keep in step: changing a height
 gives a different shape and a stale mesh is never shared. The heights are hashed
-once, when the shape is built (about 4 µs for 65 × 65 samples), so keep the
+once, when the shape is built (about 4 microseconds for 65 by 65 samples), so keep the
 `Shape` and reuse it rather than rebuilding it every frame. A size below 2 in
 either axis, or a wrong `heights` length, gives an empty mesh and a warning.
 
@@ -44,13 +56,24 @@ either axis, or a wrong `heights` length, gives an empty mesh and a warning.
 ### Holes and seamless chunk edges
 
 ```rust
-let chunk = Shape::heightfield_with_options(
-    heights.into(), size, extent,
-    HeightfieldOptions::default()
-        .with_holes(holes)          // Vec<bool>, (size.x - 1) * (size.y - 1) cells
-        .with_hole_edge(HoleEdge::Smooth)
-        .with_border(HeightfieldBorder::new(west, east, north, south)),
-);
+# use bevy::prelude::*;
+# use bevy_gradmesh::{HeightfieldBorder, HeightfieldOptions, HoleEdge, Shape};
+# fn main() {}
+fn chunk_with_hole() -> Shape {
+    let size = UVec2::new(17, 17);
+    let extent = Vec2::splat(16.0);
+    let heights = vec![0.0_f32; 17 * 17];
+    let holes = vec![false; 16 * 16];
+    let (west, east) = (vec![0.0; 17], vec![0.0; 17]);
+    let (north, south) = (vec![0.0; 17], vec![0.0; 17]);
+    Shape::heightfield_with_options(
+        heights.into(), size, extent,
+        HeightfieldOptions::default()
+            .with_holes(holes)          // Vec<bool>, (size.x - 1) * (size.y - 1) cells
+            .with_hole_edge(HoleEdge::Smooth)
+            .with_border(HeightfieldBorder::new(west, east, north, south)),
+    )
+}
 ```
 
 A hole cell has no triangles and no skirt below it (a skirt hides seams between
@@ -91,11 +114,28 @@ example asserts grow with the smoothness.
 ## `Shape::sweep`
 
 ```rust
-let wall = Shape::sweep(
-    profile,                      // Vec<Vec2>: x across the path, y up
-    path,                         // Vec<Vec3>: a polyline or baked spline positions
-    SweepOptions::default().with_closed(true),
-);
+# use bevy::prelude::*;
+# use bevy_gradmesh::{Shape, SweepOptions};
+# fn main() {}
+fn wall() -> Shape {
+    let profile = vec![
+        Vec2::new(-0.2, 0.0),
+        Vec2::new(0.2, 0.0),
+        Vec2::new(0.2, 2.0),
+        Vec2::new(-0.2, 2.0),
+    ];
+    let path = vec![
+        Vec3::new(-4.0, 0.0, -4.0),
+        Vec3::new(4.0, 0.0, -4.0),
+        Vec3::new(4.0, 0.0, 4.0),
+        Vec3::new(-4.0, 0.0, 4.0),
+    ];
+    Shape::sweep(
+        profile,                      // Vec<Vec2>: x across the path, y up
+        path,                         // Vec<Vec3>: a polyline or baked spline positions
+        SweepOptions::default().with_closed(true),
+    )
+}
 ```
 
 Sweeps a closed profile along a path as one mesh: walls, roads, rails and pipes.
@@ -127,8 +167,12 @@ A `Shape` has to be `Clone + Eq + Hash`, which a boxed closure cannot be. So
 pairs with linear steps in between. To start from a function, bake it:
 
 ```rust
-let options = SweepOptions::default()
-    .scale_with(8, |t| Vec2::splat(1.0 - 0.55 * t));
+# use bevy::prelude::*;
+# use bevy_gradmesh::SweepOptions;
+# fn main() {}
+fn tapering_options() -> SweepOptions {
+    SweepOptions::default().scale_with(8, |t| Vec2::splat(1.0 - 0.55 * t))
+}
 ```
 
 `tint_by_length` is a list of `(ratio, Color)` pairs and multiplies the style's
@@ -145,16 +189,36 @@ To give the frames yourself, for example from a baked spline with its own
 banking, use `Shape::sweep_frames`:
 
 ```rust
-let road = Shape::sweep_frames(
-    profile,
-    &baked.sweep_frames(Some(0), Some(1)),   // width channel 0, roll channel 1
-    SweepOptions::default(),
-);
+# use bevy::prelude::*;
+# use bevy_gradmesh::{CatmullRomSpline, Shape, SplineError, SweepOptions};
+# fn main() {}
+fn road() -> Result<Shape, SplineError> {
+    let profile = vec![
+        Vec2::new(-1.0, 0.0),
+        Vec2::new(1.0, 0.0),
+        Vec2::new(1.0, 0.1),
+        Vec2::new(-1.0, 0.1),
+    ];
+    let points = vec![
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(5.0, 0.0, 2.0),
+        Vec3::new(10.0, 0.0, 0.0),
+    ];
+    let baked = CatmullRomSpline::open(points)?
+        .with_channel(&[1.0, 1.5, 1.0])   // channel 0: width
+        .with_channel(&[0.0, 0.3, 0.0])   // channel 1: roll
+        .bake(0.25);
+    Ok(Shape::sweep_frames(
+        profile,
+        &baked.sweep_frames(Some(0), Some(1)),   // width channel 0, roll channel 1
+        SweepOptions::default(),
+    ))
+}
 ```
 
 Each `SweepFrame` has a `position`, `right`, `up` and `scale`. The sweep keeps them
 as given (no parallel transport) and blends them where it needs extra rings.
-`right × up` should point along the path; a left-handed frame keeps its `up` and
+The cross product of `right` and `up` should point along the path; a left-handed frame keeps its `up` and
 gets its `right` flipped, so the surface never turns inside out. A closed sweep
 joins the last frame to the first without correcting the frames at the seam.
 
@@ -165,10 +229,14 @@ joins the last frame to the first without correcting the frames at the seam.
 ### Openings
 
 ```rust
-let options = SweepOptions::default().with_openings(vec![
-    SweepOpening::arch(0.30..0.38, 0.0, 1.2, 1.9, 12),  // a gate
-    SweepOpening::rect(0.60..0.64, 0.9, 1.4),            // a window
-]);
+# use bevy_gradmesh::{SweepOpening, SweepOptions};
+# fn main() {}
+fn wall_options() -> SweepOptions {
+    SweepOptions::default().with_openings(vec![
+        SweepOpening::arch(0.30..0.38, 0.0, 1.2, 1.9, 12),  // a gate
+        SweepOpening::rect(0.60..0.64, 0.9, 1.4),            // a window
+    ])
+}
 ```
 
 An opening is a real hole through the wall, with sill, lintel and jamb faces on
@@ -217,11 +285,16 @@ enough, so you can reject the design.
 ## Height bands
 
 ```rust
-let terrain = Style::shaded(Color::WHITE, 0.5).with_height_bands(&[
-    (0.0, Color::srgb(0.35, 0.6, 0.3)),   // grass
-    (1.2, Color::srgb(0.5, 0.48, 0.45)),  // rock
-    (2.4, Color::srgb(0.95, 0.95, 1.0)),  // snow
-]);
+# use bevy::prelude::*;
+# use bevy_gradmesh::Style;
+# fn main() {}
+fn terrain_style() -> Style {
+    Style::shaded(Color::WHITE, 0.5).with_height_bands(&[
+        (0.0, Color::srgb(0.35, 0.6, 0.3)),   // grass
+        (1.2, Color::srgb(0.5, 0.48, 0.45)),  // rock
+        (2.4, Color::srgb(0.95, 0.95, 1.0)),  // snow
+    ])
+}
 ```
 
 `GradMeshMaterial` colours each fragment by its world height: a band's colour
@@ -236,11 +309,19 @@ To state the heights as fractions of a shape's own height, so that re-scaling th
 land keeps the look, use `with_height_bands_on`:
 
 ```rust
-let terrain = Style::shaded(Color::WHITE, 0.5).with_height_bands_on(
-    &[(0.0, grass), (0.55, rock), (0.9, snow)],   // 0 = lowest land, 1 = highest
-    &chunk,
-    &transform,                                   // the placement the chunk is shown with
-);
+# use bevy::prelude::*;
+# use bevy_gradmesh::{Shape, Style};
+# fn main() {}
+fn relative_terrain_style(chunk: &Shape, transform: &Transform) -> Style {
+    let grass = Color::srgb(0.35, 0.6, 0.3);
+    let rock = Color::srgb(0.5, 0.48, 0.45);
+    let snow = Color::srgb(0.95, 0.95, 1.0);
+    Style::shaded(Color::WHITE, 0.5).with_height_bands_on(
+        &[(0.0, grass), (0.55, rock), (0.9, snow)],   // 0 = lowest land, 1 = highest
+        chunk,
+        transform,                                    // the placement the chunk is shown with
+    )
+}
 ```
 
 The fractions are resolved on the spot against `Shape::surface_bounds()` (the

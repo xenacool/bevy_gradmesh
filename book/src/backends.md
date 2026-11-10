@@ -52,17 +52,26 @@ is needed. Radius, rim width, arc, gradient and dash are material floats: changi
 them creates no mesh and no pipeline.
 
 ```rust
-let quad = meshes.add(unit_quad());
-let material = SdfMaterial2d::disc(80.0)
-    .with_rim(10.0)
-    .with_arc(0.0, std::f32::consts::PI * 1.5)
-    .with_dash(Dash2d::by_length(14.0, 8.0).with_snap(DashSnap::EndToEnd))
-    .with_colors(Color::srgb(1.0, 0.35, 0.25), Color::srgb(1.0, 0.9, 0.35));
-commands.spawn((
-    Mesh2d(quad.clone()),
-    Transform::from_scale(material.quad_scale()),
-    MeshMaterial2d(materials.add(material)),
-));
+# use bevy::prelude::*;
+# use bevy_gradmesh::{Dash2d, DashSnap, SdfMaterial2d, unit_quad};
+# fn main() {}
+fn spawn_disc(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<SdfMaterial2d>>,
+) {
+    let quad = meshes.add(unit_quad());
+    let material = SdfMaterial2d::disc(80.0)
+        .with_rim(10.0)
+        .with_arc(0.0, std::f32::consts::PI * 1.5)
+        .with_dash(Dash2d::by_length(14.0, 8.0).with_snap(DashSnap::EndToEnd))
+        .with_colors(Color::srgb(1.0, 0.35, 0.25), Color::srgb(1.0, 0.9, 0.35));
+    commands.spawn((
+        Mesh2d(quad.clone()),
+        Transform::from_scale(material.quad_scale()),
+        MeshMaterial2d(materials.add(material)),
+    ));
+}
 ```
 
 Gradients: `with_colors` (linear, along `with_gradient_direction`),
@@ -99,7 +108,12 @@ bevy_gradmesh = { version = "0.3", default-features = false }
 ```
 
 ```rust
-app.add_plugins(GradMeshPlugin::for_mobile());
+# use bevy::prelude::*;
+# use bevy_gradmesh::GradMeshPlugin;
+# fn main() {}
+fn add_mobile_plugin(app: &mut App) {
+    app.add_plugins(GradMeshPlugin::for_mobile());
+}
 ```
 
 `for_mobile()` registers the standalone pipeline, the Mesh2d gradient material and

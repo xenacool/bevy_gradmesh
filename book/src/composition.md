@@ -6,13 +6,22 @@
 `GradMeshMaterial2d` (built from a `Style`) and a `Camera2d`:
 
 ```rust
-use bevy::prelude::*;
-use bevy_gradmesh::{Shape, ShapeDetail, Style};
-
-let mesh = Shape::disc(0.5, ShapeDetail::High).build_2d();
-let material = Style::dual_radial(Color::WHITE, Color::srgb(0.9, 0.4, 0.5)).build_2d();
-// commands.spawn((Mesh2d(meshes.add(mesh)), MeshMaterial2d(materials.add(material)),
-//     Transform::from_xyz(0.0, 0.0, 5.0).with_scale(Vec3::splat(120.0))));
+# use bevy::prelude::*;
+# use bevy_gradmesh::{GradMeshMaterial2d, Shape, ShapeDetail, Style};
+# fn main() {}
+fn spawn_disc(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<GradMeshMaterial2d>>,
+) {
+    let mesh = Shape::disc(0.5, ShapeDetail::High).build_2d();
+    let material = Style::dual_radial(Color::WHITE, Color::srgb(0.9, 0.4, 0.5)).build_2d();
+    commands.spawn((
+        Mesh2d(meshes.add(mesh)),
+        MeshMaterial2d(materials.add(material)),
+        Transform::from_xyz(0.0, 0.0, 5.0).with_scale(Vec3::splat(120.0)),
+    ));
+}
 ```
 
 - `Transform` scale resizes the shape on the XY plane; gradients and dashes follow because they are
@@ -33,16 +42,18 @@ let material = Style::dual_radial(Color::WHITE, Color::srgb(0.9, 0.4, 0.5)).buil
 `arch`, `rounded_rectangle` and `blob` return counter-clockwise outlines centred on the origin.
 
 ```rust
-use bevy::prelude::*;
-use bevy_gradmesh::{Shape, ShapeDetail, arch, rounded_rectangle};
-
-let wall = Shape::extruded_polygon_with_holes(
-    rounded_rectangle(Vec2::new(4.0, 3.4), 0.15, 3),
-    vec![arch(1.2, 2.0, 10)],
-    0.5,  // depth
-    0.35, // roundness of the rim
-    ShapeDetail::High,
-);
+# use bevy::prelude::*;
+# use bevy_gradmesh::{Shape, ShapeDetail, arch, rounded_rectangle};
+# fn main() {}
+fn wall() -> Shape {
+    Shape::extruded_polygon_with_holes(
+        rounded_rectangle(Vec2::new(4.0, 3.4), 0.15, 3),
+        vec![arch(1.2, 2.0, 10)],
+        0.5,  // depth
+        0.35, // roundness of the rim
+        ShapeDetail::High,
+    )
+}
 ```
 
 `Shape::extruded_polygon` and `extruded_polygon_colored` handle single outlines (the colours are
@@ -63,8 +74,21 @@ crisp, gentle ones are smoothed, and open ends away from the axis get caps.
 ## Sharing meshes and materials
 
 ```rust
-// let mesh_handle = cache.get_or_build_handle(&shape, &mut meshes);
-// let material_handle = pool.get_or_add(&style, &mut materials);
+# use bevy::prelude::*;
+# use bevy_gradmesh::{GradMeshMaterial, GradMeshMaterialPool, MeshCache, Shape, Style};
+# fn main() {}
+fn share_assets(
+    shape: &Shape,
+    style: &Style,
+    cache: &mut MeshCache,
+    pool: &mut GradMeshMaterialPool,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<GradMeshMaterial>,
+) -> (Handle<Mesh>, Handle<GradMeshMaterial>) {
+    let mesh_handle = cache.get_or_build_handle(shape, meshes);
+    let material_handle = pool.get_or_add(style, materials);
+    (mesh_handle, material_handle)
+}
 ```
 
 Equal shapes return the same `Handle<Mesh>`, equal styles (`Style: PartialEq`) the same material, so a

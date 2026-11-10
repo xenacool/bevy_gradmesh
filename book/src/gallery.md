@@ -13,7 +13,7 @@
 | `immediate` | Per-frame animated particles, push/pop state stacking, billboarding, and line drawing |
 | `retained` | Persistent shapes updated each frame via handles without recreating entities |
 | `instanced` | 500 spheres rendered in a single GPU batch via `BatchRecorder` |
-| `standalone` | Gradient shapes drawn without any PBR material or lights — one shader pipeline, one bind group |
+| `standalone` | Gradient shapes drawn without any PBR material or lights: one shader pipeline, one bind group |
 | `curves` | Spline and parametric curves rendered as smooth tubes |
 | `polyline` | Polylines with joint styles, width variation, gradient colors, and animated reveal |
 | `sweep` | Profiles swept along 3D paths: a wall with an arched gate and windows, a kerbed road, and a tapering pipe on a helix |

@@ -8,35 +8,45 @@ Vertex shader deformation enables runtime shape animation without CPU mesh regen
 Sinusoidal displacement along the vertex normal:
 
 ```rust
-use bevy_gradmesh::DeformationParams;
-
-let deform = DeformationParams::wobble(
-    0.2,  // amplitude
-    2.0,  // frequency (cycles per second)
-    0.0,  // phase offset
-);
+# use bevy_gradmesh::DeformationParams;
+# fn main() {}
+fn wobble() -> DeformationParams {
+    DeformationParams::wobble(
+        0.2,  // amplitude
+        2.0,  // frequency (cycles per second)
+        0.0,  // phase offset
+    )
+}
 ```
 
 ### Pulse
 Uniform scale oscillation (breathing effect):
 
 ```rust
-let deform = DeformationParams::pulse(
-    0.1,  // ±10% scale oscillation
-    1.0,  // 1 cycle per second
-    0.0,  // phase
-);
+# use bevy_gradmesh::DeformationParams;
+# fn main() {}
+fn pulse() -> DeformationParams {
+    DeformationParams::pulse(
+        0.1,  // 10% scale oscillation in each direction
+        1.0,  // 1 cycle per second
+        0.0,  // phase
+    )
+}
 ```
 
 ### Morph
 Displacement toward/away from center:
 
 ```rust
-let deform = DeformationParams::morph(
-    0.3,  // displacement magnitude
-    1.5,  // frequency
-    0.5,  // phase
-);
+# use bevy_gradmesh::DeformationParams;
+# fn main() {}
+fn morph() -> DeformationParams {
+    DeformationParams::morph(
+        0.3,  // displacement magnitude
+        1.5,  // frequency
+        0.5,  // phase
+    )
+}
 ```
 
 *Wobble, pulse and morph compared against static originals. Run `cargo run --example deformation` to reproduce it.*
@@ -44,18 +54,28 @@ let deform = DeformationParams::morph(
 ## Using with BatchRecorder
 
 ```rust
-use bevy_gradmesh::{BatchRecorder, DeformationParams};
+# use bevy::prelude::*;
+# use bevy_gradmesh::{BatchRecorder, DeformationParams, ShapeDetail};
+# fn main() {}
+#[derive(Resource)]
+struct Recorder(BatchRecorder);
 
-fn draw(mut recorder: ResMut<BatchRecorder>) {
+fn draw(
+    mut commands: Commands,
+    meshes: ResMut<Assets<Mesh>>,
+    mut recorder: ResMut<Recorder>,
+) {
+    let recorder = &mut recorder.0;
     recorder.begin();
-    
+
     recorder.set_deformation(
         DeformationParams::wobble(0.15, 3.0, 0.0)
     );
     recorder.set_position(Vec3::ZERO);
     recorder.sphere(0.5, ShapeDetail::Medium, [1.0, 0.0, 0.0, 1.0]);
-    
-    recorder.render_batches(&mut commands, &mut meshes, None);
+
+    recorder.end();
+    recorder.render_batches(&mut commands, meshes, None);
 }
 ```
 

@@ -5,13 +5,15 @@
 The signature feature of BevyGradmesh. Colors a surface with a smooth gradient between two colors along a given direction.
 
 ```rust
-use bevy_gradmesh::dual_directional;
-
-let mat = dual_directional(
-    [0.6, 0.4, 0.3],  // dark color (RGB)
-    [0.96, 0.8, 0.69], // light color (RGB)
-    [0.0, 1.0, 0.0],   // gradient direction
-);
+# use bevy_gradmesh::{GradMeshMaterial, dual_directional};
+# fn main() {}
+fn directional_material() -> GradMeshMaterial {
+    dual_directional(
+        [0.6, 0.4, 0.3],   // dark color (RGB)
+        [0.96, 0.8, 0.69], // light color (RGB)
+        [0.0, 1.0, 0.0],   // gradient direction
+    )
+}
 ```
 
 ## Color Spaces
@@ -20,12 +22,14 @@ Gradients blend in OKLAB by default, which avoids the muddy midpoints that
 RGB interpolation produces. Pick another space with `with_mix_space`:
 
 ```rust
-use bevy_gradmesh::{MixSpace, dual_directional, with_mix_space};
-
-let mat = with_mix_space(
-    dual_directional([0.6, 0.4, 0.3], [0.96, 0.8, 0.69], [0.0, 1.0, 0.0]),
-    MixSpace::Oklch,
-);
+# use bevy_gradmesh::{GradMeshMaterial, MixSpace, dual_directional, with_mix_space};
+# fn main() {}
+fn oklch_material() -> GradMeshMaterial {
+    with_mix_space(
+        dual_directional([0.6, 0.4, 0.3], [0.96, 0.8, 0.69], [0.0, 1.0, 0.0]),
+        MixSpace::Oklch,
+    )
+}
 ```
 
 | `MixSpace`  | Behaviour |
@@ -67,12 +71,14 @@ read it every frame.
 Gradient radiates from the center outward:
 
 ```rust
-use bevy_gradmesh::dual_radial;
-
-let mat = dual_radial(
-    [0.6, 0.4, 0.3],
-    [0.96, 0.8, 0.69],
-);
+# use bevy_gradmesh::{GradMeshMaterial, dual_radial};
+# fn main() {}
+fn radial_material() -> GradMeshMaterial {
+    dual_radial(
+        [0.6, 0.4, 0.3],   // inner color
+        [0.96, 0.8, 0.69], // outer color
+    )
+}
 ```
 
 ## Blend Modes
@@ -81,38 +87,56 @@ let mat = dual_radial(
 
 ### Opaque
 ```rust
-use bevy_gradmesh::opaque;
-let mat = opaque(1.0, 0.0, 0.0);
+# use bevy_gradmesh::{GradMeshMaterial, opaque};
+# fn main() {}
+fn opaque_material() -> GradMeshMaterial {
+    opaque(1.0, 0.0, 0.0)
+}
 ```
 
 ### Transparent
 ```rust
-use bevy_gradmesh::transparent;
-let mat = transparent(1.0, 0.0, 0.0, 0.5);
+# use bevy_gradmesh::{GradMeshMaterial, transparent};
+# fn main() {}
+fn transparent_material() -> GradMeshMaterial {
+    transparent(1.0, 0.0, 0.0, 0.5)
+}
 ```
 
 ### Additive (Glow Effect)
 ```rust
-use bevy_gradmesh::additive;
-let mat = additive(1.0, 0.5, 0.0);
+# use bevy_gradmesh::{GradMeshMaterial, additive};
+# fn main() {}
+fn additive_material() -> GradMeshMaterial {
+    additive(1.0, 0.5, 0.0)
+}
 ```
 
 ### Multiplicative
 ```rust
-use bevy_gradmesh::multiplicative;
-let mat = multiplicative(0.5, 0.5, 0.5);
+# use bevy_gradmesh::{GradMeshMaterial, multiplicative};
+# fn main() {}
+fn multiplicative_material() -> GradMeshMaterial {
+    multiplicative(0.5, 0.5, 0.5)
+}
 ```
 
 ### Screen
 ```rust
-use bevy_gradmesh::screen;
-let mat = screen(1.0, 1.0, 0.0);
+# use bevy_gradmesh::{GradMeshMaterial, screen};
+# fn main() {}
+fn screen_material() -> GradMeshMaterial {
+    screen(1.0, 1.0, 0.0)
+}
 ```
 
 ### Dither
 ```rust
-use bevy_gradmesh::dither;
-let mat = dither(1.0, 0.0, 0.0, 0.5);
+# use bevy_gradmesh::{GradMeshMaterial, dither};
+# fn main() {}
+fn dither_material() -> GradMeshMaterial {
+    dither(1.0, 0.0, 0.0, 0.5)
+}
 ```
 
 ### Dashed Outlines
@@ -120,11 +144,12 @@ let mat = dither(1.0, 0.0, 0.0, 0.5);
 Use `Style::with_dash` to add a dash pattern to any style:
 
 ```rust
-use bevy_gradmesh::{Style, Dash};
-
-let style = Style::opaque(Color::WHITE).with_dash(
-    Dash::fixed(4, 0.2),
-);
+# use bevy::prelude::*;
+# use bevy_gradmesh::{Dash, Style};
+# fn main() {}
+fn dashed_style() -> Style {
+    Style::opaque(Color::WHITE).with_dash(Dash::fixed(4, 0.2))
+}
 ```
 
 ## Custom Shaders
@@ -132,10 +157,12 @@ let style = Style::opaque(Color::WHITE).with_dash(
 Attach any Bevy shader:
 
 ```rust
-use bevy_gradmesh::BlendMode;
-use bevy::asset::Handle;
-
-let style = Style::custom(my_shader_handle, [1.0, 0.0, 0.0, 1.0]);
+# use bevy::prelude::*;
+# use bevy_gradmesh::Style;
+# fn main() {}
+fn custom_style(my_shader_handle: Handle<Shader>) -> Style {
+    Style::custom(my_shader_handle, Color::srgb(1.0, 0.0, 0.0))
+}
 ```
 
 ## PBR Properties
@@ -143,10 +170,16 @@ let style = Style::custom(my_shader_handle, [1.0, 0.0, 0.0, 1.0]);
 All materials support Bevy's PBR properties:
 
 ```rust
-let mut mat = dual_directional([...], [...], [...]);
-mat.roughness = 0.1;    // Polished surface
-mat.metallic = 1.0;     // Metallic
-mat.emissive = Color::srgb(1.0, 0.0, 0.0).to_linear(); // Glow
+# use bevy::prelude::*;
+# use bevy_gradmesh::{GradMeshMaterial, dual_directional};
+# fn main() {}
+fn pbr_material() -> GradMeshMaterial {
+    let mut mat = dual_directional([0.2, 0.2, 0.8], [0.8, 0.2, 0.2], [0.0, 1.0, 0.0]);
+    mat.base.perceptual_roughness = 0.1; // Polished surface
+    mat.base.metallic = 1.0; // Metallic
+    mat.base.emissive = Color::srgb(1.0, 0.0, 0.0).to_linear(); // Glow
+    mat
+}
 ```
 
 *Transparency, emissive glow, metallic surfaces and combinations. Run `cargo run --example pbr_effects` to reproduce it.*

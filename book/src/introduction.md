@@ -1,6 +1,6 @@
 # Introduction
 
-BevyGradmesh is a procedural mesh generation library for [Bevy](https://bevyengine.org/) that provides clean APIs for creating 3D primitives with gradient shading, inspired by Freya Holmér's work.
+BevyGradmesh is a procedural mesh generation library for [Bevy](https://bevyengine.org/) that provides clean APIs for creating 3D primitives with gradient shading, inspired by Freya Holmer's work.
 
 ## What It Solves
 
