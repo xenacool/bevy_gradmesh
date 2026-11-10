@@ -75,7 +75,7 @@ pub struct GradMeshHandle {
 /// Uses a slot-based parallel array pattern:
 /// - Parallel arrays (`positions`, `rotations`, `scales`, `properties`)
 ///   indexed by slot
-/// - Handle → slot → (batch_key, batch_index) chain
+/// - Handle -> slot -> (batch_key, batch_index) chain
 /// - Updates like `set_position` modify the parallel arrays and mark dirty
 /// - `flush()` replays all alive slots into batches and spawns entities
 ///
@@ -89,7 +89,7 @@ pub struct GradMeshHandle {
 ///     Vec3::ZERO, 0.5, ShapeDetail::Medium, [1.0, 0.0, 0.0, 1.0]);
 /// let h2 = world.sphere(&mut commands, &mut meshes,
 ///     Vec3::X, 0.5, ShapeDetail::Medium, [1.0, 0.0, 0.0, 1.0]);
-/// // Both share one batch → 1 draw call
+/// // Both share one batch -> 1 draw call
 ///
 /// // Update per frame
 /// world.set_position(h1, Vec3::new(time.elapsed_secs(), 0.0, 0.0));

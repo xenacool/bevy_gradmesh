@@ -8,12 +8,12 @@
 //!
 //! Each instance carries an `AppearanceSnapshot` vec4 encoding:
 //! - `x`: animation speed (cycles per second; 0.0 = static color)
-//! - `y`: phase offset (0.0–1.0, time shift for staggered animation)
+//! - `y`: phase offset (0.0-1.0, time shift for staggered animation)
 //! - `z`: animation type (0=Static, 1=ColorPulse, 2=ColorCycle, 3=GradientShift)
 //! - `w`: reserved for future use
 //!
 //! When speed > 0, the shader interpolates between the instance's primary and
-//! secondary colors based on `sin(time * speed + phase * 2π)`.
+//! secondary colors based on `sin(time * speed + phase * 2pi)`.
 
 use crate::material::Vec4;
 
@@ -57,7 +57,7 @@ impl AppearanceType {
 ///
 /// Encoded as a single `vec4` for GPU upload:
 /// - `x`: speed (cycles per second)
-/// - `y`: phase offset (0.0–1.0)
+/// - `y`: phase offset (0.0-1.0)
 /// - `z`: type code (0=Static, 1=ColorPulse, 2=ColorCycle, 3=GradientShift)
 /// - `w`: reserved
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -77,7 +77,7 @@ impl AppearanceSnapshot {
     ///
     /// # Arguments
     /// * `speed` - Cycles per second (e.g., 1.0 = one full cycle per second).
-    /// * `phase` - Time offset (0.0–1.0) for staggered animation across instances.
+    /// * `phase` - Time offset (0.0-1.0) for staggered animation across instances.
     pub fn color_pulse(speed: f32, phase: f32) -> Self {
         Self {
             speed,
@@ -90,7 +90,7 @@ impl AppearanceSnapshot {
     ///
     /// # Arguments
     /// * `speed` - Cycles per second.
-    /// * `phase` - Starting hue offset (0.0–1.0).
+    /// * `phase` - Starting hue offset (0.0-1.0).
     pub fn color_cycle(speed: f32, phase: f32) -> Self {
         Self {
             speed,
@@ -103,7 +103,7 @@ impl AppearanceSnapshot {
     ///
     /// # Arguments
     /// * `speed` - Rotation speed in cycles per second.
-    /// * `phase` - Starting angle offset (0.0–1.0 maps to 0–2π).
+    /// * `phase` - Starting angle offset (0.0-1.0 maps to 0-2pi).
     pub fn gradient_shift(speed: f32, phase: f32) -> Self {
         Self {
             speed,

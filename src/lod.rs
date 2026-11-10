@@ -52,7 +52,7 @@ pub struct LodConfig {
     /// Width of the transition zone in world units.
     /// During this zone, both LOD levels are rendered with dither cross-fade.
     pub transition_width: f32,
-    /// Hysteresis factor (0.0–1.0). Prevents rapid LOD oscillation by
+    /// Hysteresis factor (0.0-1.0). Prevents rapid LOD oscillation by
     /// requiring the distance to move further before switching back.
     pub hysteresis: f32,
 }

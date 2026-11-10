@@ -1,4 +1,4 @@
-// BevyGradmesh standalone shader — no `bevy_pbr` dependency.
+// BevyGradmesh standalone shader - no `bevy_pbr` dependency.
 //
 // This shader implements gradient shading using only `bevy_render`'s `View`
 // uniform (group 0, binding 0) for the world-to-clip transformation.
@@ -13,7 +13,7 @@ import bevy_render::view::View;
 
 @group(0) @binding(0) var<uniform> view: View;
 
-// ─── OKLAB color space conversion ───
+// --- OKLAB color space conversion ---
 
 fn oklab_to_linear(c: vec3<f32>) -> vec3<f32> {
     let lms_in = vec3<f32>(
@@ -59,7 +59,7 @@ fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
     return select(hi, lo, c <= vec3<f32>(0.04045));
 }
 
-// ─── Gradient mixing in a selectable colour space ───
+// --- Gradient mixing in a selectable colour space ---
 // `flags.w` carries the space: 0 = OKLAB (default), 1 = OKLCH, 2 = linear RGB, 3 = sRGB.
 // Keep in sync with `MixSpace::gpu_code` in `src/mix_space.rs`.
 
@@ -104,7 +104,7 @@ fn mix_colors(a_srgb: vec3<f32>, b_srgb: vec3<f32>, t: f32, space_code: f32) -> 
     return oklab_mix(a, b, t);
 }
 
-// ─── Dash pattern computation ───
+// --- Dash pattern computation ---
 
 const EPSILON: f32 = 1e-4;
 
@@ -144,7 +144,7 @@ fn dash_segment_mask(progress: f32, across: f32, dash: vec4<f32>) -> f32 {
     return clamp(signed_distance / max(width, 0.00001) + 0.5, 0.0, 1.0);
 }
 
-// ─── Blend mode computation ───
+// --- Blend mode computation ---
 
 fn bayer_2x2(px: i32, py: i32) -> i32 {
     return px * 2 + py * 3 - px * py * 4;
@@ -212,7 +212,7 @@ fn apply_blend_mode(
     return vec4<f32>(color, alpha);
 }
 
-// ─── Perimeter progress for dash patterns ───
+// --- Perimeter progress for dash patterns ---
 
 fn angular_progress(uv: vec2<f32>) -> f32 {
     let p = uv * 2.0 - 1.0;
@@ -268,7 +268,7 @@ fn compute_across(uv: vec2<f32>, shape_type: f32) -> f32 {
     return clamp(dist_from_center * 2.0 - 1.0, -1.0, 1.0);
 }
 
-// ─── Vertex deformation ───
+// --- Vertex deformation ---
 
 fn apply_deformation(
     local_pos: vec3<f32>,
@@ -296,18 +296,18 @@ fn apply_deformation(
     }
 }
 
-// ─── Vertex input ───
+// --- Vertex input ---
 
 struct VertexInput {
     @location(0) position: vec4<f32>,
     @location(1) normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
-    // Per-instance transform (4×vec4)
+    // Per-instance transform (4xvec4)
     @location(3) instance_col0: vec4<f32>,
     @location(4) instance_col1: vec4<f32>,
     @location(5) instance_col2: vec4<f32>,
     @location(6) instance_col3: vec4<f32>,
-    // Per-instance properties (7×vec4)
+    // Per-instance properties (7xvec4)
     @location(7) instance_color: vec4<f32>,
     @location(8) instance_secondary_color: vec4<f32>,
     @location(9) instance_direction: vec4<f32>,

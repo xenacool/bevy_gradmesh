@@ -49,13 +49,22 @@ pub enum SdfKind {
     Rect,
     /// Ellipse (a circle when both radii are equal).
     Ellipse,
+    /// Regular polygon with a vertex pointing up (+Y).
+    Polygon,
+    /// Star with an outer point pointing up (+Y).
+    Star,
+    /// Polygon through up to 16 given vertices, concave outlines allowed.
+    ArbitraryPolygon,
 }
 
 impl SdfKind {
-    const fn gpu_code(self) -> f32 {
+    pub(crate) const fn gpu_code(self) -> f32 {
         match self {
             Self::Rect => 0.0,
             Self::Ellipse => 1.0,
+            Self::Polygon => 2.0,
+            Self::Star => 3.0,
+            Self::ArbitraryPolygon => 4.0,
         }
     }
 }
@@ -77,6 +86,12 @@ pub struct SdfUniform {
     /// `x` dash length (> 0) or minus the dash count (< 0), `0` for no dashes;
     /// `y` gap, `z` offset, `w` snap code (see [`Dash2d`]).
     pub dash: Vec4,
+    /// `x` side or point count, `y` inner radius ratio (stars), `w` vertex count
+    /// (arbitrary polygons). Unused by rect and ellipse.
+    pub params: Vec4,
+    /// Up to 16 arbitrary polygon vertices, two per `Vec4` (`xy` then `zw`),
+    /// relative to the centre of the shape's bounds.
+    pub vertices: [Vec4; 8],
 }
 
 /// How a [`SdfMaterial2d`] colours its pixels.
@@ -262,7 +277,7 @@ pub struct SdfMaterial2d {
 }
 
 impl SdfMaterial2d {
-    fn new(kind: SdfKind, size: Vec2) -> Self {
+    pub(crate) fn new(kind: SdfKind, size: Vec2) -> Self {
         Self {
             uniform: SdfUniform {
                 color: Vec4::ONE,
@@ -271,6 +286,8 @@ impl SdfMaterial2d {
                 size: Vec4::new(size.x, size.y, 0.0, DEFAULT_PADDING),
                 gradient: Vec4::new(0.0, 1.0, 0.0, MixSpace::default().gpu_code()),
                 dash: Vec4::ZERO,
+                params: Vec4::ZERO,
+                vertices: [Vec4::ZERO; 8],
             },
         }
     }
@@ -451,7 +468,8 @@ impl SdfMaterial2d {
     /// * A circle blends into a rectangle through its corner radius (a circle
     ///   is a rectangle whose corners take up the whole side), so the outline
     ///   never jumps. Any other pairing of a rectangle and an ellipse cannot
-    ///   be blended and switches at `t == 0.5`.
+    ///   be blended and switches at `t == 0.5`. Polygons, stars and arbitrary
+    ///   polygons switch kind, point counts and vertices at `t == 0.5` as well.
     /// * The gradient mode, the mix space, the dash snapping, and whether
     ///   there are dashes at all or how they are given (by length or by count)
     ///   switch at `t == 0.5`. A count of dashes stays a whole number.
@@ -468,7 +486,8 @@ impl SdfMaterial2d {
         let near = if t < 0.5 { a } else { b };
         let mix = |x: f32, y: f32| x + (y - x) * t;
         let is_rect = |u: &SdfUniform| u.shape.x < 0.5;
-        let is_circle = |u: &SdfUniform| !is_rect(u) && (u.size.x - u.size.y).abs() < 1e-6;
+        let is_ellipse = |u: &SdfUniform| u.shape.x == SdfKind::Ellipse.gpu_code();
+        let is_circle = |u: &SdfUniform| is_ellipse(u) && (u.size.x - u.size.y).abs() < 1e-6;
         let as_rect = |mut u: SdfUniform| {
             u.shape.x = SdfKind::Rect.gpu_code();
             u.size.z = u.size.x * 0.5;
@@ -479,7 +498,7 @@ impl SdfMaterial2d {
         } else if is_circle(&b) && is_rect(&a) {
             b = as_rect(b);
         }
-        let kind = if is_rect(&a) == is_rect(&b) { a.shape.x } else { near.shape.x };
+        let kind = if a.shape.x == b.shape.x { a.shape.x } else { near.shape.x };
 
         let space = MixSpace::from_gpu_code(self.uniform.gradient.w);
         let color_of = |v: Vec4| Color::srgba(v.x, v.y, v.z, v.w);
@@ -519,6 +538,8 @@ impl SdfMaterial2d {
                 ),
                 gradient,
                 dash,
+                params: near.params,
+                vertices: near.vertices,
             },
         }
     }
@@ -529,7 +550,7 @@ fn srgb_vec4(color: Color) -> Vec4 {
     Vec4::new(c.red, c.green, c.blue, c.alpha)
 }
 
-/// The one quad mesh shared by every [`SdfMaterial2d`] entity (1×1, centred).
+/// The one quad mesh shared by every [`SdfMaterial2d`] entity (1x1, centred).
 #[must_use]
 pub fn unit_quad() -> Mesh {
     Mesh::from(Rectangle::new(1.0, 1.0))

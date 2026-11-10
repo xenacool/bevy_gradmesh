@@ -7,8 +7,8 @@
 //!
 //! Each batch is keyed by (mesh, blend_mode, render_state).  Within a batch,
 //! every instance contributes:
-//! - A `Transform` (12 f32s stored as 4×`Vec4`)
-//! - Per-instance gradmesh uniforms (5×`Vec4` = color, secondary, direction,
+//! - A `Transform` (12 f32s stored as 4x`Vec4`)
+//! - Per-instance gradmesh uniforms (5x`Vec4` = color, secondary, direction,
 //!   flags, dash)
 //!
 //! At render time the batch's shared mesh is drawn once with instancing; the
@@ -32,7 +32,7 @@ use crate::style::{BlendMode, ColorMode, Dash, DashType};
 
 // --- Per-instance GPU data ---
 
-/// Per-instance transform stored as 4×vec4 (column-major Mat4 flattened).
+/// Per-instance transform stored as 4xvec4 (column-major Mat4 flattened).
 /// Matches what the vertex shader expects for instanced transforms.
 #[derive(Debug, Clone, Copy, Default, ShaderType)]
 pub struct InstanceTransform {
@@ -56,7 +56,7 @@ impl InstanceTransform {
 }
 
 /// Per-instance gradmesh properties (color, secondary, direction, flags, dash, deformation, appearance).
-/// 7×Vec4 = 112 bytes per instance.
+/// 7xVec4 = 112 bytes per instance.
 #[derive(Debug, Clone, Copy, Default, ShaderType)]
 pub struct InstanceProperties {
     pub color: Vec4,
@@ -339,7 +339,7 @@ impl Batch {
 /// recorder.begin();
 /// recorder.sphere(Vec3::ZERO, 0.5, ShapeDetail::Medium, imm_opaque(1.0, 0.0, 0.0));
 /// recorder.sphere(Vec3::X, 0.5, ShapeDetail::Medium, imm_opaque(1.0, 0.0, 0.0));
-/// // Both spheres share a batch → 1 draw call instead of 2.
+/// // Both spheres share a batch -> 1 draw call instead of 2.
 /// let batches = recorder.end();
 /// ```
 pub struct BatchRecorder {

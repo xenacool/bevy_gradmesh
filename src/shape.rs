@@ -369,7 +369,7 @@ pub struct SweepOptions {
 ///
 /// `right` and `up` are the directions the profile's `x` and `y` run along at
 /// `position`; `scale` stretches the profile across (`x`) and upwards (`y`).
-/// `right × up` should point along the path. The sweep re-squares the frame
+/// `right x up` should point along the path. The sweep re-squares the frame
 /// against the direction of the path at the joint: a left-handed frame keeps
 /// its `up` and gets its `right` flipped, so the surface never turns inside
 /// out.
@@ -1608,7 +1608,7 @@ impl Shape {
         }
     }
 
-    /// Creates a cuboid with the given size and optional roundness (0.0–1.0).
+    /// Creates a cuboid with the given size and optional roundness (0.0-1.0).
     pub fn cuboid(size: Vec3, roundness: f32, detail: ShapeDetail) -> Self {
         Self {
             kind: ShapeKind::Cuboid { size, roundness },
@@ -1906,7 +1906,7 @@ impl Shape {
     }
 
     /// Creates an N-pointed star (2D flat quad).
-    /// `inner_radius` controls how deep the indentations are (0.0–`outer_radius`).
+    /// `inner_radius` controls how deep the indentations are (0.0-`outer_radius`).
     pub fn star(points: u32, outer_radius: f32, inner_radius: f32, detail: ShapeDetail) -> Self {
         Self {
             kind: ShapeKind::Star {
@@ -2170,7 +2170,7 @@ impl Shape {
     /// openings and tint need) are blended from their neighbours. Frames at the
     /// same position as the one before are dropped.
     ///
-    /// `right × up` should point along the path (see [`SweepFrame`]); a
+    /// `right x up` should point along the path (see [`SweepFrame`]); a
     /// closed sweep joins the last frame back to the first and does not
     /// correct the frames at the seam, so make them meet. Everything else works
     /// as in [`Shape::sweep`].
@@ -2219,7 +2219,7 @@ impl Shape {
     /// walked once, here, into a fingerprint, so hashing the shape afterwards
     /// costs the same at any size (a hash is taken on every
     /// [`MeshCache`](crate::MeshCache) lookup). Building the shape costs
-    /// about 1 ns per sample (4 µs for a 65 × 65 chunk); comparing two shapes
+    /// about 1 ns per sample (4 us for a 65 x 65 chunk); comparing two shapes
     /// that share the same `Arc` of heights is free, and comparing two equal
     /// but separate ones walks the heights once. A `size` below 2 in either axis, a
     /// `heights` slice, hole mask or border of the wrong length gives an empty
@@ -2751,7 +2751,7 @@ fn build_rounded_box(size: Vec3, roundness: f32, segments: usize) -> Mesh {
     //
     // Algorithm (per vertex):
     //   1. Compute cube_point = axis_u * u + axis_v * v + normal * 0.5
-    //   2. Clamp cube_point to [-0.5+rx, 0.5-rx] etc. → center
+    //   2. Clamp cube_point to [-0.5+rx, 0.5-rx] etc. -> center
     //   3. direction = normalize((cube_point - center) / radii)
     //   4. position = center + radii * direction
     //   5. normal = normalize(direction / radii)
@@ -2763,7 +2763,7 @@ fn build_rounded_box(size: Vec3, roundness: f32, segments: usize) -> Mesh {
     let r = roundness.clamp(0.0, 1.0);
 
     // Per-axis radii in unit-box space (box spans [-0.5, 0.5] on each axis).
-    // At r=0.0, radii=0 → sharp box. At r=1.0, radii=0.25 → maximum fillet.
+    // At r=0.0, radii=0 -> sharp box. At r=1.0, radii=0.25 -> maximum fillet.
     let radii = Vec3::splat((r * 0.5).min(MAXIMUM_NORMALIZED_FILLET_RADIUS));
 
     // Divisions per fillet edge (how many subdivisions in each rounded corner region).
@@ -2840,7 +2840,7 @@ fn build_rounded_box(size: Vec3, roundness: f32, segments: usize) -> Mesh {
         // Triangle order: idx, idx+edge_vertices, idx+1
         // and idx+1, idx+edge_vertices, idx+edge_vertices+1.
         // In Bevy's right-handed coordinate system, this produces CCW winding
-        // for all faces (axis_v × axis_u points in the face normal direction).
+        // for all faces (axis_v x axis_u points in the face normal direction).
         for row in 0..edge_vertices - 1 {
             for column in 0..edge_vertices - 1 {
                 let idx = base_idx + row as u32 * edge_vertices as u32 + column as u32;
@@ -3387,7 +3387,7 @@ fn build_torus(radius: f32, thickness: f32, start: f32, span: f32, detail: Shape
 }
 
 /// Sweeps a rounded profile around a regular polygon (or a circle when
-/// `smooth`), producing the inscribed solid "core ⊕ ball of radius `rho`".
+/// `smooth`), producing the inscribed solid "core xor ball of radius `rho`".
 ///
 /// `core` lists the profile's corner points as `(apothem radius, y)` from the
 /// bottom axis point to the top axis point, counter-clockwise in the (r, y)
@@ -5832,7 +5832,7 @@ mod tests {
             bevy::render::mesh::Indices::U32(i) => i.clone(),
             _ => panic!("Expected U32 indices"),
         };
-        // 5 vertices → 3 triangles → 9 indices
+        // 5 vertices -> 3 triangles -> 9 indices
         assert_eq!(idx.len(), 9, "Should have 9 indices (3 triangles)");
     }
 
@@ -5899,7 +5899,7 @@ mod tests {
             bevy::render::mesh::Indices::U32(i) => i.clone(),
             _ => panic!("Expected U32 indices"),
         };
-        // 6 vertices → 4 triangles → 12 indices
+        // 6 vertices -> 4 triangles -> 12 indices
         assert_eq!(
             idx.len(),
             12,
@@ -5909,7 +5909,7 @@ mod tests {
 
     #[test]
     fn ear_clip_triangulate_convex() {
-        // Square: 4 vertices → 2 triangles
+        // Square: 4 vertices -> 2 triangles
         let vertices = vec![
             Vec2::new(0.0, 0.0),
             Vec2::new(1.0, 0.0),
@@ -6140,7 +6140,7 @@ mod tests {
 
     #[test]
     fn wedge_full_circle() {
-        // 360° wedge should be like a disc
+        // 360 degwedge should be like a disc
         let mesh = Shape::wedge(1.0, 2.0 * PI, ShapeDetail::Medium).build();
         assert!(mesh.count_vertices() > 0, "Full wedge must have vertices");
     }

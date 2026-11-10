@@ -1,6 +1,6 @@
 # Curves & Polylines
 
-## Bezier Curves
+## Bézier Curves
 
 Render smooth curves as tube geometry:
 
@@ -98,7 +98,7 @@ fn closed_polyline_mesh() -> Mesh {
 
 ## Use Cases
 
-- **Track paths**: Define racing tracks with Bezier curves
+- **Track paths**: Define racing tracks with Bézier curves
 - **Cables and wires**: Connect objects with polylines
 - **Animated trails**: Update control points each frame
 - **Data visualization**: Plot 3D data as connected tubes

@@ -1,4 +1,4 @@
-// GPU Polyline shader — renders polylines as tube geometry entirely on the GPU.
+// GPU Polyline shader - renders polylines as tube geometry entirely on the GPU.
 //
 // Instead of pre-computing cylinder/sphere meshes on the CPU, this shader
 // takes polyline points as a vertex buffer and expands each point into a

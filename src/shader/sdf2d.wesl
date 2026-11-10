@@ -1,10 +1,11 @@
-// BevyGradmesh SDF 2D shader — shapes evaluated per pixel on one shared quad.
+// BevyGradmesh SDF 2D shader - shapes evaluated per pixel on one shared quad.
 //
 // The quad is a 1x1 centred `Mesh2d` scaled to (size + 2 * padding) by `Transform`.
 // The fragment shader reconstructs the local position in world units from the UVs
-// and evaluates a signed distance function (rounded rectangle or ellipse), an
-// optional rim and an optional angular sector. Edges are anti-aliased from the
-// screen-space size of one pixel, so no MSAA is required.
+// and evaluates a signed distance function (rounded rectangle, ellipse, regular
+// polygon, star or arbitrary polygon), an optional rim and an optional angular
+// sector. Edges are anti-aliased from the screen-space size of one pixel, so no
+// MSAA is required.
 //
 // The colour helpers below are shared with `gradmesh2d.wesl`; keep them in sync.
 
@@ -20,7 +21,7 @@ import bevy_render::color_operations::linear_to_srgb;
 @if(OKLAB_OUTPUT)
 import bevy_render::color_operations::linear_rgb_to_oklab;
 
-// ─── OKLAB color space conversion ───
+// --- OKLAB color space conversion ---
 
 fn oklab_to_linear(c: vec3<f32>) -> vec3<f32> {
     let lms_in = vec3<f32>(
@@ -66,7 +67,7 @@ fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
     return select(hi, lo, c <= vec3<f32>(0.04045));
 }
 
-// ─── Gradient mixing in a selectable colour space ───
+// --- Gradient mixing in a selectable colour space ---
 // `flags.w` carries the space: 0 = OKLAB (default), 1 = OKLCH, 2 = linear RGB, 3 = sRGB.
 // Keep in sync with `MixSpace::gpu_code` in `src/mix_space.rs`.
 
@@ -112,14 +113,15 @@ fn mix_colors(a_srgb: vec3<f32>, b_srgb: vec3<f32>, t: f32, space_code: f32) -> 
 }
 
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// ===============================================================================
 // SDF shapes
-// ═══════════════════════════════════════════════════════════════════════════════
+// ===============================================================================
 
 struct SdfUniform {
     color: vec4<f32>,
     secondary_color: vec4<f32>,
-    // x kind (0 rect, 1 ellipse), y rim width, z arc start, w arc span
+    // x kind (0 rect, 1 ellipse, 2 polygon, 3 star, 4 arbitrary polygon), y rim width,
+    // z arc start, w arc span
     shape: vec4<f32>,
     // xy size, z corner radius, w padding per side
     size: vec4<f32>,
@@ -131,6 +133,11 @@ struct SdfUniform {
     // y gap (world units, or 0..1 ratio in count mode), z offset (0..1 of a
     // period), w snap code (0 off, 1 tiling, 2 end to end)
     dash: vec4<f32>,
+    // x side or point count, y inner radius ratio (star), w vertex count (arbitrary polygon)
+    params: vec4<f32>,
+    // Up to 16 arbitrary polygon vertices, two per vec4 (xy then zw), relative to the
+    // centre of the bounds.
+    vertices: array<vec4<f32>, 8>,
 }
 
 // Material2d bind group is group 2 (view = 0, mesh = 1).
@@ -154,6 +161,86 @@ fn sd_ellipse(p: vec2<f32>, radii: vec2<f32>) -> f32 {
     return k0 * (k0 - 1.0) / k1;
 }
 
+const PI: f32 = 3.14159265359;
+
+/// Signed distance to a regular polygon with `sides` sides and circumradius
+/// `radius`, with a vertex pointing up (+Y).
+///
+/// The point is folded into one edge's frame: x runs from the centre to the edge
+/// midpoint and y runs along the edge, so one edge and its end vertex decide the
+/// distance.
+fn sd_regular_polygon(p: vec2<f32>, radius: f32, sides: f32) -> f32 {
+    let sector = TAU / sides;
+    let angle = atan2(p.x, p.y);
+    let fold = wrap_to(angle, sector) - 0.5 * sector;
+    let q = length(p) * vec2<f32>(cos(fold), abs(sin(fold)));
+    let apothem = radius * cos(PI / sides);
+    let half_edge = radius * sin(PI / sides);
+    let dx = q.x - apothem;
+    let dy = max(q.y - half_edge, 0.0);
+    return length(vec2<f32>(dx, dy)) * select(1.0, -1.0, dx < 0.0);
+}
+
+/// Signed distance to a star with `points` tips. Tips lie at `outer` and notches
+/// at `outer * ratio`, with a tip pointing up (+Y).
+///
+/// The point is folded onto the wedge between a tip and the next notch, so the
+/// distance is the distance to one segment, signed by which side of it the point
+/// lies on.
+fn sd_star(p: vec2<f32>, outer: f32, ratio: f32, points: f32) -> f32 {
+    let sector = TAU / points;
+    let angle = atan2(p.x, p.y);
+    let fold = abs(wrap_to(angle + 0.5 * sector, sector) - 0.5 * sector);
+    let q = length(p) * vec2<f32>(cos(fold), sin(fold));
+    let tip = vec2<f32>(outer, 0.0);
+    let notch = outer * ratio * vec2<f32>(cos(0.5 * sector), sin(0.5 * sector));
+    let edge = notch - tip;
+    let w = q - tip;
+    let t = clamp(dot(w, edge) / max(dot(edge, edge), 0.000001), 0.0, 1.0);
+    let dist = length(w - edge * t);
+    let side = edge.x * w.y - edge.y * w.x;
+    return select(dist, -dist, side > 0.0);
+}
+
+const MAX_POLYGON_VERTICES: i32 = 16;
+
+fn polygon_vertex(index: i32) -> vec2<f32> {
+    let pair = sdf.vertices[index / 2];
+    return select(pair.xy, pair.zw, (index % 2) == 1);
+}
+
+/// Signed distance to the polygon through the first `count` uniform vertices.
+///
+/// Takes the nearest distance over all edges and flips the sign when the
+/// horizontal ray from `p` crosses an odd number of edges, so concave outlines
+/// and either winding work.
+fn sd_polygon_loop(p: vec2<f32>, count: i32) -> f32 {
+    let first = polygon_vertex(0);
+    var d = dot(p - first, p - first);
+    var s = 1.0;
+    var prev = count - 1;
+    for (var i = 0; i < MAX_POLYGON_VERTICES; i = i + 1) {
+        if (i >= count) {
+            break;
+        }
+        let vi = polygon_vertex(i);
+        let vj = polygon_vertex(prev);
+        let e = vj - vi;
+        let w = p - vi;
+        let t = clamp(dot(w, e) / max(dot(e, e), 0.000001), 0.0, 1.0);
+        let b = w - e * t;
+        d = min(d, dot(b, b));
+        let above = p.y >= vi.y;
+        let below = p.y < vj.y;
+        let left = e.x * w.y > e.y * w.x;
+        if ((above && below && left) || (!above && !below && !left)) {
+            s = -s;
+        }
+        prev = i;
+    }
+    return s * sqrt(d);
+}
+
 /// Signed distance (positive inside) to the nearest edge of an angular sector,
 /// measured in world units at the pixel's radius.
 fn arc_inside_distance(p: vec2<f32>, start: f32, span: f32) -> f32 {
@@ -165,7 +252,7 @@ fn arc_inside_distance(p: vec2<f32>, start: f32, span: f32) -> f32 {
     return min(delta, span - delta) * length(p);
 }
 
-// ─── Perimeter coordinate and dashes ───
+// --- Perimeter coordinate and dashes ---
 // `s` runs counter-clockwise around the outline from +X, in world units, so a
 // dash length means the same distance on every side. Disc and ellipse use the
 // polar angle (exact for circles); the rounded rectangle traces its edges and
@@ -328,9 +415,16 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
         0.00001,
     );
 
+    let kind = i32(round(sdf.shape.x));
     var d: f32;
-    if (i32(round(sdf.shape.x)) == 1) {
+    if (kind == 1) {
         d = sd_ellipse(p, half_size);
+    } else if (kind == 2) {
+        d = sd_regular_polygon(p, half_size.x, sdf.params.x);
+    } else if (kind == 3) {
+        d = sd_star(p, half_size.x, sdf.params.y, sdf.params.x);
+    } else if (kind == 4) {
+        d = sd_polygon_loop(p, i32(round(sdf.params.w)));
     } else {
         d = sd_rounded_rect(p, half_size, sdf.size.z);
     }
@@ -347,9 +441,9 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
         d = max(d, -arc_inside_distance(p, sdf.shape.z, span));
     }
 
-    // Dashes only cut rims; both conditions come from the uniform buffer.
+    // Dashes only cut rims, and only rect and ellipse have outline arithmetic for them.
     var dash_mask = 1.0;
-    if (rim_width > 0.0 && sdf.dash.x != 0.0) {
+    if (rim_width > 0.0 && sdf.dash.x != 0.0 && kind <= 1) {
         dash_mask = dash_coverage(p, half_size, is_arc);
     }
 

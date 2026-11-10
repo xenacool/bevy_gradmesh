@@ -119,7 +119,7 @@ impl AutoScreenshotPlugin {
 
 impl Plugin for AutoScreenshotPlugin {
     fn build(&self, app: &mut App) {
-        // No-op on WASM — screenshots are only for headless CI builds
+        // No-op on WASM - screenshots are only for headless CI builds
         if cfg!(target_arch = "wasm32") {
             return;
         }
@@ -339,7 +339,7 @@ struct AutoScreenshotFilename(String);
 #[derive(Resource)]
 struct WaitFrames(u32);
 
-/// Tracks the screenshot lifecycle: pending → triggered → saved → quit.
+/// Tracks the screenshot lifecycle: pending -> triggered -> saved -> quit.
 #[derive(Resource, Default)]
 struct ScreenshotState {
     /// `true` after we spawned the `Screenshot` entity.

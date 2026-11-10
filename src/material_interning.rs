@@ -350,7 +350,7 @@ impl GradMeshMaterialPool {
         self.misses
     }
 
-    /// Returns the cache hit rate as a float (0.0–1.0).
+    /// Returns the cache hit rate as a float (0.0-1.0).
     pub fn hit_rate(&self) -> f64 {
         if self.total_lookups == 0 {
             0.0

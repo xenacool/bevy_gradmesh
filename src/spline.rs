@@ -1006,7 +1006,7 @@ mod tests {
 
     #[test]
     fn curvature_sign_matches_turn_direction() {
-        // Counter-clockwise when viewed from +Y (x → z): heading turns toward +X from +Z? Just
+        // Counter-clockwise when viewed from +Y (x -> z): heading turns toward +X from +Z? Just
         // check that the sign is consistent around the loop and reversing flips it.
         let spline = square(40.0);
         let reversed = CatmullRomSpline::closed(

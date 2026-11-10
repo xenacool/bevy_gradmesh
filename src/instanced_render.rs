@@ -522,14 +522,14 @@ impl SpecializedMeshPipeline for InstancedPipeline {
 
         // Add the instanced vertex buffer layout
         // This buffer contains interleaved InstanceTransform + InstanceProperties per instance
-        let transform_stride = size_of::<InstanceTransform>() as u64; // 64 bytes = 4×vec4
-        let property_stride = size_of::<InstanceProperties>() as u64; // 112 bytes = 7×vec4 (includes deformation + appearance)
+        let transform_stride = size_of::<InstanceTransform>() as u64; // 64 bytes = 4xvec4
+        let property_stride = size_of::<InstanceProperties>() as u64; // 112 bytes = 7xvec4 (includes deformation + appearance)
 
         descriptor.vertex.buffers.push(VertexBufferLayout {
             array_stride: transform_stride + property_stride,
             step_mode: VertexStepMode::Instance,
             attributes: [
-                // InstanceTransform: 4×vec4 at locations 3-6
+                // InstanceTransform: 4xvec4 at locations 3-6
                 (3u32, 0u64, VertexFormat::Float32x4),
                 (
                     4u32,
@@ -546,7 +546,7 @@ impl SpecializedMeshPipeline for InstancedPipeline {
                     VertexFormat::Float32x4.size() * 3,
                     VertexFormat::Float32x4,
                 ),
-                // InstanceProperties: 7×vec4 at locations 7-13 (color, secondary, direction, flags, dash, deformation, appearance)
+                // InstanceProperties: 7xvec4 at locations 7-13 (color, secondary, direction, flags, dash, deformation, appearance)
                 (7u32, transform_stride, VertexFormat::Float32x4),
                 (
                     8u32,

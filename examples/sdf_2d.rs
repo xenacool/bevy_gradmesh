@@ -41,7 +41,7 @@ pub fn run(app: &mut App) {
             AutoScreenshotPlugin::new("screenshot_sdf_2d.png")
                 .animation(4.0)
                 .with_title("SDF 2D")
-                .with_description("One shared quad: discs, rims, arcs, rounded rects, no MSAA"),
+                .with_description("One shared quad: discs, rims, arcs, polygons, stars, no MSAA"),
         )
         .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.13)))
         .add_systems(Startup, setup)
@@ -71,7 +71,7 @@ fn main() {
             AutoScreenshotPlugin::new("screenshot_sdf_2d.png")
                 .animation(4.0)
                 .with_title("SDF 2D")
-                .with_description("One shared quad: discs, rims, arcs, rounded rects, no MSAA"),
+                .with_description("One shared quad: discs, rims, arcs, polygons, stars, no MSAA"),
         )
         .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.13)))
         .add_systems(Startup, setup)
@@ -244,6 +244,49 @@ fn setup(
         Vec2::new(330.0, -240.0),
         0.0,
     );
+
+    // Column 5: regular polygon, star, concave polygon, star with rim and arc.
+    spawn(
+        &mut commands,
+        SdfMaterial2d::polygon(6, 75.0).with_colors(warm.0, warm.1),
+        Vec2::new(550.0, 255.0),
+        0.0,
+    );
+    spawn(
+        &mut commands,
+        SdfMaterial2d::star(5, 80.0, 32.0).with_colors(cool.0, cool.1),
+        Vec2::new(550.0, 90.0),
+        0.0,
+    );
+    spawn(
+        &mut commands,
+        arrow().with_colors(sunset.0, sunset.1),
+        Vec2::new(550.0, -75.0),
+        0.0,
+    );
+    spawn(
+        &mut commands,
+        SdfMaterial2d::star(7, 80.0, 40.0)
+            .with_rim(8.0)
+            .with_arc(0.0, PI * 1.3)
+            .with_color(Color::srgb(0.9, 0.5, 0.9)),
+        Vec2::new(550.0, -240.0),
+        0.0,
+    );
+}
+
+/// A right-pointing arrow: a concave outline given as seven points.
+fn arrow() -> SdfMaterial2d {
+    let points = [
+        Vec2::new(-70.0, -20.0),
+        Vec2::new(10.0, -20.0),
+        Vec2::new(10.0, -60.0),
+        Vec2::new(75.0, 0.0),
+        Vec2::new(10.0, 60.0),
+        Vec2::new(10.0, 20.0),
+        Vec2::new(-70.0, 20.0),
+    ];
+    SdfMaterial2d::polygon_from_points(&points).expect("the arrow has seven vertices")
 }
 
 /// Animates the rim arc, span and corner radius by editing material floats only.

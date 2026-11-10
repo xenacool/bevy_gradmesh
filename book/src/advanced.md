@@ -94,7 +94,7 @@ fn collider_data(shape: &Shape) -> Option<(Vec<Vec3>, Vec<[u32; 3]>)> {
 - No Order-Independent Transparency (OIT)
 - No planar reflections
 - No visual editor integration (Bevy has no editor)
-- NURBS curves not supported (only cubic Bezier)
+- NURBS curves not supported (only cubic Bézier)
 - No secondary LOD membership during transitions
 
 ## License

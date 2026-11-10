@@ -122,86 +122,150 @@ A cone-frustum with flat top and bottom. When radii are equal, equivalent to a r
 
 ## 2D Primitives
 
-All 2D shapes are flat quads facing the camera (billboarded).
+Rectangles, discs, ellipses, rings, wedges, polygons, stars and arbitrary polygons use the SDF
+backend (`SdfMaterial2d`). Each one is a material drawn on the shared `unit_quad()` mesh. Sizes are
+in world units (pixels with the default `Camera2d`), and the quad's `Transform` scale must be
+`SdfMaterial2d::quad_scale()`. See [Choosing a Backend](./backends.md) for the full SDF API.
+
+Polygons with holes, per-vertex colours and outlines of more than 16 vertices go through the mesh
+backend with `Shape::build_2d()`. See [Arbitrary Polygon on the mesh backend](#arbitrary-polygon-on-the-mesh-backend).
 
 ### Rectangle
 ```rust
 # use bevy::prelude::*;
-# use bevy_gradmesh::{Shape, ShapeDetail};
+# use bevy_gradmesh::SdfMaterial2d;
 # fn main() {}
-fn rectangle() -> Shape {
-    Shape::rectangle(Vec2::new(2.0, 1.0), ShapeDetail::Medium)
+fn rectangle() -> SdfMaterial2d {
+    let corner_radius = 8.0;
+    SdfMaterial2d::rect(Vec2::new(200.0, 100.0)).with_corner_radius(corner_radius)
 }
 ```
+The corner radius is optional. Leave it out for sharp corners.
 
 ### Disc
 ```rust
-# use bevy_gradmesh::{Shape, ShapeDetail};
+# use bevy_gradmesh::SdfMaterial2d;
 # fn main() {}
-fn disc() -> Shape {
-    Shape::disc(1.0, ShapeDetail::Medium)
-}
-```
-
-### Polygon
-```rust
-# use bevy_gradmesh::{Shape, ShapeDetail};
-# fn main() {}
-fn polygon() -> Shape {
-    let sides = 5;
-    Shape::polygon(sides, 1.0, ShapeDetail::Medium)
+fn disc() -> SdfMaterial2d {
+    SdfMaterial2d::disc(100.0)
 }
 ```
 
 ### Ellipse
 ```rust
 # use bevy::prelude::*;
-# use bevy_gradmesh::{Shape, ShapeDetail};
+# use bevy_gradmesh::SdfMaterial2d;
 # fn main() {}
-fn ellipse() -> Shape {
-    Shape::ellipse(Vec2::new(1.5, 0.75), ShapeDetail::Medium)
+fn ellipse() -> SdfMaterial2d {
+    SdfMaterial2d::ellipse(Vec2::new(150.0, 75.0))
 }
 ```
-
-### Star
-```rust
-# use bevy_gradmesh::{Shape, ShapeDetail};
-# fn main() {}
-fn star() -> Shape {
-    let points = 5;
-    let outer_radius = 1.0;
-    let inner_radius = 0.4;
-    Shape::star(points, outer_radius, inner_radius, ShapeDetail::Medium)
-}
-```
-N-pointed star. The `inner_radius` controls how deep the indentations are.
 
 ### Ring
 ```rust
-# use bevy_gradmesh::{Shape, ShapeDetail};
+# use bevy_gradmesh::SdfMaterial2d;
 # fn main() {}
-fn ring() -> Shape {
-    let outer_radius = 1.0;
-    let inner_radius = 0.6;
-    Shape::ring(outer_radius, inner_radius, ShapeDetail::Medium)
+fn ring() -> SdfMaterial2d {
+    let outer_radius = 100.0;
+    let inner_radius = 60.0;
+    let rim_width = outer_radius - inner_radius;
+    SdfMaterial2d::disc(outer_radius).with_rim(rim_width)
 }
 ```
-Annulus (2D donut with a hole).
+Annulus (2D donut with a hole). The rim is drawn inside the outline of the disc.
 
 ### Wedge
 ```rust
-# use bevy_gradmesh::{Shape, ShapeDetail};
+# use bevy_gradmesh::SdfMaterial2d;
 # fn main() {}
-fn wedge() -> Shape {
-    let angle = std::f32::consts::FRAC_PI_2;
-    Shape::wedge(1.0, angle, ShapeDetail::Medium)
+fn wedge() -> SdfMaterial2d {
+    let start_angle = 0.0;
+    let span = std::f32::consts::FRAC_PI_2;
+    SdfMaterial2d::disc(100.0).with_arc(start_angle, span)
 }
 ```
-Pie-slice shape. Angle is in radians (0 to 2 pi).
+Pie-slice shape. The arc starts at `start_angle` radians counter-clockwise from +X and covers
+`span` radians.
+
+### Spawning an SDF primitive
+```rust
+# use bevy::prelude::*;
+# use bevy_gradmesh::{SdfMaterial2d, unit_quad};
+# fn main() {}
+fn spawn_primitive(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<SdfMaterial2d>>,
+) {
+    let material = SdfMaterial2d::disc(100.0)
+        .with_colors(Color::srgb(0.9, 0.4, 0.5), Color::WHITE);
+    commands.spawn((
+        Mesh2d(meshes.add(unit_quad())),
+        Transform::from_scale(material.quad_scale()),
+        MeshMaterial2d(materials.add(material)),
+    ));
+}
+```
+Add all primitives to the same `unit_quad()` handle to share one mesh asset.
+
+### Polygon
+```rust
+# use bevy_gradmesh::SdfMaterial2d;
+# fn main() {}
+fn polygon() -> SdfMaterial2d {
+    let sides = 5;
+    let radius = 100.0;
+    SdfMaterial2d::polygon(sides, radius)
+}
+```
+Regular polygon with 3 to 64 sides and a vertex pointing up. `radius` is the distance from the
+centre to a vertex.
+
+### Star
+```rust
+# use bevy_gradmesh::SdfMaterial2d;
+# fn main() {}
+fn star() -> SdfMaterial2d {
+    let points = 5;
+    let outer_radius = 100.0;
+    let inner_radius = 40.0;
+    SdfMaterial2d::star(points, outer_radius, inner_radius)
+}
+```
+N-pointed star with 3 to 64 points. The `inner_radius` controls how deep the indentations are. An
+inner radius at or above the outer radius gives a polygon with twice as many sides.
+
+### Arbitrary Polygon
+```rust
+# use bevy::prelude::*;
+# use bevy_gradmesh::{SdfMaterial2d, SdfPolygonError};
+# fn main() {}
+fn arrow() -> Result<SdfMaterial2d, SdfPolygonError> {
+    let points = [
+        Vec2::new(-70.0, -20.0),
+        Vec2::new(10.0, -20.0),
+        Vec2::new(10.0, -60.0),
+        Vec2::new(75.0, 0.0),
+        Vec2::new(10.0, 60.0),
+        Vec2::new(10.0, 20.0),
+        Vec2::new(-70.0, 20.0),
+    ];
+    SdfMaterial2d::polygon_from_points(&points)
+}
+```
+Any outline of 3 to 16 points, concave outlines included, wound either way. Fewer than 3 or more
+than 16 points return a `SdfPolygonError` that names the count. The shape is centred on the middle
+of its bounding box.
+
+Polygons and stars support rims, arcs, gradients and colour modes like every other SDF shape. A
+rim is drawn inside the outline, so thin features of a concave shape can disappear under a wide
+rim. Dashes are not supported on these kinds: a dashed rim draws solid.
+
+*Discs, ellipses, rounded rectangles, rims, arcs, polygons and stars on one shared quad. Run `cargo run --example sdf_2d` to reproduce it.*
 
 *Custom polygons with per-vertex colours, stars, rings, wedges and a tapered cylinder. Run `cargo run --example arbitrary_shapes` to reproduce it.*
 
-### Arbitrary Polygon
+### Arbitrary Polygon on the mesh backend
 ```rust
 # use bevy::prelude::*;
 # use bevy_gradmesh::{Shape, ShapeDetail};
@@ -230,6 +294,7 @@ fn arbitrary_polygon_colored() -> Shape {
 }
 ```
 Accepts any set of 2D vertices. Triangulated using ear-clipping algorithm. Supports optional per-vertex RGBA colors.
+Use this form for outlines of more than 16 vertices, polygons with holes and per-vertex colours.
 
 ## Advanced Geometry
 
@@ -252,7 +317,7 @@ fn polyline3d() -> Shape {
 ```
 Renders as tube geometry along the point path.
 
-### Bezier Curve
+### Bézier Curve
 ```rust
 # use bevy::prelude::*;
 # use bevy_gradmesh::{Shape, ShapeDetail};
@@ -269,4 +334,4 @@ fn bezier_curve() -> Shape {
     Shape::bezier_curve(control_points, thickness, segments, ShapeDetail::Medium)
 }
 ```
-Supports linear (2 points), quadratic (3 points), and cubic (4+ points) Bezier curves rendered as tubes.
+Supports linear (2 points), quadratic (3 points), and cubic (4+ points) Bézier curves rendered as tubes.

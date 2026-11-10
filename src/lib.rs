@@ -56,6 +56,7 @@ pub mod polyline_gpu;
 mod render_pipeline;
 pub mod retained;
 pub mod sdf2d;
+mod sdf2d_polygon;
 pub mod shape;
 pub mod spline;
 mod standalone_pipeline;
@@ -93,6 +94,7 @@ pub use retained::{GradMeshHandle, RetainedWorld};
 pub use sdf2d::{
     Dash2d, DashSnap, SdfGradient, SdfKind, SdfMaterial2d, SdfMaterial2dPlugin, unit_quad,
 };
+pub use sdf2d_polygon::SdfPolygonError;
 pub use shape::{
     HeightfieldBorder, HeightfieldOptions, HoleEdge, Shape, ShapeBounds, ShapeDetail, ShapePart,
     SweepFrame, SweepOpening, SweepOptions,

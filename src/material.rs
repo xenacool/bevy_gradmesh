@@ -17,7 +17,7 @@ use crate::mix_space::MixSpace;
 
 /// 16-byte aligned vec4 for GPU uniform buffers.
 ///
-/// `encase` requires uniform struct fields to have stride ≥ 16 bytes,
+/// `encase` requires uniform struct fields to have stride >= 16 bytes,
 /// so `[f32; 4]` cannot be used directly with `#[uniform()]`. This named-field
 /// struct derives `ShaderType`, which ensures each instance is exactly 16 bytes
 /// with proper alignment.
@@ -97,7 +97,7 @@ impl GradMeshUniform {
 ///
 /// All fields are `Vec4` (16 bytes each via `ShaderType`; 15 in total), so the total struct
 /// is 240 bytes. This single struct is bound at slot 100, avoiding conflicts
-/// with the base StandardMaterial's bindings (0–99).
+/// with the base StandardMaterial's bindings (0-99).
 #[derive(Debug, Clone, Copy, Default, Reflect, ShaderType)]
 pub struct GradMeshUniformBuffer {
     pub color: Vec4,

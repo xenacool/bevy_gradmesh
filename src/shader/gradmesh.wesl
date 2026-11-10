@@ -1,13 +1,13 @@
-// BevyGradmesh unified shader — material extension + instanced rendering.
+// BevyGradmesh unified shader - material extension + instanced rendering.
 //
 // This single .wesl file contains all shader entry points:
 //
-// 1. **Material extension** (fragment shader) — extends Bevy's StandardMaterial
+// 1. **Material extension** (fragment shader) - extends Bevy's StandardMaterial
 //    with dual-directional gradient shading, OKLAB color interpolation, dash
 //    patterns, and blend modes. Uses `@if(PREPASS_PIPELINE)` for deferred
 //    rendering support.
 //
-// 2. **Instanced rendering** (vertex + fragment shaders) — GPU-instanced path
+// 2. **Instanced rendering** (vertex + fragment shaders) - GPU-instanced path
 //    that reads per-instance transforms and properties from vertex attributes,
 //    supporting deformation and LOD dither cross-fade.
 //
@@ -32,7 +32,7 @@ import bevy_pbr::render::{
     pbr_functions::{apply_pbr_lighting, main_pass_post_lighting_processing},
 };
 
-// ─── OKLAB color space conversion ───
+// --- OKLAB color space conversion ---
 
 fn oklab_to_linear(c: vec3<f32>) -> vec3<f32> {
     let lms_in = vec3<f32>(
@@ -78,7 +78,7 @@ fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
     return select(hi, lo, c <= vec3<f32>(0.04045));
 }
 
-// ─── Gradient mixing in a selectable colour space ───
+// --- Gradient mixing in a selectable colour space ---
 // `flags.w` carries the space: 0 = OKLAB (default), 1 = OKLCH, 2 = linear RGB, 3 = sRGB.
 // Keep in sync with `MixSpace::gpu_code` in `src/mix_space.rs`.
 
@@ -123,9 +123,9 @@ fn mix_colors(a_srgb: vec3<f32>, b_srgb: vec3<f32>, t: f32, space_code: f32) -> 
     return oklab_mix(a, b, t);
 }
 
-// ─── Dash pattern computation ───
+// --- Dash pattern computation ---
 
-/// Epsilon for float comparisons — avoids precision issues with near-1.0 values.
+/// Epsilon for float comparisons - avoids precision issues with near-1.0 values.
 const EPSILON: f32 = 1e-4;
 
 fn dash_segment_mask(progress: f32, across: f32, dash: vec4<f32>) -> f32 {
@@ -170,14 +170,14 @@ fn dash_segment_mask(progress: f32, across: f32, dash: vec4<f32>) -> f32 {
     return clamp(signed_distance / max(width, 0.00001) + 0.5, 0.0, 1.0);
 }
 
-// ─── Blend mode computation ───
+// --- Blend mode computation ---
 
-/// 2×2 Bayer helper for 16×16 dither matrix.
+/// 2x2 Bayer helper for 16x16 dither matrix.
 fn bayer_2x2(px: i32, py: i32) -> i32 {
     return px * 2 + py * 3 - px * py * 4;
 }
 
-/// 16×16 Bayer dither threshold.
+/// 16x16 Bayer dither threshold.
 /// Returns a value in [0, 1) for alpha-to-coverage dithering.
 fn dither_threshold(position: vec2<f32>) -> f32 {
     let px = i32(position.x) & 15;
@@ -218,7 +218,7 @@ fn apply_blend_mode(
         color = color * 1.5;
         alpha = 1.0;
     } else if (blend_mode == 5) {
-        // Dither (alpha-to-coverage via 16×16 Bayer matrix)
+        // Dither (alpha-to-coverage via 16x16 Bayer matrix)
         let threshold = dither_threshold(fragment_position);
         if (alpha < threshold) {
             discard;
@@ -229,23 +229,23 @@ fn apply_blend_mode(
         color = color * 0.5;
         alpha = 1.0;
     } else if (blend_mode == 7) {
-        // Lighten: max(src, dst) — approximated by boosting color
+        // Lighten: max(src, dst) - approximated by boosting color
         color = color * 1.2;
         alpha = 1.0;
     } else if (blend_mode == 8) {
-        // Color Dodge: dst / (1 - src) — approximated by stronger boost
+        // Color Dodge: dst / (1 - src) - approximated by stronger boost
         color = color * 1.8;
         alpha = 1.0;
     } else if (blend_mode == 9) {
-        // Linear Burn: src + dst - 1 — approximated by darkening
+        // Linear Burn: src + dst - 1 - approximated by darkening
         color = color * 0.3;
         alpha = 1.0;
     } else if (blend_mode == 10) {
-        // Color Burn: 1 - (1 - dst) / src — approximated by strong darkening
+        // Color Burn: 1 - (1 - dst) / src - approximated by strong darkening
         color = color * 0.2;
         alpha = 1.0;
     } else if (blend_mode == 11) {
-        // Darken: min(src, dst) — approximated by reducing color
+        // Darken: min(src, dst) - approximated by reducing color
         color = color * 0.4;
         alpha = 1.0;
     }
@@ -253,7 +253,7 @@ fn apply_blend_mode(
     return vec4<f32>(color, alpha);
 }
 
-// ─── Perimeter progress for dash patterns on 2D shapes ───
+// --- Perimeter progress for dash patterns on 2D shapes ---
 
 /// Angular progress around center (for disc shapes).
 /// Measures the angle from center and normalizes to [0, 1] over a full circle (start=0, span=TAU).
@@ -269,7 +269,7 @@ fn angular_progress(uv: vec2<f32>) -> f32 {
 }
 
 /// Rectangle perimeter progress (for cuboid/rectangle shapes).
-/// Traces the actual perimeter centerline: right edge → top → left → bottom.
+/// Traces the actual perimeter centerline: right edge -> top -> left -> bottom.
 fn rectangle_perimeter_progress(uv: vec2<f32>) -> f32 {
     let p = uv * 2.0 - 1.0;  // Map UV to [-1, 1]
     let abs_p = abs(p);
@@ -284,7 +284,7 @@ fn rectangle_perimeter_progress(uv: vec2<f32>) -> f32 {
     let min_v = min(dist_top, dist_bottom);
     
     if (min_h < min_v) {
-        // Closer to left/right edge — progress varies with Y
+        // Closer to left/right edge - progress varies with Y
         if (dist_right < dist_left) {
             // Right edge: progress increases upward
             return fract(p.y * 0.5 + 0.75);
@@ -293,7 +293,7 @@ fn rectangle_perimeter_progress(uv: vec2<f32>) -> f32 {
             return fract(-p.y * 0.5 + 0.25);
         }
     } else {
-        // Closer to top/bottom edge — progress varies with X
+        // Closer to top/bottom edge - progress varies with X
         if (dist_top < dist_bottom) {
             // Top edge: progress increases rightward
             return fract(p.x * 0.5 + 0.5);
@@ -325,7 +325,7 @@ fn compute_across(uv: vec2<f32>, shape_type: f32) -> f32 {
         // Rectangle: distance from nearest edge, normalized to [-1, 1]
         let p = uv * 2.0 - 1.0;
         let dist_from_edge = min(abs(p.x), abs(p.y));
-        // Map: edge (dist=1) → +1, center (dist=0) → -1
+        // Map: edge (dist=1) -> +1, center (dist=0) -> -1
         return clamp(dist_from_edge * 2.0 - 1.0, -1.0, 1.0);
     }
     // Disc/Generic: radial distance from center
@@ -334,7 +334,7 @@ fn compute_across(uv: vec2<f32>, shape_type: f32) -> f32 {
     return clamp(dist_from_center * 2.0 - 1.0, -1.0, 1.0);
 }
 
-// ─── LOD Dither Cross-Fade ───
+// --- LOD Dither Cross-Fade ---
 
 // Bayer 4x4 dither matrix for LOD cross-fade
 const bayer_dither_4x4 = array<array<f32, 4>, 4>(
@@ -360,7 +360,7 @@ fn lod_dither_mask(frag_coord: vec2<f32>, transition_weight: f32) -> f32 {
     return select(1.0, 0.0, dither_value > transition_weight);
 }
 
-// ─── Vertex deformation ───
+// --- Vertex deformation ---
 
 /// Apply per-instance deformation to a local-space vertex position.
 /// Deformation params: x=type, y=amplitude, z=frequency, w=phase.
@@ -395,9 +395,9 @@ fn apply_deformation(
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Material extension — fragment shader
-// ═══════════════════════════════════════════════════════════════════════════════
+// ===============================================================================
+// Material extension - fragment shader
+// ===============================================================================
 
 /// GPU uniform for GradMesh material extension.
 ///
@@ -474,7 +474,7 @@ fn compute_gradient_progress_material(in: VertexOutput) -> f32 {
     return 0.5;
 }
 
-// ─── Procedural surface detail ───
+// --- Procedural surface detail ---
 
 /// Cheap 3D hash in [0, 1).
 fn hash13(p3: vec3<f32>) -> f32 {

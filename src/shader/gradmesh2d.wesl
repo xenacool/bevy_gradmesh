@@ -1,4 +1,4 @@
-// BevyGradmesh 2D shader — unlit gradient material for `Mesh2d` / `Material2d`.
+// BevyGradmesh 2D shader - unlit gradient material for `Mesh2d` / `Material2d`.
 //
 // Evaluates the same dual-directional and dual-radial gradients, colour mix
 // spaces and dash patterns as `gradmesh.wesl`, but from the mesh UVs instead of
@@ -17,7 +17,7 @@ import bevy_render::color_operations::linear_to_srgb;
 @if(OKLAB_OUTPUT)
 import bevy_render::color_operations::linear_rgb_to_oklab;
 
-// ─── OKLAB color space conversion ───
+// --- OKLAB color space conversion ---
 
 fn oklab_to_linear(c: vec3<f32>) -> vec3<f32> {
     let lms_in = vec3<f32>(
@@ -63,7 +63,7 @@ fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
     return select(hi, lo, c <= vec3<f32>(0.04045));
 }
 
-// ─── Gradient mixing in a selectable colour space ───
+// --- Gradient mixing in a selectable colour space ---
 // `flags.w` carries the space: 0 = OKLAB (default), 1 = OKLCH, 2 = linear RGB, 3 = sRGB.
 // Keep in sync with `MixSpace::gpu_code` in `src/mix_space.rs`.
 
@@ -108,9 +108,9 @@ fn mix_colors(a_srgb: vec3<f32>, b_srgb: vec3<f32>, t: f32, space_code: f32) -> 
     return oklab_mix(a, b, t);
 }
 
-// ─── Dash pattern computation ───
+// --- Dash pattern computation ---
 
-/// Epsilon for float comparisons — avoids precision issues with near-1.0 values.
+/// Epsilon for float comparisons - avoids precision issues with near-1.0 values.
 const EPSILON: f32 = 1e-4;
 
 fn dash_segment_mask(progress: f32, across: f32, dash: vec4<f32>) -> f32 {
@@ -155,7 +155,7 @@ fn dash_segment_mask(progress: f32, across: f32, dash: vec4<f32>) -> f32 {
     return clamp(signed_distance / max(width, 0.00001) + 0.5, 0.0, 1.0);
 }
 
-// ─── Perimeter progress for dash patterns on 2D shapes ───
+// --- Perimeter progress for dash patterns on 2D shapes ---
 
 /// Angular progress around center (for disc shapes).
 /// Measures the angle from center and normalizes to [0, 1] over a full circle (start=0, span=TAU).
@@ -171,7 +171,7 @@ fn angular_progress(uv: vec2<f32>) -> f32 {
 }
 
 /// Rectangle perimeter progress (for cuboid/rectangle shapes).
-/// Traces the actual perimeter centerline: right edge → top → left → bottom.
+/// Traces the actual perimeter centerline: right edge -> top -> left -> bottom.
 fn rectangle_perimeter_progress(uv: vec2<f32>) -> f32 {
     let p = uv * 2.0 - 1.0;  // Map UV to [-1, 1]
     let abs_p = abs(p);
@@ -186,7 +186,7 @@ fn rectangle_perimeter_progress(uv: vec2<f32>) -> f32 {
     let min_v = min(dist_top, dist_bottom);
     
     if (min_h < min_v) {
-        // Closer to left/right edge — progress varies with Y
+        // Closer to left/right edge - progress varies with Y
         if (dist_right < dist_left) {
             // Right edge: progress increases upward
             return fract(p.y * 0.5 + 0.75);
@@ -195,7 +195,7 @@ fn rectangle_perimeter_progress(uv: vec2<f32>) -> f32 {
             return fract(-p.y * 0.5 + 0.25);
         }
     } else {
-        // Closer to top/bottom edge — progress varies with X
+        // Closer to top/bottom edge - progress varies with X
         if (dist_top < dist_bottom) {
             // Top edge: progress increases rightward
             return fract(p.x * 0.5 + 0.5);
@@ -227,7 +227,7 @@ fn compute_across(uv: vec2<f32>, shape_type: f32) -> f32 {
         // Rectangle: distance from nearest edge, normalized to [-1, 1]
         let p = uv * 2.0 - 1.0;
         let dist_from_edge = min(abs(p.x), abs(p.y));
-        // Map: edge (dist=1) → +1, center (dist=0) → -1
+        // Map: edge (dist=1) -> +1, center (dist=0) -> -1
         return clamp(dist_from_edge * 2.0 - 1.0, -1.0, 1.0);
     }
     // Disc/Generic: radial distance from center
@@ -237,9 +237,9 @@ fn compute_across(uv: vec2<f32>, shape_type: f32) -> f32 {
 }
 
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// 2D fragment shader — unlit gradients for `Mesh2d`
-// ═══════════════════════════════════════════════════════════════════════════════
+// ===============================================================================
+// 2D fragment shader - unlit gradients for `Mesh2d`
+// ===============================================================================
 
 /// Material uniform: same layout as the 3D `GradMeshUniformBuffer`.
 ///   color / secondary_color: sRGB components + alpha

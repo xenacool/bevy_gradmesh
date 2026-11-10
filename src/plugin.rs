@@ -151,7 +151,7 @@ impl MeshCache {
         self.misses
     }
 
-    /// Returns the cache hit rate as a float (0.0–1.0).
+    /// Returns the cache hit rate as a float (0.0-1.0).
     pub fn hit_rate(&self) -> f64 {
         let total = self.hits + self.misses;
         if total == 0 {

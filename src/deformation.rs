@@ -92,7 +92,7 @@ impl DeformationParams {
     /// Uniform scale oscillation (breathing/pulsing effect).
     ///
     /// # Arguments
-    /// * `amplitude` - Scale oscillation magnitude (e.g., 0.1 = ±10% scale).
+    /// * `amplitude` - Scale oscillation magnitude (e.g., 0.1 = +/-10% scale).
     /// * `frequency` - Oscillations per second.
     /// * `phase` - Time offset in seconds.
     pub fn pulse(amplitude: f32, frequency: f32, phase: f32) -> Self {
@@ -236,7 +236,7 @@ mod tests {
 
     #[test]
     fn deformation_morph() {
-        let params = DeformationParams::morph(1.0, 0.5, 3.14);
+        let params = DeformationParams::morph(1.0, 0.5, std::f32::consts::PI);
         assert!(params.is_active());
         assert_eq!(params.r#type, DeformationType::Morph);
     }

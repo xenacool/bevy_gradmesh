@@ -226,7 +226,7 @@ impl SpecializedMeshPipeline for StandalonePipeline {
             array_stride: transform_stride + property_stride,
             step_mode: VertexStepMode::Instance,
             attributes: [
-                // InstanceTransform: 4×vec4 at locations 3-6
+                // InstanceTransform: 4xvec4 at locations 3-6
                 (3u32, 0u64, VertexFormat::Float32x4),
                 (
                     4u32,
@@ -243,7 +243,7 @@ impl SpecializedMeshPipeline for StandalonePipeline {
                     VertexFormat::Float32x4.size() * 3,
                     VertexFormat::Float32x4,
                 ),
-                // InstanceProperties: 7×vec4 at locations 7-13
+                // InstanceProperties: 7xvec4 at locations 7-13
                 (7u32, transform_stride, VertexFormat::Float32x4),
                 (
                     8u32,

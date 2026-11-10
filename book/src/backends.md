@@ -9,8 +9,8 @@ first (mobile or desktop, 2D or 3D), then by the number of shapes.
 | Material (`GradMeshMaterial`) | 3D | yes | full PBR | A few to a few hundred lit shapes, picking, shadows, height bands |
 | Instanced (`BatchRecorder`, `RetainedWorld`) | 3D | yes | PBR | Thousands of similar shapes, animated appearance |
 | Standalone (`StandaloneRenderPlugin`) | 3D | no | none | Mobile GPUs, flat-shaded crowds, anything that must avoid PBR |
-| Mesh2d gradient (`GradMeshMaterial2d`) | 2D | no | none | Any 2D shape that comes from `Shape::build_2d` (stars, polygons, outlines) |
-| SDF 2D (`SdfMaterial2d`) | 2D | no | none | Discs, ellipses and rounded rectangles with rims, arcs and dashes |
+| Mesh2d gradient (`GradMeshMaterial2d`) | 2D | no | none | Any 2D shape that comes from `Shape::build_2d` (polygons with holes, per-vertex colours, outlines) |
+| SDF 2D (`SdfMaterial2d`) | 2D | no | none | Discs, ellipses, rounded rectangles, polygons and stars with rims and arcs; dashes on rectangles and ellipses |
 
 ## Material
 
@@ -51,6 +51,10 @@ works, but each distinct parameter set is a distinct mesh.
 is needed. Radius, rim width, arc, gradient and dash are material floats: changing
 them creates no mesh and no pipeline.
 
+The SDF backend draws rectangles, ellipses, regular polygons (`polygon`), stars (`star`) and
+polygons from up to 16 points (`polygon_from_points`). Rings and wedges are a disc with a rim or
+an arc. Polygons with holes, polylines, Bézier curves and 3D solids need a mesh backend.
+
 ```rust
 # use bevy::prelude::*;
 # use bevy_gradmesh::{Dash2d, DashSnap, SdfMaterial2d, unit_quad};
@@ -79,8 +83,9 @@ Gradients: `with_colors` (linear, along `with_gradient_direction`),
 (mirrored, no seam) and `with_angular_sweep(start)` (one turn, hard seam). All of
 them blend in the chosen `MixSpace`.
 
-Dashes (`Dash2d`) apply to rims. Give a length and a gap in world units, or a
-count and a gap ratio. The snap mode decides how the pattern fits the outline:
+Dashes (`Dash2d`) apply to rims of rectangles and ellipses; polygons and stars draw a solid rim.
+Give a length and a gap in world units, or a count and a gap ratio. The snap mode decides how
+the pattern fits the outline:
 
 * `Off` keeps the pattern as given and cuts it where the outline starts and ends.
 * `Tiling` rounds the number of periods to a whole number and rescales the period,
@@ -93,7 +98,7 @@ rectangles and a partial arc. Two things to know: on an eccentric ellipse dashes
 are spaced by angle, not by arc length, and at a sharp rectangle corner the
 dashes meet in a mitre. `Transform` scale must be `SdfMaterial2d::quad_scale()`.
 
-*Discs, ellipses, rounded rectangles, rims and animated arcs on one shared quad. Run `cargo run --example sdf_2d` to reproduce it.*
+*Discs, ellipses, rounded rectangles, rims, animated arcs, polygons and stars on one shared quad. Run `cargo run --example sdf_2d` to reproduce it.*
 
 *Dashed rims compared across `Off`, `Tiling`, `EndToEnd` and count-based snap modes. Run `cargo run --example sdf_dash_gallery` to reproduce it.*
 
