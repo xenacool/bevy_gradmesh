@@ -293,7 +293,12 @@ fn arbitrary_polygon_colored() -> Shape {
     Shape::arbitrary_polygon_colored(vertices, colors, ShapeDetail::Medium)
 }
 ```
-Accepts any set of 2D vertices. Triangulated using ear-clipping algorithm. Supports optional per-vertex RGBA colors.
+Accepts any simple (non-self-crossing) outline, convex or concave, in either winding. It is triangulated by
+ear clipping and always faces +Z. Repeated points, the closing duplicate and collinear or near-collinear
+vertices are cleaned up, so a puzzle piece whose edges are split into many almost straight points, with
+knobs and blanks, can be one single polygon instead of several simpler ones. Outlines with no area give an
+empty mesh, and outlines that cross themselves have no well-defined fill. Supports optional per-vertex RGBA
+colors, which stay with their vertices.
 Use this form for outlines of more than 16 vertices, polygons with holes and per-vertex colours.
 
 ## Advanced Geometry

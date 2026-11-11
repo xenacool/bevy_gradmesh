@@ -1,6 +1,6 @@
 [package]
 name = "bevy_gradmesh"
-version = "0.3.6"
+version = "0.3.7"
 authors = ["Jessica Collins (https://github.com/xenacool)"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
@@ -40,12 +40,13 @@ pbr = ["bevy/bevy_pbr"]
 bevy = { version = "0.20", default-features = false, features = ["bevy_render", "bevy_sprite_render", "bevy_log"] }
 bevy_asset = "0.20"
 bevy_material = "0.20"
-bytemuck = "1.21"
+bytemuck = "1.25"
 
 # Examples need UI, text, the default font, debug overlays, tonemapping LUT textures and PNG
 # support, none of which the library requires. Bevy's default features cover all of them.
 [dev-dependencies]
 bevy = { version = "0.20", features = ["tonemapping_luts", "png"] }
+proptest = "1.12"
 
 # Examples marked `required-features = ["pbr"]` draw lit 3D shapes with `GradMeshMaterial` or the
 # instanced PBR pipeline, so Cargo skips them when `pbr` is off. The rest build with
@@ -151,3 +152,7 @@ required-features = ["pbr"]
 name = "lerp"
 path = "examples/lerp.rs"
 required-features = ["pbr"]
+
+[[example]]
+name = "lerp_2d"
+path = "examples/lerp_2d.rs"

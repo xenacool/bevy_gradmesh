@@ -1550,6 +1550,10 @@ pub(crate) fn triangulate_with_holes(outer: &[Vec2], holes: &[&[Vec2]]) -> Trian
     Triangulation { points, source, indices }
 }
 
+/// Sine of the turn angle below which a vertex counts as collinear with its
+/// neighbours however long the edges are.
+const FLAT_SIN: f32 = 1e-6;
+
 /// Ear clipping for a counter-clockwise ring that may contain bridge
 /// duplicates.
 fn ear_clip(pts: &[Vec2]) -> Vec<u32> {
@@ -1567,46 +1571,92 @@ fn ear_clip(pts: &[Vec2]) -> Vec<u32> {
     let eps = 1e-7 * scale * scale;
 
     let mut idx: Vec<usize> = (0..n).collect();
+    let mut start = 0;
     while idx.len() > 3 {
         let len = idx.len();
-        let mut progressed = false;
-        for i in 0..len {
-            let (p, c, nx) = (idx[(i + len - 1) % len], idx[i], idx[(i + 1) % len]);
-            let (a, b, d) = (pts[p], pts[c], pts[nx]);
-            let cross = (b - a).perp_dot(d - b);
-            if cross.abs() <= eps {
-                // Zero-area spike or collinear vertex: drop without a triangle.
-                idx.remove(i);
-                progressed = true;
-                break;
-            }
-            if cross < 0.0 {
-                continue;
-            }
-            let blocked = idx.iter().any(|&j| {
-                if j == p || j == c || j == nx {
-                    return false;
+        let at = |i: usize| (idx[(i + len - 1) % len], idx[i], idx[(i + 1) % len]);
+        let crosses: Vec<f32> = (0..len)
+            .map(|i| {
+                let (p, c, nx) = at(i);
+                (pts[c] - pts[p]).perp_dot(pts[nx] - pts[c])
+            })
+            .collect();
+
+        // Zero-area spikes and (near-)collinear vertices carry no triangle; the
+        // tolerance follows the local edge lengths as well as the polygon size.
+        let flat = (0..len).find(|&i| {
+            let (p, c, nx) = at(i);
+            let local = (pts[c] - pts[p]).length() * (pts[nx] - pts[c]).length();
+            crosses[i].abs() <= eps.max(FLAT_SIN * local)
+        });
+        if let Some(i) = flat {
+            idx.remove(i);
+            continue;
+        }
+
+        // Only reflex vertices can end up inside an ear.
+        let reflex: Vec<usize> = (0..len).filter(|&i| crosses[i] < 0.0).collect();
+        // Blockers of the ear at `i`: exact boundary-inclusive when `relaxed`
+        // is false, strictly interior by more than `eps` when it is true.
+        let blockers = |i: usize, relaxed: bool, first_only: bool| -> usize {
+            let (p, _, nx) = at(i);
+            let (a, b, d) = (pts[p], pts[at(i).1], pts[nx]);
+            let mut count = 0;
+            for &r in &reflex {
+                if r == i || r == (i + 1) % len || r == (i + len - 1) % len {
+                    continue;
                 }
-                let q = pts[j];
+                let q = pts[idx[r]];
                 if same(q, a) || same(q, b) || same(q, d) {
-                    return false;
+                    continue;
                 }
                 let s = |u: Vec2, v: Vec2| (v - u).perp_dot(q - u);
-                s(a, b) >= -eps && s(b, d) >= -eps && s(d, a) >= -eps
+                let (s1, s2, s3) = (s(a, b), s(b, d), s(d, a));
+                let inside = if relaxed {
+                    s1 > eps && s2 > eps && s3 > eps
+                } else {
+                    s1 >= 0.0 && s2 >= 0.0 && s3 >= 0.0
+                };
+                if inside {
+                    count += 1;
+                    if first_only {
+                        break;
+                    }
+                }
+            }
+            count
+        };
+
+        // Ladder: a clean ear, then an ear blocked only by points on its
+        // boundary, then the convex vertex that cuts the fewest points. A fan
+        // across a non-convex remainder is never emitted.
+        let order = || (0..len).map(|k| (start + k) % len);
+        let ear = order()
+            .find(|&i| crosses[i] > 0.0 && blockers(i, false, true) == 0)
+            .or_else(|| order().find(|&i| crosses[i] > 0.0 && blockers(i, true, true) == 0))
+            .or_else(|| {
+                order()
+                    .filter(|&i| crosses[i] > 0.0)
+                    .min_by(|&x, &y| {
+                        blockers(x, true, false)
+                            .cmp(&blockers(y, true, false))
+                            .then(crosses[y].total_cmp(&crosses[x]))
+                    })
             });
-            if !blocked {
+        match ear {
+            Some(i) => {
+                let (p, c, nx) = at(i);
                 out.extend_from_slice(&[p as u32, c as u32, nx as u32]);
                 idx.remove(i);
-                progressed = true;
-                break;
+                start = i.saturating_sub(1);
             }
-        }
-        if !progressed {
-            // Degenerate input: fan the remainder rather than loop forever.
-            for k in 1..idx.len() - 1 {
-                out.extend_from_slice(&[idx[0] as u32, idx[k] as u32, idx[k + 1] as u32]);
+            None => {
+                // No convex vertex left: the remainder has no area to fill.
+                let i = (0..len)
+                    .min_by(|&x, &y| crosses[x].abs().total_cmp(&crosses[y].abs()))
+                    .unwrap_or(0);
+                idx.remove(i);
             }
-            return out;
         }
     }
     if idx.len() == 3 {
@@ -2025,8 +2075,209 @@ pub(crate) fn merge_meshes(parts: &[(Mesh, Transform, Option<Color>)]) -> Mesh {
     data.into_mesh(any_colors)
 }
 
+/// Outlines and checks shared by the triangulation regression tests.
+#[cfg(test)]
+pub(crate) mod test_support {
+    use super::*;
+
+    /// Splits every edge of the closed polyline `corners` into `pieces` almost
+    /// straight segments; interior points are nudged sideways by up to
+    /// `jitter` times the edge length.
+    pub fn subdivide(corners: &[Vec2], pieces: usize, jitter: f32) -> Vec<Vec2> {
+        let mut out = Vec::new();
+        for (e, &a) in corners.iter().enumerate() {
+            let b = corners[(e + 1) % corners.len()];
+            let d = b - a;
+            let perp = Vec2::new(d.y, -d.x).normalize_or_zero();
+            for k in 0..pieces {
+                let w = if k == 0 {
+                    0.0
+                } else {
+                    jitter * d.length() * (k as f32 * 12.9898 + e as f32 * 78.233).sin()
+                };
+                out.push(a + d * (k as f32 / pieces as f32) + perp * w);
+            }
+        }
+        out
+    }
+
+    /// One edge of a puzzle piece from `a` to `b`: a straight run of almost
+    /// collinear points, optionally with a knob (`knob = 1`, bulb on a neck
+    /// pointing out of the piece) or a blank (`knob = -1`, pointing in).
+    fn jigsaw_edge(a: Vec2, b: Vec2, knob: f32, pieces: usize, jitter: f32, seed: f32) -> Vec<Vec2> {
+        let d = b - a;
+        let len = d.length();
+        let dir = d / len;
+        let out = Vec2::new(dir.y, -dir.x);
+        let at = |t: f32, h: f32| a + dir * (t * len) + out * (h * len);
+        let mut pts = Vec::new();
+        let mut k = 0usize;
+        let mut run = |pts: &mut Vec<Vec2>, t0: f32, t1: f32| {
+            let n = ((pieces as f32 * (t1 - t0)).ceil() as usize).max(1);
+            for i in 0..n {
+                let h = if t0 == 0.0 && i == 0 {
+                    0.0
+                } else {
+                    jitter * (k as f32 * 12.9898 + seed * 78.233).sin()
+                };
+                k += 1;
+                pts.push(at(t0 + (t1 - t0) * i as f32 / n as f32, h));
+            }
+        };
+        if knob == 0.0 {
+            run(&mut pts, 0.0, 1.0);
+            return pts;
+        }
+        run(&mut pts, 0.0, 0.42);
+        pts.push(at(0.42, 0.0));
+        pts.push(at(0.42, knob * 0.055));
+        let (from, to) = (216.87f32.to_radians(), -36.87f32.to_radians());
+        for j in 0..=24 {
+            let ang = from + (to - from) * j as f32 / 24.0;
+            pts.push(at(0.5 + 0.1 * ang.cos(), knob * (0.17 + 0.1 * ang.sin())));
+        }
+        pts.push(at(0.58, knob * 0.055));
+        pts.push(at(0.58, 0.0));
+        run(&mut pts, 0.58, 1.0);
+        pts
+    }
+
+    /// Counter-clockwise puzzle piece, 100 units wide: flat bottom and left
+    /// edges, a knob on the right, a blank on top. Every edge is subdivided
+    /// into `pieces` almost collinear points.
+    pub fn jigsaw_piece(pieces: usize, jitter: f32) -> Vec<Vec2> {
+        let c = [
+            Vec2::new(0.0, 0.0),
+            Vec2::new(100.0, 0.0),
+            Vec2::new(100.0, 100.0),
+            Vec2::new(0.0, 100.0),
+        ];
+        let knobs = [0.0, 1.0, -1.0, 0.0];
+        (0..4)
+            .flat_map(|e| jigsaw_edge(c[e], c[(e + 1) % 4], knobs[e], pieces, jitter, e as f32))
+            .collect()
+    }
+
+    /// Counter-clockwise staircase with subdivided, jittered edges.
+    pub fn staircase(pieces: usize, jitter: f32) -> Vec<Vec2> {
+        let c: Vec<Vec2> = [
+            (0.0, 0.0),
+            (4.0, 0.0),
+            (4.0, 1.0),
+            (3.0, 1.0),
+            (3.0, 2.0),
+            (2.0, 2.0),
+            (2.0, 3.0),
+            (1.0, 3.0),
+            (1.0, 4.0),
+            (0.0, 4.0),
+        ]
+        .iter()
+        .map(|&(x, y)| Vec2::new(x, y))
+        .collect();
+        subdivide(&c, pieces, jitter)
+    }
+
+    /// Counter-clockwise comb with subdivided, jittered edges.
+    pub fn comb(pieces: usize, jitter: f32) -> Vec<Vec2> {
+        let c: Vec<Vec2> = [
+            (0.0, 0.0),
+            (7.0, 0.0),
+            (7.0, 2.0),
+            (6.0, 2.0),
+            (6.0, 1.0),
+            (5.0, 1.0),
+            (5.0, 2.0),
+            (4.0, 2.0),
+            (4.0, 1.0),
+            (3.0, 1.0),
+            (3.0, 2.0),
+            (2.0, 2.0),
+            (2.0, 1.0),
+            (1.0, 1.0),
+            (1.0, 2.0),
+            (0.0, 2.0),
+        ]
+        .iter()
+        .map(|&(x, y)| Vec2::new(x, y))
+        .collect();
+        subdivide(&c, pieces, jitter)
+    }
+
+    /// Asserts that `mesh` fills `outline` exactly: indices in range, every
+    /// triangle counter-clockwise, no triangle inside another, all inside the
+    /// outline and the summed area equal to the outline's area.
+    pub fn assert_faithful_fill(outline: &[Vec2], mesh: &Mesh) {
+        let pos = read_f32x3(mesh, Mesh::ATTRIBUTE_POSITION).unwrap();
+        let idx: Vec<u32> = match mesh.indices().expect("mesh has indices") {
+            Indices::U32(v) => v.clone(),
+            Indices::U16(v) => v.iter().map(|&i| u32::from(i)).collect(),
+        };
+        assert!(!idx.is_empty() && idx.len() % 3 == 0, "no triangles");
+        assert!(idx.iter().all(|&i| (i as usize) < pos.len()), "index out of range");
+        let tris: Vec<[Vec2; 3]> = idx
+            .chunks_exact(3)
+            .map(|t| [0, 1, 2].map(|k| pos[t[k] as usize].truncate()))
+            .collect();
+
+        let expected = signed_area(outline).abs() as f64;
+        let mut sum = 0.0f64;
+        for (i, t) in tris.iter().enumerate() {
+            let area = (t[1] - t[0]).perp_dot(t[2] - t[0]) * 0.5;
+            assert!(area > 0.0, "triangle {i} {t:?} is not counter-clockwise (area {area})");
+            sum += f64::from(area);
+        }
+        assert!(
+            (sum - expected).abs() <= 1e-4 * expected,
+            "triangle area {sum} differs from polygon area {expected}"
+        );
+
+        let outline: Vec<Vec2> = outline.to_vec();
+        // Slivers along near-collinear edges sit within float noise of the
+        // outline; anything further than this from it is a misplaced triangle.
+        let (lo, hi) = outline
+            .iter()
+            .fold((Vec2::splat(f32::MAX), Vec2::splat(f32::MIN)), |(l, h), p| (l.min(*p), h.max(*p)));
+        let edge_tol = 1e-4 * (hi - lo).max_element();
+        let boundary_distance = |p: Vec2, ring: &[Vec2]| -> f32 {
+            (0..ring.len())
+                .map(|k| {
+                    let (a, b) = (ring[k], ring[(k + 1) % ring.len()]);
+                    let ab = b - a;
+                    let t = if ab.length_squared() > 0.0 {
+                        ((p - a).dot(ab) / ab.length_squared()).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    p.distance(a + ab * t)
+                })
+                .fold(f32::MAX, f32::min)
+        };
+        for (i, t) in tris.iter().enumerate() {
+            let area = (t[1] - t[0]).perp_dot(t[2] - t[0]) * 0.5;
+            if f64::from(area) < 1e-6 * expected {
+                continue;
+            }
+            let centroid = (t[0] + t[1] + t[2]) / 3.0;
+            assert!(
+                point_in_ring(centroid, &outline) || boundary_distance(centroid, &outline) <= edge_tol,
+                "triangle {i} {t:?} (area {area}, polygon area {expected}) lies outside the outline"
+            );
+            for (j, u) in tris.iter().enumerate() {
+                if i == j {
+                    continue;
+                }
+                let s = |a: Vec2, b: Vec2| (b - a).perp_dot(centroid - a);
+                let inside = s(u[0], u[1]) > 0.0 && s(u[1], u[2]) > 0.0 && s(u[2], u[0]) > 0.0;
+                assert!(!inside, "triangle {i} overlaps triangle {j}");
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::test_support::*;
     use super::*;
 
     fn square(half: f32) -> Vec<Vec2> {
@@ -2092,6 +2343,91 @@ mod tests {
         let t = triangulate_with_holes(&outer, &[&h1, &h2]);
         let expected = signed_area(&outer) - 2.0 * 0.64;
         assert!((tri_area(&t.points, &t.indices) - expected).abs() < 1e-3);
+    }
+
+    #[test]
+    fn near_collinear_outlines_triangulate_exactly() {
+        for outline in [
+            jigsaw_piece(20, 1e-5),
+            jigsaw_piece(30, 1e-4),
+            staircase(15, 1e-5),
+            comb(12, 1e-5),
+        ] {
+            let mesh = polygon_mesh(&outline, None, &[], 0.0, 0.0, 1);
+            assert_faithful_fill(&outline, &mesh);
+        }
+    }
+
+    #[test]
+    fn near_collinear_stress_across_scales_and_jitter() {
+        for scale in [1e-2f32, 1.0, 1e3] {
+            for jitter in [0.0f32, 1e-6, 1e-5, 1e-4, 1e-3] {
+                for pieces in [3usize, 8, 20, 45] {
+                    let outlines = [
+                        jigsaw_piece(pieces, jitter),
+                        staircase(pieces, jitter),
+                        comb(pieces, jitter),
+                    ];
+                    for outline in outlines {
+                        let size = outline.iter().fold(0.0f32, |m, p| m.max(p.max_element()));
+                        let scaled: Vec<Vec2> = outline.iter().map(|p| *p * (scale / size)).collect();
+                        let mesh = polygon_mesh(&scaled, None, &[], 0.0, 0.0, 1);
+                        assert_faithful_fill(&scaled, &mesh);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Deterministic pseudo-random numbers in `0..1`.
+    fn lcg(state: &mut u64) -> f32 {
+        *state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        ((*state >> 40) as f32) / (1u64 << 24) as f32
+    }
+
+    #[test]
+    fn random_star_outlines_with_collinear_runs_fill_exactly() {
+        let mut state = 0x5eed_u64;
+        for case in 0..400 {
+            let corners = 3 + (lcg(&mut state) * 20.0) as usize;
+            let pieces = 1 + (lcg(&mut state) * 12.0) as usize;
+            let jitter = [0.0f32, 1e-6, 1e-5, 1e-4][case % 4];
+            let scale = [0.05f32, 1.0, 250.0][case % 3];
+            let mut angles: Vec<f32> = (0..corners).map(|_| lcg(&mut state) * TAU).collect();
+            angles.sort_by(f32::total_cmp);
+            angles.dedup_by(|a, b| (*a - *b).abs() < 0.05);
+            if angles.len() < 3 || angles.windows(2).any(|w| w[1] - w[0] > 3.0) {
+                continue;
+            }
+            if TAU - (angles[angles.len() - 1] - angles[0]) > 3.0 {
+                continue;
+            }
+            let hull: Vec<Vec2> = angles
+                .iter()
+                .map(|a| Vec2::from_angle(*a) * (0.15 + 0.85 * lcg(&mut state)) * scale)
+                .collect();
+            let outline = subdivide(&hull, pieces, jitter);
+            let mesh = polygon_mesh(&outline, None, &[], 0.0, 0.0, 1);
+            assert_faithful_fill(&outline, &mesh);
+        }
+    }
+
+    #[test]
+    fn thin_real_spike_is_kept() {
+        let outline: Vec<Vec2> = [
+            (0.0, 0.0),
+            (10.0, 0.0),
+            (10.0, 10.0),
+            (5.01, 10.0),
+            (5.0, 20.0),
+            (4.99, 10.0),
+            (0.0, 10.0),
+        ]
+        .iter()
+        .map(|&(x, y)| Vec2::new(x, y))
+        .collect();
+        let mesh = polygon_mesh(&outline, None, &[], 0.0, 0.0, 1);
+        assert_faithful_fill(&outline, &mesh);
     }
 
     #[test]
@@ -2299,5 +2635,261 @@ mod tests {
         assert!((pts[8] - Vec2::new(2.0, 0.0)).length() < 1e-6);
         assert!((pts[4] - Vec2::new(1.0, 1.0)).length() < 1e-6);
         assert!(bezier_2d_points(&[Vec2::ZERO], 4).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod proptest_tests {
+    use super::test_support::*;
+    use super::*;
+    use proptest::prelude::*;
+
+    /// Generates a simple star-shaped polygon: sorted angles from a center,
+    /// with random radii.  Always produces a non-self-intersecting outline.
+    fn star_polygon(vertices: usize, scale: f32) -> Vec<Vec2> {
+        let v = vertices.max(3);
+        let mut angles: Vec<f32> = (0..v).map(|i| i as f32 / v as f32 * std::f32::consts::TAU).collect();
+        // Add slight jitter to angles so they're not perfectly uniform.
+        for a in &mut angles {
+            *a += (*a * 7.31).sin() * 0.05;
+        }
+        angles.sort_by(f32::total_cmp);
+        angles.dedup_by(|a, b| (*a - *b).abs() < 0.02);
+        if angles.len() < 3 {
+            return vec![Vec2::ZERO, Vec2::X, Vec2::Y];
+        }
+        // Radii vary between 0.2 and 1.0 of scale, creating concave shapes.
+        angles.iter()
+            .map(|a| {
+                let r = (0.2 + 0.8 * (a * 13.7).sin().abs()) * scale;
+                Vec2::from_angle(*a) * r
+            })
+            .collect()
+    }
+
+    proptest! {
+        #[test]
+        /// Triangulation area matches the polygon's signed area.
+        fn triangulation_area_matches_shoelace(
+            vertices in 3usize..100,
+            scale in 0.01f32..1000.0f32,
+        ) {
+            let outline = star_polygon(vertices, scale);
+            if signed_area(&outline).abs() < 1e-10 {
+                return Ok(());
+            }
+            let mesh = polygon_mesh(&outline, None, &[], 0.0, 0.0, 1);
+            let pos = read_f32x3(&mesh, Mesh::ATTRIBUTE_POSITION);
+            if pos.is_none() || pos.as_ref().unwrap().is_empty() {
+                return Ok(());
+            }
+            let pos = pos.unwrap();
+            let idx = match mesh.indices() {
+                Some(Indices::U32(v)) => v.clone(),
+                Some(Indices::U16(v)) => v.iter().map(|&i| u32::from(i)).collect(),
+                None => return Ok(()),
+            };
+            let tri_area: f64 = idx.chunks_exact(3)
+                .map(|t| {
+                    let (a, b, c) = (pos[t[0] as usize], pos[t[1] as usize], pos[t[2] as usize]);
+                    f64::from((b.truncate() - a.truncate()).perp_dot(c.truncate() - a.truncate()) * 0.5)
+                })
+                .sum();
+            let expected = signed_area(&outline).abs() as f64;
+            prop_assert!(
+                (tri_area - expected).abs() <= 1e-3 * expected,
+                "area mismatch: triangles {} vs polygon {} ({} vertices, scale {})",
+                tri_area, expected, vertices, scale
+            );
+        }
+    }
+
+    proptest! {
+        #[test]
+        /// Reversing winding order produces the same triangulation area.
+        fn winding_reversal_preserves_area(
+            vertices in 3usize..60,
+            scale in 0.1f32..500.0f32,
+        ) {
+            let mut outline = star_polygon(vertices, scale);
+            if signed_area(&outline).abs() < 1e-10 {
+                return Ok(());
+            }
+            let mesh_ccw = polygon_mesh(&outline, None, &[], 0.0, 0.0, 1);
+            outline.reverse();
+            let mesh_cw = polygon_mesh(&outline, None, &[], 0.0, 0.0, 1);
+
+            let area = |m: &Mesh| -> Option<f64> {
+                let pos = read_f32x3(m, Mesh::ATTRIBUTE_POSITION)?;
+                if pos.is_empty() { return None; }
+                let idx = match m.indices() {
+                    Some(Indices::U32(v)) => v.clone(),
+                    Some(Indices::U16(v)) => v.iter().map(|&i| u32::from(i)).collect(),
+                    None => return None,
+                };
+                Some(idx.chunks_exact(3)
+                    .map(|t| {
+                        let (a, b, c) = (pos[t[0] as usize], pos[t[1] as usize], pos[t[2] as usize]);
+                        f64::from((b.truncate() - a.truncate()).perp_dot(c.truncate() - a.truncate()) * 0.5)
+                    })
+                    .sum())
+            };
+
+            let a1 = area(&mesh_ccw);
+            let a2 = area(&mesh_cw);
+            prop_assert!(
+                a1.is_some() && a2.is_some() && (a1.unwrap() - a2.unwrap()).abs() < 1e-6 * a1.unwrap().abs().max(1.0),
+                "winding reversal changed area: CCW {:?} vs CW {:?} ({} vertices)",
+                a1, a2, vertices
+            );
+        }
+    }
+
+    proptest! {
+        #[test]
+        /// All triangle indices are within bounds and triangles are CCW.
+        fn triangle_indices_valid_and_ccw(
+            vertices in 3usize..80,
+            scale in 0.01f32..1000.0f32,
+        ) {
+            let outline = star_polygon(vertices, scale);
+            if signed_area(&outline).abs() < 1e-10 {
+                return Ok(());
+            }
+            let mesh = polygon_mesh(&outline, None, &[], 0.0, 0.0, 1);
+            let pos = match read_f32x3(&mesh, Mesh::ATTRIBUTE_POSITION) {
+                Some(p) if !p.is_empty() => p,
+                _ => return Ok(()),
+            };
+            let idx = match mesh.indices() {
+                Some(Indices::U32(v)) => v.clone(),
+                Some(Indices::U16(v)) => v.iter().map(|&i| u32::from(i)).collect(),
+                None => return Ok(()),
+            };
+
+            let n = pos.len();
+            prop_assert!(idx.iter().all(|&i| (i as usize) < n),
+                "index out of range: {} vertices, max index {}", n, idx.iter().map(|&i| i as usize).fold(0, usize::max));
+
+            // All triangles must be CCW (positive area).
+            for (i, t) in idx.chunks_exact(3).enumerate() {
+                let (a, b, c) = (pos[t[0] as usize], pos[t[1] as usize], pos[t[2] as usize]);
+                let area = (b.truncate() - a.truncate()).perp_dot(c.truncate() - a.truncate()) * 0.5;
+                prop_assert!(area > 0.0,
+                    "triangle {} is not CCW (area {}): vertices {} scale {}",
+                    i, area, vertices, scale);
+            }
+        }
+    }
+
+    proptest! {
+        #[test]
+        /// Scaling a polygon scales triangulation area by the square of the factor.
+        fn scale_invariance_of_area(
+            vertices in 3usize..40,
+            base_scale in 0.1f32..10.0f32,
+            factor in 0.1f32..100.0f32,
+        ) {
+            let outline = star_polygon(vertices, base_scale);
+            if signed_area(&outline).abs() < 1e-10 {
+                return Ok(());
+            }
+            let scaled: Vec<Vec2> = outline.iter().map(|p| *p * factor).collect();
+
+            let area = |m: &Mesh| -> Option<f64> {
+                let pos = read_f32x3(m, Mesh::ATTRIBUTE_POSITION)?;
+                if pos.is_empty() { return None; }
+                let idx = match m.indices() {
+                    Some(Indices::U32(v)) => v.clone(),
+                    Some(Indices::U16(v)) => v.iter().map(|&i| u32::from(i)).collect(),
+                    None => return None,
+                };
+                Some(idx.chunks_exact(3)
+                    .map(|t| {
+                        let (a, b, c) = (pos[t[0] as usize], pos[t[1] as usize], pos[t[2] as usize]);
+                        f64::from((b.truncate() - a.truncate()).perp_dot(c.truncate() - a.truncate()) * 0.5)
+                    })
+                    .sum())
+            };
+
+            let a1 = area(&polygon_mesh(&outline, None, &[], 0.0, 0.0, 1));
+            let a2 = area(&polygon_mesh(&scaled, None, &[], 0.0, 0.0, 1));
+
+            // The actual check: a2 should equal a1 * factor^2
+            if let (Some(a1), Some(a2)) = (a1, a2) {
+                let expected = a1 * (factor as f64).powi(2);
+                prop_assert!(
+                    (a2 - expected).abs() <= 1e-3 * expected.max(1.0),
+                    "scale invariance: got {} expected {} (factor {})",
+                    a2, expected, factor
+                );
+            }
+        }
+    }
+
+    proptest! {
+        #[test]
+        /// Near-collinear subdivision of a star polygon still triangulates correctly.
+        fn near_collinear_subdivision_preserves_area(
+            vertices in 3usize..30,
+            pieces in 1usize..20,
+            jitter in 0.0f32..1e-3f32,
+            scale in 0.1f32..100.0f32,
+        ) {
+            let hull = star_polygon(vertices, scale);
+            if signed_area(&hull).abs() < 1e-10 {
+                return Ok(());
+            }
+            let outline = subdivide(&hull, pieces, jitter);
+            let mesh = polygon_mesh(&outline, None, &[], 0.0, 0.0, 1);
+            assert_faithful_fill(&outline, &mesh);
+        }
+    }
+
+    proptest! {
+        #[test]
+        /// Triangulation with a single hole subtracts the hole area.
+        fn hole_subtraction(
+            outer_vertices in 3usize..20,
+            outer_scale in 5.0f32..20.0f32,
+            hole_fraction in 0.05f32..0.15f32,
+        ) {
+            let outer = star_polygon(outer_vertices, outer_scale);
+            let outer_area = signed_area(&outer).abs();
+            if outer_area < 1e-6 {
+                return Ok(());
+            }
+            // Find the minimum distance from center to any vertex to ensure
+            // the hole is fully inside the outer polygon.
+            let center = outer.iter().fold(Vec2::ZERO, |s, p| s + p) / outer.len() as f32;
+            let min_dist = outer.iter()
+                .map(|p| (p - center).length())
+                .fold(f32::MAX, f32::min);
+            // Use a hole small enough to fit inside the inner radius.
+            let hole_radius = min_dist * hole_fraction;
+            let mut hole: Vec<Vec2> = (0..4)
+                .map(|i| {
+                    let a = i as f32 / 4.0 * std::f32::consts::TAU;
+                    center + Vec2::from_angle(a) * hole_radius
+                })
+                .collect();
+            hole.reverse(); // CW for hole
+
+            let t = triangulate_with_holes(&outer, &[&hole]);
+            let tri_area: f32 = t.indices.chunks_exact(3)
+                .map(|tri| {
+                    let (a, b, c) = (t.points[tri[0] as usize], t.points[tri[1] as usize], t.points[tri[2] as usize]);
+                    (b - a).perp_dot(c - a) * 0.5
+                })
+                .sum();
+            // Diamond with diagonal 2*r has area 2*r^2.
+            let hole_area = 2.0 * hole_radius * hole_radius;
+            let expected = outer_area - hole_area;
+            prop_assert!(
+                (tri_area - expected).abs() < 1e-2 * expected.abs().max(1.0),
+                "hole subtraction: got {} expected {} (outer {} hole {})",
+                tri_area, expected, outer_area, hole_area
+            );
+        }
     }
 }

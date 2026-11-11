@@ -40,9 +40,8 @@ fn setup(mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<GradMesh
 
 The `pbr` feature (on by default) enables the lit `GradMeshMaterial` and the instanced PBR pipeline.
 Disable it (`default-features = false`) for PBR-free builds: the `Mesh2d`, SDF 2D and standalone backends
-need no lights and no `StandardMaterial`. These examples run without `pbr`: `shapes`, `styles`,
-`mix_spaces`, `curves`, `polyline`, `composed_shapes`, `arbitrary_shapes`, `gradient_2d`, `sdf_2d`,
-`sdf_dash_gallery` and `standalone`; the rest need it.
+need no lights and no `StandardMaterial`. These examples run without `pbr`: `mix_spaces`, `curves`,
+`polyline`, `arbitrary_shapes`, `gradient_2d`, `sdf_2d`, `sdf_dash_gallery`, `lerp_2d` and `standalone`; the rest need it.
 
 ## Documentation
 
@@ -51,7 +50,7 @@ or the [API reference on docs.rs](https://docs.rs/bevy_gradmesh).
 
 ## Screenshots
 
-All example screenshots are packaged in a zip archive attached to each [GitHub Release](https://github.com/xenacool/bevy_gradmesh/releases). Download the latest `screenshots-v*.zip` for still PNGs and animated WebPs.
+All example screenshots are packaged in a zip archive attached to each [GitHub Release](https://github.com/xenacool/bevy_gradmesh/releases). Download the latest `screenshots-v*.zip` for still PNGs and animated GIFs.
 
 ### Examples
 
@@ -69,14 +68,16 @@ All example screenshots are packaged in a zip archive attached to each [GitHub R
 - `terrain` — Heightfield chunks with shared edge normals, relative height bands, and hole edges
 - `deformation` — Vertex shader animations: wobble, pulse, and morph effects
 - `appearance` — Per-instance colour animation: static, pulse, cycle, and gradient shift
+- `lerp` — Shape morphing: disc↔star, rect↔ring, polygon↔disc_rim, ring↔disc, disc_rim↔rect, and wedge↔disc
+- `lerp_2d` — SDF 2D parameter morphs: disc size, rect corners, ellipse rim, arc span, polygon sides, and star ratio
+- `composed_shapes` — Compound tower, wall, cobbles, torch, gem and heightfield terrain
 
 **PBR-free (run with `--no-default-features`):**
 
 - `mix_spaces` — The same gradient in each `MixSpace` (OKLAB, OKLCH, linear RGB, sRGB)
 - `curves` — Bezier curves of every degree and a 3D helix as smooth tubes
 - `polyline` — Flat 2D polylines with gradient colors, drawn as `Mesh2d`
-- `composed_shapes` — Compound tower, wall, cobbles, torch, gem and heightfield terrain
-- `arbitrary_shapes` — Custom polygons, stars, rings, wedges, and tapered cylinder profiles
+- `arbitrary_shapes` — Custom polygons, stars, rings, wedges, tapered cylinder profiles, and a jigsaw piece
 - `gradient_2d` — `Camera2d` and `Mesh2d` with gradient cards, a radial disc, a pulsing star, a dashed ring and a polygon with a hole
 - `sdf_2d` — One shared unit quad mesh: filled discs, ellipses, rounded rectangles, rims, animated partial arcs, radial and angular gradients
 - `sdf_dash_gallery` — Dashed rim outlines comparing `Off`, `Tiling`, `EndToEnd` and count-based snap modes
