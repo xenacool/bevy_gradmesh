@@ -109,7 +109,7 @@ impl AutoScreenshotPlugin {
     ///
     /// The clock is stepped by exactly `1 / ANIMATION_FPS` seconds per app tick, so one tick is
     /// one frame of the animation however slow the renderer or the PNG writer is. The frames
-    /// encode to an animated WebP that plays back at real speed (see `make screenshots`).
+    /// encode to an animated GIF that plays back at real speed (see `make screenshots`).
     #[allow(dead_code)]
     pub fn animation(mut self, seconds: f32) -> Self {
         self.animation_frames = Some(((seconds * ANIMATION_FPS).round() as u32).max(2));

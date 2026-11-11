@@ -7,7 +7,7 @@
 //!
 //! * The README no longer links individual images; it points to the release zip.
 //! * Every example in the Makefile has a corresponding screenshot file.
-//! * Every animated WebP has many frames: a single frame would be a screenshot with the wrong
+//! * Every animated GIF has many frames: a single frame would be a screenshot with the wrong
 //!   extension, and a capture that never advanced the animation would show the same frame
 //!   over and over.
 //!
@@ -59,31 +59,82 @@ fn has_local_screenshots() -> bool {
 }
 
 fn picture_of(example: &str, animated: bool) -> String {
-    format!("screenshots/screenshot_{example}.{}", if animated { "webp" } else { "png" })
+    format!("screenshots/screenshot_{example}.{}", if animated { "gif" } else { "png" })
 }
 
 fn is_png(bytes: &[u8]) -> bool {
     bytes.starts_with(b"\x89PNG\r\n\x1a\n")
 }
 
-fn is_webp(bytes: &[u8]) -> bool {
-    bytes.len() > 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP"
+fn is_gif(bytes: &[u8]) -> bool {
+    bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a")
 }
 
-/// Number of frames of an animated WebP, or `None` if it is not animated: the chunks of the
-/// RIFF container are walked and the `ANMF` (frame) chunks counted, after an `ANIM` chunk.
-fn webp_frames(bytes: &[u8]) -> Option<usize> {
-    let (mut at, mut animated, mut frames) = (12, false, 0);
-    while at + 8 <= bytes.len() {
-        let size = u32::from_le_bytes(bytes[at + 4..at + 8].try_into().unwrap()) as usize;
-        match &bytes[at..at + 4] {
-            b"ANIM" => animated = true,
-            b"ANMF" => frames += 1,
-            _ => {}
-        }
-        at += 8 + size + (size & 1);
+/// Number of frames of an animated GIF, or `None` if it is not animated: the number of
+/// Graphic Control Extension blocks (0x21 0xF9) plus the initial image.
+fn gif_frames(bytes: &[u8]) -> Option<usize> {
+    if !is_gif(bytes) {
+        return None;
     }
-    animated.then_some(frames)
+    let mut frames = 1;
+    let mut at = 6; // skip GIF header
+    // Skip logical screen descriptor (7 bytes)
+    if at + 7 > bytes.len() {
+        return Some(frames);
+    }
+    at += 7;
+    // Skip global color table if present
+    if at < bytes.len() {
+        let packed = bytes[at];
+        let gct_flag = (packed & 0x80) != 0;
+        if gct_flag {
+            let gct_size = ((packed & 0x07) + 1) as u32;
+            at += 1 + (3 * (1 << gct_size)) as usize;
+        } else {
+            at += 1;
+        }
+    }
+    // Scan for blocks
+    while at + 1 <= bytes.len() {
+        if bytes[at] == 0x2C { 
+            // Image descriptor: skip to next block
+            at += 1;
+            if at + 9 > bytes.len() { break; }
+            at += 9; // image descriptor fields
+            // Skip image data (LZW min code size + data)
+            if at >= bytes.len() { break; }
+            at += 1; // LZW min code size
+            loop {
+                if at >= bytes.len() { break; }
+                let block_size = bytes[at] as usize;
+                at += 1 + block_size;
+                if block_size == 0 { break; }
+            }
+        } else if bytes[at] == 0x21 { 
+            // Extension
+            at += 1;
+            if at >= bytes.len() { break; }
+            let ext_label = bytes[at];
+            at += 1;
+            if ext_label == 0xF9 {
+                // Graphic Control Extension = new frame
+                frames += 1;
+            }
+            // Skip extension blocks
+            loop {
+                if at >= bytes.len() { break; }
+                let block_size = bytes[at] as usize;
+                at += 1 + block_size;
+                if block_size == 0 { break; }
+            }
+        } else if bytes[at] == 0x3B { 
+            // Trailer
+            break;
+        } else {
+            break;
+        }
+    }
+    Some(frames)
 }
 
 #[test]
@@ -134,7 +185,7 @@ fn the_examples_in_the_makefile_exist_and_are_built() {
 }
 
 #[test]
-fn animations_are_animated_webps_with_many_frames() {
+fn animations_are_animated_gifs_with_many_frames() {
     // Skip on fresh clones where screenshots/ is not populated.
     if !has_local_screenshots() {
         return;
@@ -146,8 +197,8 @@ fn animations_are_animated_webps_with_many_frames() {
             continue;
         }
         let bytes = fs::read(&full).unwrap_or_else(|e| panic!("{path}: {e}"));
-        assert!(is_webp(&bytes), "{path} is not a WebP");
-        let frames = webp_frames(&bytes).unwrap_or_else(|| panic!("{path} is a still WebP, not an animation"));
+        assert!(is_gif(&bytes), "{path} is not a GIF");
+        let frames = gif_frames(&bytes).unwrap_or_else(|| panic!("{path} is a still GIF, not an animation"));
         assert!(frames >= 30, "{path} has only {frames} frames, a second of animation is 30");
     }
 }

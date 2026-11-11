@@ -1813,3 +1813,228 @@ mod height_band_tests {
         assert!(empty.heights[..3].iter().all(|h| h.is_finite()));
     }
 }
+
+#[cfg(test)]
+mod proptest_tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// Two colours are close enough to be considered equal after a colour-space round-trip.
+    fn color_close(a: &Color, b: &Color) -> bool {
+        let (a, b) = (a.to_srgba(), b.to_srgba());
+        (a.red - b.red).abs() < 1e-3
+            && (a.green - b.green).abs() < 1e-3
+            && (a.blue - b.blue).abs() < 1e-3
+            && (a.alpha - b.alpha).abs() < 1e-3
+    }
+
+    /// Generate a random sRGB colour component in [0, 1].
+    fn color_component() -> impl Strategy<Value = f32> {
+        (0.0f32..=1.0f32).prop_map(|v| v)
+    }
+
+    /// Generate a random sRGB colour.
+    fn random_color() -> impl Strategy<Value = Color> {
+        (
+            color_component(),
+            color_component(),
+            color_component(),
+            color_component(),
+        )
+            .prop_map(|(r, g, b, a)| Color::srgba(r, g, b, a))
+    }
+
+    /// Generate a random unit direction vector.
+    fn random_direction() -> impl Strategy<Value = Vec3> {
+        (0.0f32..=std::f32::consts::TAU, 0.0f32..=std::f32::consts::PI)
+            .prop_map(|(theta, phi)| {
+                let sin_phi = phi.sin();
+                Vec3::new(sin_phi * theta.cos(), phi.sin(), sin_phi * theta.sin())
+                    .normalize_or(Vec3::Y)
+            })
+    }
+
+    /// Generate a simple random style (opaque or dual_directional).
+    fn random_style() -> impl Strategy<Value = Style> {
+        prop_oneof![
+            // Opaque style
+            2 => (random_color(), random_direction())
+                .prop_map(|(color, direction)| {
+                    Style::opaque(color).with_direction(direction)
+                }),
+            // Dual directional style
+            2 => (random_color(), random_color(), random_direction())
+                .prop_map(|(dark, light, direction)| {
+                    Style::dual_directional(dark, light, direction)
+                }),
+        ]
+    }
+
+    proptest! {
+        #[test]
+        /// Lens law 1: lerp at t=0 returns self (colours may differ slightly due to colour-space round-trip).
+        fn lerp_t0_is_self(
+            a in random_style(),
+            b in random_style(),
+        ) {
+            let result = a.lerp(&b, 0.0);
+
+            // Colours may shift slightly due to colour-space conversion
+            prop_assert!(color_close(&result.color, &a.color),
+                "color mismatch at t=0: {:?} vs {:?}", result.color, a.color);
+
+            // Secondary colour: lerp always creates Some when either endpoint has it,
+            // but the colour value at t=0 should match a's colour (or a.color if a has None).
+            if let Some(ref r) = result.secondary_color {
+                let expected = a.secondary_color.unwrap_or(a.color);
+                prop_assert!(color_close(r, &expected),
+                    "secondary_color value mismatch at t=0: {:?} vs {:?}", r, expected);
+            }
+
+            // Discrete fields must match exactly
+            prop_assert_eq!(result.blend_mode, a.blend_mode, "blend_mode mismatch at t=0");
+            prop_assert_eq!(result.color_mode, a.color_mode, "color_mode mismatch at t=0");
+            prop_assert_eq!(result.direction_space, a.direction_space, "direction_space mismatch at t=0");
+            prop_assert_eq!(result.space, a.space, "space mismatch at t=0");
+            prop_assert_eq!(result.shape_type, a.shape_type, "shape_type mismatch at t=0");
+
+            // Continuous fields
+            prop_assert!((result.direction - a.direction).length() < 1e-5,
+                "direction mismatch at t=0: {:?} vs {:?}", result.direction, a.direction);
+            prop_assert!((result.metallic - a.metallic).abs() < 1e-6,
+                "metallic mismatch at t=0");
+
+            // Optional fields
+            prop_assert_eq!(result.perceptual_roughness, a.perceptual_roughness,
+                "perceptual_roughness mismatch at t=0");
+            prop_assert_eq!(result.dash, a.dash, "dash mismatch at t=0");
+            prop_assert_eq!(result.noise, a.noise, "noise mismatch at t=0");
+            prop_assert_eq!(result.stripes, a.stripes, "stripes mismatch at t=0");
+            prop_assert_eq!(result.rim, a.rim, "rim mismatch at t=0");
+            prop_assert_eq!(result.height_bands, a.height_bands, "height_bands mismatch at t=0");
+        }
+    }
+
+    proptest! {
+        #[test]
+        /// Lens law 2: lerp at t=1 returns other (except space stays self.space).
+        fn lerp_t1_is_other(
+            a in random_style(),
+            b in random_style(),
+        ) {
+            let result = a.lerp(&b, 1.0);
+
+            // Colours may shift slightly
+            prop_assert!(color_close(&result.color, &b.color),
+                "color mismatch at t=1: {:?} vs {:?}", result.color, b.color);
+
+            // Secondary colour: lerp always creates Some when either endpoint has it,
+            // but the colour value at t=1 should match b's colour (or b.color if b has None).
+            if let Some(ref r) = result.secondary_color {
+                let expected = b.secondary_color.unwrap_or(b.color);
+                prop_assert!(color_close(r, &expected),
+                    "secondary_color value mismatch at t=1: {:?} vs {:?}", r, expected);
+            }
+
+            // Discrete fields follow other
+            prop_assert_eq!(result.blend_mode, b.blend_mode, "blend_mode mismatch at t=1");
+            prop_assert_eq!(result.color_mode, b.color_mode, "color_mode mismatch at t=1");
+            prop_assert_eq!(result.direction_space, b.direction_space, "direction_space mismatch at t=1");
+            prop_assert_eq!(result.shape_type, b.shape_type, "shape_type mismatch at t=1");
+
+            // Space always stays self.space (documented behaviour)
+            prop_assert_eq!(result.space, a.space, "space should stay self.space at t=1");
+
+            // Continuous fields
+            prop_assert!((result.direction - b.direction).length() < 1e-5,
+                "direction mismatch at t=1");
+            prop_assert!((result.metallic - b.metallic).abs() < 1e-6,
+                "metallic mismatch at t=1");
+
+            // Optional fields
+            prop_assert_eq!(result.perceptual_roughness, b.perceptual_roughness,
+                "perceptual_roughness mismatch at t=1");
+            prop_assert_eq!(result.dash, b.dash, "dash mismatch at t=1");
+            prop_assert_eq!(result.noise, b.noise, "noise mismatch at t=1");
+            prop_assert_eq!(result.stripes, b.stripes, "stripes mismatch at t=1");
+            prop_assert_eq!(result.rim, b.rim, "rim mismatch at t=1");
+            prop_assert_eq!(result.height_bands, b.height_bands, "height_bands mismatch at t=1");
+        }
+    }
+
+    proptest! {
+        #[test]
+        /// Symmetry: a.lerp(b, t) and b.lerp(a, 1-t) produce equivalent continuous values.
+        fn lerp_symmetry(
+            a in random_style(),
+            b in random_style(),
+            t in 0.0f32..=1.0f32,
+        ) {
+            let ab = a.lerp(&b, t);
+            let ba = b.lerp(&a, 1.0 - t);
+
+            // Colours should be close
+            prop_assert!(color_close(&ab.color, &ba.color),
+                "color asymmetry at t={}: {:?} vs {:?}", t, ab.color, ba.color);
+
+            // Direction should be close (both normalized)
+            prop_assert!((ab.direction - ba.direction).length() < 1e-4,
+                "direction asymmetry at t={}", t);
+
+            // Metallic should match
+            prop_assert!((ab.metallic - ba.metallic).abs() < 1e-6,
+                "metallic asymmetry at t={}", t);
+        }
+    }
+
+    proptest! {
+        #[test]
+        /// Direction is always normalized after lerp.
+        fn lerp_direction_normalized(
+            a in random_style(),
+            b in random_style(),
+            t in 0.0f32..=1.0f32,
+        ) {
+            let result = a.lerp(&b, t);
+            let len = result.direction.length();
+            prop_assert!((len - 1.0).abs() < 1e-5,
+                "direction not normalized: length={} at t={}", len, t);
+        }
+    }
+
+    proptest! {
+        #[test]
+        /// Metallic stays in [0, 1] after lerp.
+        fn lerp_metallic_in_range(
+            a in random_style(),
+            b in random_style(),
+            t in 0.0f32..=1.0f32,
+        ) {
+            let result = a.lerp(&b, t);
+            prop_assert!(result.metallic >= 0.0 && result.metallic <= 1.0,
+                "metallic out of range: {} at t={}", result.metallic, t);
+        }
+    }
+
+    proptest! {
+        #[test]
+        /// Perceptual roughness, when present, stays in [0, 1].
+        fn lerp_roughness_in_range(
+            a_color in random_color(),
+            a_dir in random_direction(),
+            a_rough in 0.0f32..=1.0f32,
+            b_color in random_color(),
+            b_dir in random_direction(),
+            b_rough in 0.0f32..=1.0f32,
+            t in 0.0f32..=1.0f32,
+        ) {
+            let a = Style::opaque(a_color).with_direction(a_dir).with_perceptual_roughness(a_rough);
+            let b = Style::opaque(b_color).with_direction(b_dir).with_perceptual_roughness(b_rough);
+            let result = a.lerp(&b, t);
+            if let Some(r) = result.perceptual_roughness {
+                prop_assert!(r >= 0.0 && r <= 1.0,
+                    "roughness out of range: {} at t={}", r, t);
+            }
+        }
+    }
+}

@@ -51,7 +51,7 @@ or the [API reference on docs.rs](https://docs.rs/bevy_gradmesh).
 
 ## Screenshots
 
-All example screenshots are packaged in a zip archive attached to each [GitHub Release](https://github.com/xenacool/bevy_gradmesh/releases). Download the latest `screenshots-v*.zip` for still PNGs and animated WebPs.
+All example screenshots are packaged in a zip archive attached to each [GitHub Release](https://github.com/xenacool/bevy_gradmesh/releases). Download the latest `screenshots-v*.zip` for still PNGs and animated GIFs.
 
 ### Examples
 
@@ -69,6 +69,7 @@ All example screenshots are packaged in a zip archive attached to each [GitHub R
 - `terrain` — Heightfield chunks with shared edge normals, relative height bands, and hole edges
 - `deformation` — Vertex shader animations: wobble, pulse, and morph effects
 - `appearance` — Per-instance colour animation: static, pulse, cycle, and gradient shift
+- `lerp` — Shape morphing: disc↔star, rect↔ring, polygon↔rim, ring↔disc, and wedge↔disc
 
 **PBR-free (run with `--no-default-features`):**
 

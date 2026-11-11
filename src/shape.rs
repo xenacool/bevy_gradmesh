@@ -2106,8 +2106,13 @@ impl Shape {
 
     /// Creates an arbitrary polygon from a list of 2D vertices.
     ///
-    /// The polygon is triangulated using ear-clipping. Vertices should be
-    /// ordered counter-clockwise for correct winding.
+    /// The polygon is triangulated using ear-clipping and always faces +Z.
+    /// Either winding is accepted, and repeated points, the closing duplicate
+    /// and collinear or near-collinear vertices (an edge subdivided into many
+    /// almost straight points) are cleaned up, so a concave outline such as a
+    /// jigsaw piece with knobs and blanks can be one single polygon. Outlines
+    /// that cross themselves have no well-defined fill; they still produce a
+    /// mesh, but not a meaningful one. Outlines with no area give an empty mesh.
     ///
     /// # Arguments
     /// * `vertices` - List of 2D vertex positions (minimum 3 vertices).
@@ -2842,7 +2847,7 @@ impl Shape {
                 build_ellipse_rim(*radius, *rim_width, self.detail)
             }
             ShapeKind::ArbitraryPolygon { vertices, colors } => {
-                build_arbitrary_polygon(vertices.clone(), colors.clone())
+                geometry::polygon_mesh(vertices, colors.as_deref(), &[], 0.0, 0.0, 1)
             }
             ShapeKind::Polyline3D {
                 points,
@@ -4411,187 +4416,6 @@ fn build_ellipse_rim(radius: Vec2, rim_width: f32, detail: ShapeDetail) -> Mesh 
     }
 
     build_mesh(vertices, normals, uvs, indices)
-}
-
-/// Build an arbitrary polygon mesh using ear-clipping triangulation.
-fn build_arbitrary_polygon(vertices: Vec<Vec2>, colors: Option<Vec<[f32; 4]>>) -> Mesh {
-    // Need at least 3 vertices for a polygon
-    if vertices.len() < 3 {
-        // Return an empty mesh
-        let mut mesh = Mesh::new(
-            PrimitiveTopology::TriangleList,
-            RenderAssetUsages::default(),
-        );
-        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, Vec::<Vec3>::new());
-        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, Vec::<Vec3>::new());
-        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, Vec::<Vec2>::new());
-        return mesh;
-    }
-
-    let n = vertices.len();
-
-    // Triangulate using ear-clipping
-    let indices = ear_clip_triangulate(&vertices);
-
-    // Build 3D vertices (flat on Z=0 plane)
-    let mut positions = Vec::with_capacity(n);
-    let mut normals = Vec::with_capacity(n);
-    let mut uvs = Vec::with_capacity(n);
-
-    // Compute bounding box for UV mapping
-    let mut min_x = f32::INFINITY;
-    let mut min_y = f32::INFINITY;
-    let mut max_x = f32::NEG_INFINITY;
-    let mut max_y = f32::NEG_INFINITY;
-    for v in &vertices {
-        if v.x < min_x {
-            min_x = v.x;
-        }
-        if v.y < min_y {
-            min_y = v.y;
-        }
-        if v.x > max_x {
-            max_x = v.x;
-        }
-        if v.y > max_y {
-            max_y = v.y;
-        }
-    }
-    let width = (max_x - min_x).max(0.001);
-    let height = (max_y - min_y).max(0.001);
-
-    for v in &vertices {
-        positions.push(Vec3::new(v.x, v.y, 0.0));
-        normals.push(Vec3::Z);
-        uvs.push(Vec2::new((v.x - min_x) / width, (v.y - min_y) / height));
-    }
-
-    let mut mesh = Mesh::new(
-        PrimitiveTopology::TriangleList,
-        RenderAssetUsages::default(),
-    );
-    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
-    mesh.insert_indices(bevy::render::mesh::Indices::U32(indices));
-
-    // Store per-vertex colors if provided
-    if let Some(colors) = colors {
-        mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
-    }
-
-    mesh
-}
-
-/// Ear-clipping triangulation for simple 2D polygons.
-/// Returns triangle indices into the vertex array.
-fn ear_clip_triangulate(vertices: &[Vec2]) -> Vec<u32> {
-    let n = vertices.len();
-    if n < 3 {
-        return Vec::new();
-    }
-
-    // Working copy of vertex indices
-    let mut indices: Vec<usize> = (0..n).collect();
-
-    let mut triangles = Vec::new();
-    let mut ear_count = 0; // Safety counter to avoid infinite loops
-
-    while indices.len() > 3 {
-        ear_count += 1;
-        if ear_count > n * n {
-            // Degenerate polygon; fallback to fan triangulation
-            break;
-        }
-
-        let len = indices.len();
-        let mut found_ear = false;
-
-        for i in 0..len {
-            let prev = indices[(i + len - 1) % len];
-            let curr = indices[i];
-            let next = indices[(i + 1) % len];
-
-            if is_ear(vertices, prev, curr, next, &indices) {
-                // This is an ear - add triangle and remove the ear tip
-                triangles.push(prev as u32);
-                triangles.push(curr as u32);
-                triangles.push(next as u32);
-                indices.remove(i);
-                found_ear = true;
-                break;
-            }
-        }
-
-        if !found_ear {
-            // No ear found - degenerate polygon; fallback to fan
-            break;
-        }
-    }
-
-    // Add the final triangle
-    if indices.len() == 3 {
-        triangles.push(indices[0] as u32);
-        triangles.push(indices[1] as u32);
-        triangles.push(indices[2] as u32);
-    } else if indices.len() > 3 {
-        // Fallback: fan triangulation from first vertex
-        let first = indices[0];
-        for i in 1..indices.len() - 1 {
-            triangles.push(first as u32);
-            triangles.push(indices[i] as u32);
-            triangles.push(indices[i + 1] as u32);
-        }
-    }
-
-    triangles
-}
-
-/// Check if vertex `curr` forms an "ear" in the polygon.
-fn is_ear(vertices: &[Vec2], prev: usize, curr: usize, next: usize, all_indices: &[usize]) -> bool {
-    let p = vertices[prev];
-    let q = vertices[curr];
-    let r = vertices[next];
-
-    // Check that the triangle is convex (left turn for CCW polygon)
-    let cross = cross_product_2d(p, q, r);
-    if cross <= 0.0 {
-        return false;
-    }
-
-    // Check that no other vertex is inside the ear triangle
-    for &idx in all_indices {
-        if idx == prev || idx == curr || idx == next {
-            continue;
-        }
-        let s = vertices[idx];
-        if point_in_triangle(s, p, q, r) {
-            return false;
-        }
-    }
-
-    true
-}
-
-/// 2D cross product of vectors (q-p) and (r-q).
-fn cross_product_2d(p: Vec2, q: Vec2, r: Vec2) -> f32 {
-    (q.x - p.x) * (r.y - q.y) - (q.y - p.y) * (r.x - q.x)
-}
-
-/// Check if point p is inside triangle (a, b, c).
-fn point_in_triangle(p: Vec2, a: Vec2, b: Vec2, c: Vec2) -> bool {
-    let d1 = sign(p, a, b);
-    let d2 = sign(p, b, c);
-    let d3 = sign(p, c, a);
-
-    let has_neg = (d1 < 0.0) || (d2 < 0.0) || (d3 < 0.0);
-    let has_pos = (d1 > 0.0) || (d2 > 0.0) || (d3 > 0.0);
-
-    !(has_neg && has_pos)
-}
-
-fn sign(p1: Vec2, p2: Vec2, p3: Vec2) -> f32 {
-    (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y)
 }
 
 fn build_mesh(vertices: Vec<Vec3>, normals: Vec<Vec3>, uvs: Vec<Vec2>, indices: Vec<u32>) -> Mesh {
@@ -6675,53 +6499,190 @@ mod tests {
         );
     }
 
+    fn polygon_mesh_of(outline: &[Vec2]) -> Mesh {
+        Shape::arbitrary_polygon(outline.to_vec(), ShapeDetail::Medium).build()
+    }
+
+    fn near_collinear_outlines() -> Vec<Vec<Vec2>> {
+        use crate::geometry::test_support::*;
+        vec![
+            jigsaw_piece(20, 1e-5),
+            jigsaw_piece(30, 1e-4),
+            staircase(15, 1e-5),
+            comb(12, 1e-5),
+        ]
+    }
+
     #[test]
-    fn ear_clip_triangulate_convex() {
-        // Square: 4 vertices -> 2 triangles
-        let vertices = vec![
+    fn arbitrary_polygon_jigsaw_piece_is_one_faithful_polygon() {
+        use crate::geometry::test_support::*;
+        let outline = jigsaw_piece(20, 1e-5);
+        assert!(outline.len() > 100);
+        assert_faithful_fill(&outline, &polygon_mesh_of(&outline));
+    }
+
+    #[test]
+    fn arbitrary_polygon_near_collinear_outlines_fill_exactly() {
+        use crate::geometry::test_support::assert_faithful_fill;
+        for outline in near_collinear_outlines() {
+            assert_faithful_fill(&outline, &polygon_mesh_of(&outline));
+        }
+    }
+
+    #[test]
+    fn arbitrary_polygon_clockwise_matches_counter_clockwise() {
+        use crate::geometry::test_support::assert_faithful_fill;
+        for mut outline in near_collinear_outlines() {
+            outline.reverse();
+            assert_faithful_fill(&outline, &polygon_mesh_of(&outline));
+        }
+        let mut l_shape = vec![
+            Vec2::new(0.0, 0.0),
+            Vec2::new(2.0, 0.0),
+            Vec2::new(2.0, 1.0),
+            Vec2::new(1.0, 1.0),
+            Vec2::new(1.0, 2.0),
+            Vec2::new(0.0, 2.0),
+        ];
+        l_shape.reverse();
+        assert_faithful_fill(&l_shape, &polygon_mesh_of(&l_shape));
+    }
+
+    #[test]
+    fn arbitrary_polygon_start_vertex_does_not_matter() {
+        use crate::geometry::test_support::*;
+        let outline = jigsaw_piece(20, 1e-5);
+        for shift in [1, 7, 33, outline.len() / 2, outline.len() - 1] {
+            let mut rotated = outline.clone();
+            rotated.rotate_left(shift);
+            assert_faithful_fill(&rotated, &polygon_mesh_of(&rotated));
+        }
+    }
+
+    #[test]
+    fn arbitrary_polygon_ignores_closing_and_repeated_points() {
+        use crate::geometry::test_support::*;
+        let outline = jigsaw_piece(20, 1e-5);
+        let mut messy = Vec::new();
+        for (i, p) in outline.iter().enumerate() {
+            messy.push(*p);
+            if i % 9 == 0 {
+                messy.push(*p);
+            }
+        }
+        messy.push(outline[0]);
+        assert_faithful_fill(&outline, &polygon_mesh_of(&messy));
+    }
+
+    #[test]
+    fn arbitrary_polygon_touching_itself_at_a_vertex() {
+        use crate::geometry::test_support::assert_faithful_fill;
+        // Two triangles joined at (1, 1).
+        let pinched = vec![
+            Vec2::new(0.0, 0.0),
+            Vec2::new(2.0, 0.0),
+            Vec2::new(1.0, 1.0),
+            Vec2::new(2.0, 2.0),
+            Vec2::new(0.0, 2.0),
+            Vec2::new(1.0, 1.0),
+        ];
+        assert_faithful_fill(&pinched, &polygon_mesh_of(&pinched));
+    }
+
+    #[test]
+    fn arbitrary_polygon_all_collinear_is_empty() {
+        let line: Vec<Vec2> = (0..12).map(|i| Vec2::new(i as f32, i as f32 * 0.5)).collect();
+        let mesh = polygon_mesh_of(&line);
+        assert_eq!(mesh.count_vertices(), 0);
+    }
+
+    #[test]
+    fn arbitrary_polygon_bow_tie_terminates() {
+        let bow_tie = vec![
+            Vec2::new(0.0, 0.0),
+            Vec2::new(2.0, 2.0),
+            Vec2::new(2.0, 0.0),
+            Vec2::new(0.0, 2.0),
+        ];
+        let mesh = polygon_mesh_of(&bow_tie);
+        let n = mesh.count_vertices() as u32;
+        if let Some(bevy::render::mesh::Indices::U32(idx)) = mesh.indices() {
+            assert!(idx.iter().all(|&i| i < n));
+        }
+    }
+
+    #[test]
+    fn arbitrary_polygon_colors_stay_with_their_vertices() {
+        use crate::geometry::test_support::*;
+        let color_of = |p: Vec2| [p.x / 100.0, p.y / 100.0, 0.5, 1.0];
+        for reverse in [false, true] {
+            let mut outline = jigsaw_piece(20, 1e-5);
+            if reverse {
+                outline.reverse();
+            }
+            let colors: Vec<[f32; 4]> = outline.iter().map(|&p| color_of(p)).collect();
+            let mesh = Shape::arbitrary_polygon_colored(
+                outline.clone(),
+                colors,
+                ShapeDetail::Medium,
+            )
+            .build();
+            assert_faithful_fill(&outline, &mesh);
+            let pos = match mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
+                Some(bevy::mesh::VertexAttributeValues::Float32x3(v)) => v.clone(),
+                _ => panic!("positions"),
+            };
+            let cols = match mesh.attribute(Mesh::ATTRIBUTE_COLOR) {
+                Some(bevy::mesh::VertexAttributeValues::Float32x4(v)) => v.clone(),
+                _ => panic!("Should have color attribute"),
+            };
+            assert_eq!(cols.len(), pos.len());
+            for (p, c) in pos.iter().zip(&cols) {
+                let want = color_of(Vec2::new(p[0], p[1]));
+                assert!((0..4).all(|k| (c[k] - want[k]).abs() < 1e-6), "colour moved off its vertex");
+            }
+        }
+    }
+
+    #[test]
+    fn arbitrary_polygon_uvs_are_bounding_box_normalised() {
+        use crate::geometry::test_support::jigsaw_piece;
+        let outline = jigsaw_piece(20, 1e-5);
+        let mesh = polygon_mesh_of(&outline);
+        let pos = match mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
+            Some(bevy::mesh::VertexAttributeValues::Float32x3(v)) => v.clone(),
+            _ => panic!("positions"),
+        };
+        let uvs = match mesh.attribute(Mesh::ATTRIBUTE_UV_0) {
+            Some(bevy::mesh::VertexAttributeValues::Float32x2(v)) => v.clone(),
+            _ => panic!("uvs"),
+        };
+        let normals = match mesh.attribute(Mesh::ATTRIBUTE_NORMAL) {
+            Some(bevy::mesh::VertexAttributeValues::Float32x3(v)) => v.clone(),
+            _ => panic!("normals"),
+        };
+        let lo = outline.iter().fold(Vec2::splat(f32::MAX), |a, p| a.min(*p));
+        let hi = outline.iter().fold(Vec2::splat(f32::MIN), |a, p| a.max(*p));
+        for ((p, uv), n) in pos.iter().zip(&uvs).zip(&normals) {
+            let want = (Vec2::new(p[0], p[1]) - lo) / (hi - lo);
+            assert!((want - Vec2::new(uv[0], uv[1])).length() < 1e-5);
+            assert_eq!(*n, [0.0, 0.0, 1.0]);
+        }
+    }
+
+    #[test]
+    fn arbitrary_polygon_square_is_two_triangles() {
+        let square = vec![
             Vec2::new(0.0, 0.0),
             Vec2::new(1.0, 0.0),
             Vec2::new(1.0, 1.0),
             Vec2::new(0.0, 1.0),
         ];
-        let indices = ear_clip_triangulate(&vertices);
-        assert_eq!(
-            indices.len(),
-            6,
-            "Square should produce 2 triangles (6 indices)"
-        );
-    }
-
-    #[test]
-    fn ear_clip_triangulate_triangle() {
-        let vertices = vec![
-            Vec2::new(0.0, 0.0),
-            Vec2::new(1.0, 0.0),
-            Vec2::new(0.5, 1.0),
-        ];
-        let indices = ear_clip_triangulate(&vertices);
-        assert_eq!(
-            indices.len(),
-            3,
-            "Triangle should produce 1 triangle (3 indices)"
-        );
-    }
-
-    #[test]
-    fn ear_clip_triangulate_empty() {
-        let vertices: Vec<Vec2> = vec![];
-        let indices = ear_clip_triangulate(&vertices);
-        assert!(indices.is_empty());
-    }
-
-    #[test]
-    fn point_in_triangle_basic() {
-        let a = Vec2::new(0.0, 0.0);
-        let b = Vec2::new(1.0, 0.0);
-        let c = Vec2::new(0.0, 1.0);
-        assert!(point_in_triangle(Vec2::new(0.1, 0.1), a, b, c));
-        assert!(!point_in_triangle(Vec2::new(0.6, 0.6), a, b, c));
-        assert!(!point_in_triangle(Vec2::new(-0.1, 0.0), a, b, c));
+        let mesh = polygon_mesh_of(&square);
+        match mesh.indices() {
+            Some(bevy::render::mesh::Indices::U32(i)) => assert_eq!(i.len(), 6),
+            _ => panic!("Expected U32 indices"),
+        }
     }
 
     #[test]

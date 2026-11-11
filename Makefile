@@ -1,10 +1,9 @@
 EXAMPLES = shapes styles mix_spaces curves pbr_effects arbitrary_shapes composed_shapes sdf_dash_gallery sweep terrain road character_creator immediate polyline deformation retained gradient_2d sdf_2d standalone instanced appearance lerp
 
-# Examples that change over time are recorded as animated WebP; the rest are still PNGs.
+# Examples that change over time are recorded as animated GIF; the rest are still PNGs.
 STILLS = shapes styles mix_spaces curves pbr_effects arbitrary_shapes composed_shapes sdf_dash_gallery sweep terrain road
-# Animations are lossy and downscaled to keep each file well under a megabyte.
+# Animations are downscaled to keep each file well under a megabyte.
 ANIMATION_WIDTH = 480
-ANIMATION_QUALITY = 30
 ANIMATIONS = character_creator immediate polyline deformation retained gradient_2d sdf_2d standalone instanced appearance lerp
 
 # Examples that require the pbr feature (required-features in Cargo.toml).
@@ -67,13 +66,13 @@ define capture_animation
 	@rm -f frames/screenshot_$(1)_frame_*.png
 	$(XVFB_RUN) env DSD_SCREENSHOT=1 timeout 600 cargo run --example $(1) $(call pbr_flag,$(1)) 2>&1 || true
 	@if ls frames/screenshot_$(1)_frame_*.png 1>/dev/null 2>&1; then \
-		echo "Encoding frames to WebP..."; \
+		echo "Encoding frames to GIF..."; \
 		ffmpeg -y -framerate 30 -i frames/screenshot_$(1)_frame_%04d.png \
 			-vf "scale=$(ANIMATION_WIDTH):-2:flags=lanczos" \
-			-vcodec libwebp -lossless 0 -quality $(ANIMATION_QUALITY) -compression_level 6 -loop 0 \
-			screenshots/screenshot_$(1).webp 2>/dev/null && \
-		echo "Saved screenshots/screenshot_$(1).webp" || \
-		echo "Warning: ffmpeg WebP encoding failed for $(1)"; \
+			-vcodec gif -loop 0 \
+			screenshots/screenshot_$(1).gif 2>/dev/null && \
+		echo "Saved screenshots/screenshot_$(1).gif" || \
+		echo "Warning: ffmpeg GIF encoding failed for $(1)"; \
 		rm -f frames/screenshot_$(1)_frame_*.png; \
 	else \
 		echo "Warning: no frames found for $(1)"; \
@@ -157,18 +156,18 @@ release-zip: screenshots
 			fi; \
 		fi; \
 	done
-	@for f in screenshots/*.webp; do \
+	@for f in screenshots/*.gif; do \
 		if [ -f "$$f" ]; then \
-			if ! file "$$f" | grep -q "Web/P"; then \
-				echo "ERROR: $$f is not a valid WebP"; exit 1; \
+			if ! file "$$f" | grep -q "GIF"; then \
+				echo "ERROR: $$f is not a valid GIF"; exit 1; \
 			fi; \
 		fi; \
 	done
-	@count=$$(ls screenshots/*.png screenshots/*.webp 2>/dev/null | wc -l); \
+	@count=$$(ls screenshots/*.png screenshots/*.gif 2>/dev/null | wc -l); \
 	echo "Found $$count screenshot files"
 	@rm -f screenshots-v$(VERSION).zip
-	@cd screenshots && zip -r ../screenshots-v$(VERSION).zip *.png *.webp 2>/dev/null || \
-		(cd screenshots && zip ../screenshots-v$(VERSION).zip *.png *.webp)
+	@cd screenshots && zip -r ../screenshots-v$(VERSION).zip *.png *.gif 2>/dev/null || \
+		(cd screenshots && zip ../screenshots-v$(VERSION).zip *.png *.gif)
 	@echo "Created screenshots-v$(VERSION).zip ($$(du -h ../screenshots-v$(VERSION).zip | cut -f1))"
 
 release: release-zip

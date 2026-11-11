@@ -1,6 +1,6 @@
 [package]
 name = "bevy_gradmesh"
-version = "0.3.6"
+version = "0.3.7"
 authors = ["Jessica Collins (https://github.com/xenacool)"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
@@ -46,6 +46,7 @@ bytemuck = "1.21"
 # support, none of which the library requires. Bevy's default features cover all of them.
 [dev-dependencies]
 bevy = { version = "0.20", features = ["tonemapping_luts", "png"] }
+proptest = "1.7"
 
 # Examples marked `required-features = ["pbr"]` draw lit 3D shapes with `GradMeshMaterial` or the
 # instanced PBR pipeline, so Cargo skips them when `pbr` is off. The rest build with

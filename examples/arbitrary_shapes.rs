@@ -102,6 +102,59 @@ fn profile(top: f32, bottom: f32, height: f32) -> Shape {
     )
 }
 
+/// A puzzle piece as one single polygon: a knob on the right and a blank on
+/// top, with every edge cut into many points that are almost, but not quite,
+/// on a straight line.
+fn jigsaw_piece(size: f32) -> Shape {
+    let half = size * 0.5;
+    let corners = [
+        Vec2::new(-half, -half),
+        Vec2::new(half, -half),
+        Vec2::new(half, half),
+        Vec2::new(-half, half),
+    ];
+    let knobs = [0.0, 1.0, -1.0, 0.0];
+    let mut outline = Vec::new();
+    for e in 0..4 {
+        let (a, b) = (corners[e], corners[(e + 1) % 4]);
+        let dir = (b - a) / size;
+        let outward = Vec2::new(dir.y, -dir.x);
+        let knob = knobs[e];
+
+        // The edge in (along, outward) coordinates, both as a fraction of `size`.
+        let mut edge: Vec<Vec2> = Vec::new();
+        let mut k = 0usize;
+        let run = |edge: &mut Vec<Vec2>, from: f32, to: f32, k: &mut usize| {
+            let steps = ((24.0 * (to - from)).ceil() as usize).max(1);
+            for i in 0..steps {
+                let wobble = 1e-5 * ((*k + e * 7) as f32 * 12.9898).sin();
+                *k += 1;
+                edge.push(Vec2::new(from + (to - from) * i as f32 / steps as f32, wobble));
+            }
+        };
+        if knob == 0.0 {
+            run(&mut edge, 0.0, 1.0, &mut k);
+        } else {
+            run(&mut edge, 0.0, 0.42, &mut k);
+            edge.push(Vec2::new(0.42, 0.0));
+            edge.push(Vec2::new(0.42, knob * 0.055));
+            let (from, to) = (216.87f32.to_radians(), -36.87f32.to_radians());
+            for j in 0..=24 {
+                let angle = from + (to - from) * j as f32 / 24.0;
+                edge.push(Vec2::new(
+                    0.5 + 0.1 * angle.cos(),
+                    knob * (0.17 + 0.1 * angle.sin()),
+                ));
+            }
+            edge.push(Vec2::new(0.58, knob * 0.055));
+            edge.push(Vec2::new(0.58, 0.0));
+            run(&mut edge, 0.58, 1.0, &mut k);
+        }
+        outline.extend(edge.iter().map(|p| a + dir * (p.x * size) + outward * (p.y * size)));
+    }
+    Shape::arbitrary_polygon(outline, ShapeDetail::Minimal)
+}
+
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -231,9 +284,9 @@ fn setup(
         &mut commands,
         Shape::arbitrary_polygon(arrow_verts, ShapeDetail::Minimal),
         [0.9, 0.5, 0.2],
-        Vec2::new(-3.0, 5.6),
+        Vec2::new(-4.5, 5.6),
     );
-    spawn_label(&mut commands, "Arrow", Vec3::new(-3.0, 6.3, 0.0));
+    spawn_label(&mut commands, "Arrow", Vec3::new(-4.5, 6.3, 0.0));
 
     // Colored diamond with per-vertex colors
     let diamond_verts = vec![
@@ -252,9 +305,9 @@ fn setup(
         &mut commands,
         Shape::arbitrary_polygon_colored(diamond_verts, diamond_colors, ShapeDetail::Minimal),
         [0.8, 0.8, 0.8],
-        Vec2::new(0.0, 5.6),
+        Vec2::new(-1.5, 5.6),
     );
-    spawn_label(&mut commands, "Colored Diamond", Vec3::new(0.0, 6.3, 0.0));
+    spawn_label(&mut commands, "Colored Diamond", Vec3::new(-1.5, 6.3, 0.0));
 
     // L-shape polygon
     let l_verts = vec![
@@ -269,9 +322,18 @@ fn setup(
         &mut commands,
         Shape::arbitrary_polygon(l_verts, ShapeDetail::Minimal),
         [0.3, 0.9, 0.6],
-        Vec2::new(3.0, 5.6),
+        Vec2::new(1.5, 5.6),
     );
-    spawn_label(&mut commands, "L-Shape", Vec3::new(3.0, 6.3, 0.0));
+    spawn_label(&mut commands, "L-Shape", Vec3::new(1.5, 6.3, 0.0));
+
+    // Jigsaw piece: one concave polygon with hundreds of near-collinear points
+    piece(
+        &mut commands,
+        jigsaw_piece(0.8),
+        [0.85, 0.65, 0.95],
+        Vec2::new(4.5, 5.6),
+    );
+    spawn_label(&mut commands, "Jigsaw Piece", Vec3::new(4.5, 6.3, 0.0));
 }
 
 fn spawn_label(commands: &mut Commands, text: &str, position: Vec3) {
