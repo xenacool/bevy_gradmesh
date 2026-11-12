@@ -1,6 +1,6 @@
 [package]
 name = "bevy_gradmesh"
-version = "0.3.8"
+version = "0.3.9"
 authors = ["Jessica Collins (https://github.com/xenacool)"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
