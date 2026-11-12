@@ -47,14 +47,6 @@ impl ShapeDetail {
 pub struct Shape {
     kind: ShapeKind,
     detail: ShapeDetail,
-    cache: BoundsCache,
-}
-
-/// Bounds measured from the built mesh, shared by clones of a shape.
-#[derive(Debug, Clone, Default)]
-struct BoundsCache {
-    solid: Arc<std::sync::OnceLock<ShapeBounds>>,
-    flat: Arc<std::sync::OnceLock<ShapeBounds>>,
 }
 
 impl PartialEq for Shape {
@@ -1886,7 +1878,6 @@ impl Shape {
         Self {
             kind: ShapeKind::Sphere { radius },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -1895,7 +1886,6 @@ impl Shape {
         Self {
             kind: ShapeKind::Ellipsoid { size },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -1904,7 +1894,6 @@ impl Shape {
         Self {
             kind: ShapeKind::Cuboid { size, roundness },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -1917,7 +1906,6 @@ impl Shape {
                 roundness: 0.0,
             },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -1939,7 +1927,6 @@ impl Shape {
                 roundness,
             },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -1949,7 +1936,6 @@ impl Shape {
         Self {
             kind: ShapeKind::Capsule { radius, height },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -1959,7 +1945,6 @@ impl Shape {
         Self {
             kind: ShapeKind::Hemisphere { radius, capped },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -1975,7 +1960,6 @@ impl Shape {
                 span,
             },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -1995,7 +1979,6 @@ impl Shape {
                 roundness,
             },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -2024,7 +2007,6 @@ impl Shape {
                 roundness,
             },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -2033,7 +2015,6 @@ impl Shape {
         Self {
             kind: ShapeKind::Rectangle { size },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -2042,7 +2023,6 @@ impl Shape {
         Self {
             kind: ShapeKind::RectangleRim { size, rim_width },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -2051,7 +2031,6 @@ impl Shape {
         Self {
             kind: ShapeKind::Disc { radius },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -2060,7 +2039,6 @@ impl Shape {
         Self {
             kind: ShapeKind::DiscRim { radius, rim_width },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -2069,7 +2047,6 @@ impl Shape {
         Self {
             kind: ShapeKind::Polygon { sides, radius },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -2082,7 +2059,6 @@ impl Shape {
                 rim_width,
             },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -2091,7 +2067,6 @@ impl Shape {
         Self {
             kind: ShapeKind::Ellipse { radius },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -2100,7 +2075,6 @@ impl Shape {
         Self {
             kind: ShapeKind::EllipseRim { radius, rim_width },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -2124,7 +2098,6 @@ impl Shape {
                 colors: None,
             },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -2147,7 +2120,6 @@ impl Shape {
         Self {
             kind: ShapeKind::ArbitraryPolygon { vertices, colors },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -2174,7 +2146,6 @@ impl Shape {
                 segments,
             },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -2198,7 +2169,6 @@ impl Shape {
                 segments,
             },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -2212,7 +2182,6 @@ impl Shape {
                 inner_radius,
             },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -2225,7 +2194,6 @@ impl Shape {
                 inner_radius: inner_radius.min(outer_radius),
             },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -2238,7 +2206,6 @@ impl Shape {
                 angle: angle.clamp(0.0, 2.0 * PI),
             },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -2257,7 +2224,6 @@ impl Shape {
                 height,
             },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -2299,7 +2265,6 @@ impl Shape {
                 roundness,
             },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -2330,7 +2295,6 @@ impl Shape {
                 roundness,
             },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -2359,7 +2323,6 @@ impl Shape {
                 roundness,
             },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -2372,7 +2335,6 @@ impl Shape {
         Self {
             kind: ShapeKind::Compound { parts },
             detail: ShapeDetail::default(),
-            cache: BoundsCache::default(),
         }
     }
 
@@ -2388,7 +2350,6 @@ impl Shape {
         Self {
             kind: ShapeKind::Lathe { profile, segments },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -2409,7 +2370,6 @@ impl Shape {
                 segments,
             },
             detail: ShapeDetail::default(),
-            cache: BoundsCache::default(),
         }
     }
 
@@ -2424,7 +2384,6 @@ impl Shape {
                 segments,
             },
             detail: ShapeDetail::default(),
-            cache: BoundsCache::default(),
         }
     }
 
@@ -2458,7 +2417,6 @@ impl Shape {
                 segments,
             },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -2482,7 +2440,6 @@ impl Shape {
                 round,
             },
             detail: ShapeDetail::default(),
-            cache: BoundsCache::default(),
         }
     }
 
@@ -2516,7 +2473,6 @@ impl Shape {
                 options,
             },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -2546,7 +2502,6 @@ impl Shape {
                 options,
             },
             detail,
-            cache: BoundsCache::default(),
         }
     }
 
@@ -2644,7 +2599,6 @@ impl Shape {
                 bounds,
             },
             detail: ShapeDetail::default(),
-            cache: BoundsCache::default(),
         }
     }
 
@@ -2670,16 +2624,14 @@ impl Shape {
     /// compounds, lathes and curves included). Shapes whose box has a closed
     /// form (sphere, ellipsoid, cuboid, cylinder, cone, capsule, rectangle, disc
     /// and ellipse), [`Shape::from_mesh`] and [`Shape::heightfield`] never build
-    /// anything. For every other kind the first call builds the mesh once and
-    /// measures its vertices; the result is kept in the shape and shared with
-    /// its clones, so reading it every frame is free.
+    /// anything. For every other kind the mesh is built and measured on each call.
     pub fn bounds(&self) -> ShapeBounds {
         match &self.kind {
             ShapeKind::Mesh { bounds, .. } => *bounds,
             ShapeKind::Heightfield { bounds, .. } => bounds.1,
             kind => match closed_form_bounds(kind) {
                 Some(bounds) => bounds,
-                None => *self.cache.solid.get_or_init(|| mesh_bounds(&self.build())),
+                None => mesh_bounds(&self.build()),
             },
         }
     }
@@ -2721,7 +2673,7 @@ impl Shape {
             // `build_2d` returns the ordinary mesh for these kinds.
             kind => match closed_form_bounds(kind) {
                 Some(bounds) => bounds,
-                None => *self.cache.flat.get_or_init(|| mesh_bounds(&self.build_2d())),
+                None => mesh_bounds(&self.build_2d()),
             },
         }
     }
@@ -5561,7 +5513,6 @@ impl Shape {
             Some(kind) => Self {
                 kind,
                 detail: if t < 0.5 { self.detail } else { other.detail },
-                cache: BoundsCache::default(),
             },
             None if t < 0.5 => self.clone(),
             None => other.clone(),
@@ -7673,14 +7624,16 @@ mod from_mesh_tests {
     }
 
     #[test]
-    fn closed_form_bounds_never_fill_the_cache() {
-        let shape = Shape::sphere(2.0, D);
-        let _ = shape.bounds();
-        assert!(shape.cache.solid.get().is_none());
-        // A kind without a closed form measures its mesh once.
+    fn closed_form_bounds_do_not_build_mesh() {
+        // Closed-form shapes return bounds without building a mesh.
+        let sphere = Shape::sphere(2.0, D);
+        let closed = sphere.bounds();
+        assert_eq!(closed.min, Vec3::splat(-2.0));
+        assert_eq!(closed.max, Vec3::splat(2.0));
+        // A kind without a closed form builds the mesh to measure bounds.
         let star = Shape::star(5, 2.0, 1.0, D);
-        let _ = star.bounds();
-        assert!(star.cache.solid.get().is_some());
+        let measured = star.bounds();
+        assert!(measured.size().x > 0.0 && measured.size().y > 0.0);
     }
 
     #[test]
