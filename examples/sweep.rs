@@ -47,31 +47,9 @@ pub fn run(app: &mut App) {
 }
 
 fn main() {
-    App::new()
-        .add_plugins(
-            DefaultPlugins
-                .set(WindowPlugin {
-                    primary_window: Some(Window {
-                        title: "BevyGradmesh Sweep".into(),
-                        resolution: (1280, 720).into(),
-                        ..default()
-                    }),
-                    ..default()
-                })
-                .set(RenderPlugin {
-                    synchronous_pipeline_compilation: true,
-                    ..default()
-                }),
-        )
-        .add_plugins(GradMeshPlugin)
-        .add_plugins(
-            AutoScreenshotPlugin::new("screenshot_sweep.png")
-                .with_title("Sweep")
-                .with_description("A wall on a spline loop, a kerbed road and a tapering pipe")
-                .wait_frames(3),
-        )
-        .add_systems(Startup, setup)
-        .run();
+    let mut app = App::new();
+    run(&mut app);
+    app.run();
 }
 
 /// Wall cross-section: a tapered body with a flat top, `x` across and `y` up.

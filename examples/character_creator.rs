@@ -54,32 +54,9 @@ pub fn run(app: &mut App) {
 }
 
 fn main() {
-    App::new()
-        .add_plugins(
-            DefaultPlugins
-                .set(WindowPlugin {
-                    primary_window: Some(Window {
-                        title: "BevyGradmesh Character Creator".into(),
-                        resolution: (1600, 900).into(),
-                        ..default()
-                    }),
-                    ..default()
-                })
-                .set(RenderPlugin {
-                    synchronous_pipeline_compilation: true,
-                    ..default()
-                }),
-        )
-        .add_plugins(GradMeshPlugin)
-        .add_plugins(
-            AutoScreenshotPlugin::new("screenshot_character_creator.png")
-                .animation(6.0)
-                .with_title("Character Creator")
-                .with_description("7 characters with varied facial features and accessories"),
-        )
-        .add_systems(Startup, setup)
-        .add_systems(Update, rotate_characters)
-        .run();
+    let mut app = App::new();
+    run(&mut app);
+    app.run();
 }
 
 /// Slowly rotates all characters so the user can inspect them from all angles.

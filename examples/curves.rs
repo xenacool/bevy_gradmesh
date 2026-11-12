@@ -51,32 +51,9 @@ pub fn run(app: &mut App) {
 }
 
 fn main() {
-    App::new()
-        .add_plugins(
-            DefaultPlugins
-                .set(WindowPlugin {
-                    primary_window: Some(Window {
-                        title: "BevyGradmesh Curves".into(),
-                        resolution: (1280, 720).into(),
-                        ..default()
-                    }),
-                    ..default()
-                })
-                .set(RenderPlugin {
-                    synchronous_pipeline_compilation: true,
-                    ..default()
-                }),
-        )
-        .add_plugins(GradMeshPlugin)
-        .add_plugins(
-            AutoScreenshotPlugin::new("screenshot_curves.png")
-                .with_title("Curves")
-                .with_description("Bezier curve primitives rendered as tubes"),
-        )
-        .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.12)))
-        .add_systems(Startup, setup)
-        .add_systems(PostUpdate, position_labels)
-        .run();
+    let mut app = App::new();
+    run(&mut app);
+    app.run();
 }
 
 #[derive(Component)]

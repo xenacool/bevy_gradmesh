@@ -49,31 +49,9 @@ pub fn run(app: &mut App) {
 }
 
 fn main() {
-    App::new()
-        .add_plugins(
-            DefaultPlugins
-                .set(WindowPlugin {
-                    primary_window: Some(Window {
-                        title: "BevyGradmesh Road".into(),
-                        resolution: (1280, 720).into(),
-                        ..default()
-                    }),
-                    ..default()
-                })
-                .set(RenderPlugin {
-                    synchronous_pipeline_compilation: true,
-                    ..default()
-                }),
-        )
-        .add_plugins(GradMeshPlugin)
-        .add_plugins(
-            AutoScreenshotPlugin::new("screenshot_road.png")
-                .with_title("Banked road")
-                .with_description("Spline channels for width and roll, caller-supplied sweep frames, roll along a path")
-                .wait_frames(3),
-        )
-        .add_systems(Startup, setup)
-        .run();
+    let mut app = App::new();
+    run(&mut app);
+    app.run();
 }
 
 /// Road cross-section, one unit wide: the width channel scales it across.

@@ -68,31 +68,9 @@ pub fn run(app: &mut App) {
 }
 
 fn main() {
-    App::new()
-        .add_plugins(
-            DefaultPlugins
-                .set(WindowPlugin {
-                    primary_window: Some(Window {
-                        title: "BevyGradmesh Mix Spaces".into(),
-                        resolution: (1280, 720).into(),
-                        ..default()
-                    }),
-                    ..default()
-                })
-                .set(RenderPlugin {
-                    synchronous_pipeline_compilation: true,
-                    ..default()
-                }),
-        )
-        .add_plugins(GradMeshPlugin)
-        .add_plugins(
-            AutoScreenshotPlugin::new("screenshot_mix_spaces.png")
-                .with_title("Mix Spaces")
-                .with_description("One gradient, four colour spaces"),
-        )
-        .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.12)))
-        .add_systems(Startup, setup)
-        .run();
+    let mut app = App::new();
+    run(&mut app);
+    app.run();
 }
 
 fn setup(

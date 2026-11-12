@@ -50,33 +50,9 @@ pub fn run(app: &mut App) {
 }
 
 fn main() {
-    App::new()
-        .add_plugins(
-            DefaultPlugins
-                .set(WindowPlugin {
-                    primary_window: Some(Window {
-                        title: "BevyGradmesh Polyline".into(),
-                        resolution: (1280, 720).into(),
-                        ..default()
-                    }),
-                    ..default()
-                })
-                .set(RenderPlugin {
-                    synchronous_pipeline_compilation: true,
-                    ..default()
-                }),
-        )
-        .add_plugins(GradMeshPlugin)
-        .add_plugins(
-            AutoScreenshotPlugin::new("screenshot_polyline.png")
-                .animation(4.0)
-                .with_title("Polyline")
-                .with_description("Flat polyline primitives with the unlit 2D gradient material"),
-        )
-        .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.12)))
-        .add_systems(Startup, setup)
-        .add_systems(PostUpdate, position_labels)
-        .run();
+    let mut app = App::new();
+    run(&mut app);
+    app.run();
 }
 
 #[derive(Component)]

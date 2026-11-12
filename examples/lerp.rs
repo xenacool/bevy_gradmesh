@@ -52,35 +52,9 @@ pub fn run(app: &mut App) {
 }
 
 fn main() {
-    App::new()
-        .add_plugins(
-            DefaultPlugins
-                .set(WindowPlugin {
-                    primary_window: Some(Window {
-                        title: "BevyGradmesh Shape Lerp".into(),
-                        resolution: (1280, 720).into(),
-                        ..default()
-                    }),
-                    ..default()
-                })
-                .set(RenderPlugin {
-                    synchronous_pipeline_compilation: true,
-                    ..default()
-                }),
-        )
-        .add_plugins(GradMeshPlugin)
-        .add_plugins(
-            AutoScreenshotPlugin::new("screenshot_lerp.png")
-                .animation(4.0)
-                .with_title("Shape Lerp")
-                .with_description(
-                    "Morphing shapes: disc↔star, rect↔ring, polygon↔rim, ring↔disc, wedge↔disc",
-                ),
-        )
-        .insert_resource(ClearColor(Color::srgb(0.08, 0.08, 0.1)))
-        .add_systems(Startup, setup)
-        .add_systems(PostUpdate, draw_lerp)
-        .run();
+    let mut app = App::new();
+    run(&mut app);
+    app.run();
 }
 
 #[derive(Component)]

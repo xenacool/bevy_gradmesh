@@ -50,31 +50,9 @@ pub fn run(app: &mut App) {
 }
 
 fn main() {
-    App::new()
-        .add_plugins(
-            DefaultPlugins
-                .set(WindowPlugin {
-                    primary_window: Some(Window {
-                        title: "BevyGradmesh 2D".into(),
-                        resolution: (1280, 720).into(),
-                        ..default()
-                    }),
-                    ..default()
-                })
-                .set(RenderPlugin {
-                    synchronous_pipeline_compilation: true,
-                    ..default()
-                }),
-        )
-        .add_plugins(GradMeshPlugin)
-        .add_plugins(
-            AutoScreenshotPlugin::new("screenshot_gradient_2d.png")
-                .animation(3.0)
-                .with_title("2D Gradients")
-                .with_description("Mesh2d shapes with the unlit gradient material, no 3D camera"),
-        )
-        .add_systems(Startup, setup)
-        .run();
+    let mut app = App::new();
+    run(&mut app);
+    app.run();
 }
 
 fn setup(

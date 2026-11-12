@@ -45,33 +45,9 @@ pub fn run(app: &mut App) {
 }
 
 fn main() {
-    App::new()
-        .add_plugins(
-            DefaultPlugins
-                .set(WindowPlugin {
-                    primary_window: Some(Window {
-                        title: "BevyGradmesh Retained World".into(),
-                        resolution: (1280, 720).into(),
-                        ..default()
-                    }),
-                    ..default()
-                })
-                .set(RenderPlugin {
-                    synchronous_pipeline_compilation: true,
-                    ..default()
-                }),
-        )
-        .add_plugins(GradMeshPlugin)
-        .add_plugins(
-            AutoScreenshotPlugin::new("screenshot_retained.png")
-                .animation(3.0)
-                .with_title("Retained World")
-                .with_description("Persistent shapes updated via handles each frame"),
-        )
-        .insert_resource(ClearColor(Color::srgb(0.08, 0.08, 0.1)))
-        .add_systems(Startup, setup)
-        .add_systems(PostUpdate, (update_retained_shapes, position_labels).chain())
-        .run();
+    let mut app = App::new();
+    run(&mut app);
+    app.run();
 }
 
 /// Retained world and handles for animated shapes.

@@ -46,32 +46,9 @@ pub fn run(app: &mut App) {
 }
 
 fn main() {
-    App::new()
-        .add_plugins(
-            DefaultPlugins
-                .set(WindowPlugin {
-                    primary_window: Some(Window {
-                        title: "BevyGradmesh Style Showcase".into(),
-                        resolution: (1280, 720).into(),
-                        ..default()
-                    }),
-                    ..default()
-                })
-                .set(RenderPlugin {
-                    synchronous_pipeline_compilation: true,
-                    ..default()
-                }),
-        )
-        .add_plugins(GradMeshPlugin)
-        .add_plugins(
-            AutoScreenshotPlugin::new("screenshot_styles.png")
-                .with_title("Style Showcase")
-                .with_description("Blend modes, color modes, dash patterns, and material presets"),
-        )
-        .insert_resource(ClearColor(Color::srgb(0.15, 0.15, 0.18)))
-        .add_systems(Startup, setup)
-        .add_systems(PostUpdate, position_labels)
-        .run();
+    let mut app = App::new();
+    run(&mut app);
+    app.run();
 }
 
 #[derive(Component)]
