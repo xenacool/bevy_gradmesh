@@ -75,7 +75,10 @@ mod standalone_pipeline;
 pub mod style;
 
 pub use appearance::{AppearanceSnapshot, AppearanceType};
-pub use batch::{Batch, BatchKey, BatchRecorder, InstanceProperties, InstanceTransform};
+pub use batch::{
+    Batch, BatchKey, BatchRecorder, InstanceProperties, InstanceRecord, InstanceTransform,
+    group_instances,
+};
 pub use deformation::{Deformation, DeformationParams, DeformationType};
 pub use immediate::{BillboardMode, DepthTest, DepthWrite, RenderState};
 #[cfg(feature = "pbr")]

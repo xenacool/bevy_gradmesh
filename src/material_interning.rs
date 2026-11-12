@@ -93,7 +93,12 @@ impl GradMeshMaterialKey {
         uniforms.bands = self.bands;
         uniforms.band_heights = self.band_heights;
         GradMeshMaterial {
-            base: crate::material::opaque(1.0, 1.0, 1.0).base,
+            base: bevy::pbr::StandardMaterial {
+                base_color: bevy::color::Color::srgb(1.0, 1.0, 1.0).into(),
+                perceptual_roughness: 0.7,
+                cull_mode: None,
+                ..bevy::pbr::StandardMaterial::default()
+            },
             extension: GradMeshExtension { uniforms },
         }
     }

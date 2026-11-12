@@ -97,8 +97,9 @@ per-frame sync of an unchanged node allocates nothing.
 ## Style additions
 
 - `Style::shaded(color, dark_factor)`: lit `color`, shadow side `color * dark_factor` (linear RGB).
-- `with_perceptual_roughness`, `with_metallic`, `with_emissive`: written to the `StandardMaterial`
-  base and blended by `Style::lerp`.
+- `with_perceptual_roughness`, `with_metallic`, `with_emissive` (**PBR only**): written to the
+  `StandardMaterial` base and blended by `Style::lerp`. The instanced, standalone, `Mesh2d` and
+  SDF 2D backends have no lighting model and ignore them.
 - `with_alpha`: multiplies both gradient colours' alpha; `Style::lerp` fades it.
 
 ### Gradient direction space
@@ -116,7 +117,8 @@ full shadow. Bevy decides shadow casting per entity: when `style.casts_shadows()
 
 ### Surface detail and rim glow
 
-`GradMeshMaterial` can vary the tint without textures:
+`GradMeshMaterial` can vary the tint without textures. These options are **PBR only**: the
+instanced, standalone, `Mesh2d` and SDF 2D backends ignore them.
 
 - `Style::with_noise(scale, amount)`: smooth value noise, `scale` cells per local unit.
 - `Style::with_stripes(direction, frequency, amount)`: bands along a local direction.

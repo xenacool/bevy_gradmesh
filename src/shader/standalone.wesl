@@ -223,27 +223,29 @@ fn angular_progress(uv: vec2<f32>) -> f32 {
 }
 
 fn rectangle_perimeter_progress(uv: vec2<f32>) -> f32 {
-    let p = uv * 2.0 - 1.0;
-    let abs_p = abs(p);
+    // One continuous loop around the outline, so dashes never restart at a corner:
+    // right edge (upward) -> top (leftward) -> left (downward) -> bottom (rightward).
+    // Each edge covers a quarter of the loop; `count` dashes span the whole outline.
+    let p = uv * 2.0 - 1.0;  // Map UV to [-1, 1]
     let dist_right = abs(p.x - 1.0);
     let dist_left = abs(p.x + 1.0);
     let dist_top = abs(p.y - 1.0);
     let dist_bottom = abs(p.y + 1.0);
-    
+
     let min_h = min(dist_right, dist_left);
     let min_v = min(dist_top, dist_bottom);
-    
+
     if (min_h < min_v) {
         if (dist_right < dist_left) {
-            return fract(p.y * 0.5 + 0.75);
+            return 0.25 * (p.y * 0.5 + 0.5);
         } else {
-            return fract(-p.y * 0.5 + 0.25);
+            return 0.5 + 0.25 * (0.5 - p.y * 0.5);
         }
     } else {
         if (dist_top < dist_bottom) {
-            return fract(p.x * 0.5 + 0.5);
+            return 0.25 + 0.25 * (0.5 - p.x * 0.5);
         } else {
-            return fract(-p.x * 0.5);
+            return 0.75 + 0.25 * (p.x * 0.5 + 0.5);
         }
     }
 }
@@ -328,6 +330,8 @@ struct VertexOutput {
     @location(6) @interpolate(flat) flags: vec4<f32>,
     @location(7) @interpolate(flat) dash: vec4<f32>,
     @location(8) @interpolate(flat) appearance: vec4<f32>,
+    // World-space origin of the instance; gradients are measured from here.
+    @location(9) @interpolate(flat) origin: vec3<f32>,
 }
 
 @vertex
@@ -370,6 +374,7 @@ fn vs_standalone(input: VertexInput) -> VertexOutput {
     out.flags = input.instance_flags;
     out.dash = input.instance_dash;
     out.appearance = input.instance_appearance;
+    out.origin = input.instance_col3.xyz;
     return out;
 }
 
@@ -378,19 +383,21 @@ fn fs_standalone(in: VertexOutput) -> @location(0) vec4<f32> {
     let color_mode = i32(in.flags.x);
     let blend_mode = i32(in.flags.y);
 
-    // Compute gradient progress
+    // `direction.w` carries the shape's half-extent in world units (0 = a unit shape),
+    // exactly as in the instanced shader.
+    let half_extent = select(0.5, in.direction.w, in.direction.w > 0.0);
+    let local_pos = in.world_position.xyz - in.origin;
+
+    // Compute gradient progress, measured from the instance origin
     var progress = 0.0;
     if (color_mode == 1) {
-        // Directional gradient
-        let dir = in.direction.xyz;
-        let normalized_dir = normalize(dir);
-        let world_pos = in.world_position.xyz;
-        progress = dot(world_pos, normalized_dir) * 0.1 + 0.5;
-        progress = clamp(progress, 0.0, 1.0);
+        // Directional gradient across the shape's extent along the direction
+        let normalized_dir = normalize(in.direction.xyz);
+        let half_range = max(abs(dot(normalized_dir, vec3<f32>(half_extent))), 0.00001);
+        progress = clamp(dot(local_pos, normalized_dir) / (2.0 * half_range) + 0.5, 0.0, 1.0);
     } else if (color_mode == 2) {
-        // Radial gradient
-        let dist = length(in.world_position.xyz);
-        progress = clamp(dist * 0.5, 0.0, 1.0);
+        // Radial gradient: distance from the origin, normalised by the half-extent
+        progress = clamp(length(local_pos) / (half_extent * 1.41421356), 0.0, 1.0);
     }
 
     // Interpolate colors

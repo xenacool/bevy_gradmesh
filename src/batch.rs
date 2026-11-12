@@ -70,6 +70,17 @@ pub struct InstanceProperties {
     pub appearance: Vec4,
 }
 
+/// One instance as the vertex shader reads it: transform then properties, 64 + 112 = 176 bytes.
+///
+/// This is the record both instanced pipelines upload through Bevy's encase-based
+/// `BufferVec`. Its size is the `array_stride` of their instance vertex layouts, and a
+/// unit test pins the two together.
+#[derive(Debug, Clone, Copy, Default, ShaderType)]
+pub struct InstanceData {
+    pub transform: InstanceTransform,
+    pub properties: InstanceProperties,
+}
+
 impl InstanceProperties {
     pub fn from_uniform(buf: &GradMeshUniformBuffer) -> Self {
         Self {
@@ -83,6 +94,10 @@ impl InstanceProperties {
         }
     }
 
+    /// Build instance properties from loose values.
+    ///
+    /// Colours are sRGB components; the shaders convert them to linear. When you have a
+    /// [`Style`], prefer `InstanceProperties::from(&style)`.
     pub fn from_style(
         color: [f32; 4],
         secondary: [f32; 4],
@@ -146,16 +161,24 @@ impl InstanceProperties {
 
     /// Build instance properties from a [`Style`](style::Style).
     ///
-    /// This is a convenience wrapper around [`InstanceProperties::from_style`] that extracts
-    /// the color, direction, blend mode, mix space and dash from a `Style` descriptor.
-    /// PBR-only style features (roughness, metallic, emissive, noise, stripes, rim, height bands)
-    /// are not available on the instanced path and are ignored.
+    /// Equivalent to `InstanceProperties::from(style)`.
     pub fn from_style_descriptor(style: &Style) -> Self {
-        let color = style.color.to_linear().to_f32_array();
+        Self::from(style)
+    }
+}
+
+/// Extracts the colours, direction, blend mode, mix space and dash from a `Style`.
+///
+/// PBR-only style features (roughness, metallic, emissive, noise, stripes, rim, height bands)
+/// are not available on the instanced and standalone paths and are ignored. Colours are
+/// passed as sRGB components because the shaders convert them to linear themselves.
+impl From<&Style> for InstanceProperties {
+    fn from(style: &Style) -> Self {
+        let color = style.color.to_srgba().to_f32_array();
         let secondary = style
             .secondary_color
             .unwrap_or(Color::WHITE)
-            .to_linear()
+            .to_srgba()
             .to_f32_array();
         let direction = [
             style.direction.x,
@@ -357,6 +380,73 @@ impl Batch {
     }
 }
 
+// --- Grouping ---
+
+/// Recorder-local mesh cache: each distinct shape with its sequential id and built mesh.
+type RecorderMeshCache = HashMap<Shape, (u64, Mesh)>;
+
+/// Returns the cached mesh id for `shape`, building the mesh on first use only.
+fn mesh_id_for(cache: &mut RecorderMeshCache, shape: &Shape) -> u64 {
+    if let Some((id, _)) = cache.get(shape) {
+        return *id;
+    }
+    let id = cache.len() as u64;
+    cache.insert(shape.clone(), (id, shape.build()));
+    id
+}
+
+/// Appends one instance to the batch that matches its shape, blend mode and render state,
+/// creating that batch on first use. This is the single place that decides which instances
+/// share a draw call.
+fn place_instance(
+    batches: &mut HashMap<BatchKey, Batch>,
+    mesh_cache: &mut RecorderMeshCache,
+    shape: &Shape,
+    render_state: RenderState,
+    transform: InstanceTransform,
+    properties: InstanceProperties,
+) {
+    let key = BatchKey {
+        mesh_id: mesh_id_for(mesh_cache, shape),
+        blend_mode: BatchRecorder::blend_mode_from_flags(properties.flags),
+        render_state,
+    };
+    let batch = batches
+        .entry(key)
+        .or_insert_with(|| Batch::new(mesh_cache[shape].1.clone()));
+    batch.push(transform, properties);
+}
+
+/// One instance to group: what to draw, where, and how.
+#[derive(Debug, Clone)]
+pub struct InstanceRecord {
+    pub shape: Shape,
+    pub render_state: RenderState,
+    pub transform: InstanceTransform,
+    pub properties: InstanceProperties,
+}
+
+/// Groups `instances` into batches that share a mesh, blend mode and render state.
+///
+/// Pure: no ECS, no GPU and no recorder state. The order of the returned batches is
+/// unspecified; instances keep their input order within a batch. `BatchRecorder` uses the
+/// same grouping rule, so this is the way to test or preview what a recording will batch.
+pub fn group_instances(instances: &[InstanceRecord]) -> Vec<(BatchKey, Batch)> {
+    let mut batches = HashMap::new();
+    let mut mesh_cache = RecorderMeshCache::new();
+    for instance in instances {
+        place_instance(
+            &mut batches,
+            &mut mesh_cache,
+            &instance.shape,
+            instance.render_state,
+            instance.transform,
+            instance.properties,
+        );
+    }
+    batches.into_iter().collect()
+}
+
 // --- Batch Recorder ---
 
 /// Accumulates draw commands and groups them into batches.
@@ -379,7 +469,7 @@ pub struct BatchRecorder {
     pub batches: HashMap<BatchKey, Batch>,
     /// Cached meshes keyed on the shape itself, each with a recorder-local id used in
     /// [`BatchKey::mesh_id`]. Ids are sequential, so two shapes can never collide.
-    mesh_cache: HashMap<Shape, (u64, Mesh)>,
+    mesh_cache: RecorderMeshCache,
     /// Current transform state for relative positioning.
     position: Vec3,
     rotation: Quat,
@@ -398,7 +488,7 @@ impl BatchRecorder {
     pub fn new() -> Self {
         Self {
             batches: HashMap::new(),
-            mesh_cache: HashMap::new(),
+            mesh_cache: RecorderMeshCache::new(),
             pending_deformation: crate::deformation::DeformationParams::none(),
             pending_appearance: AppearanceSnapshot::static_appearance(),
             position: Vec3::ZERO,
@@ -476,28 +566,10 @@ impl BatchRecorder {
 
     // --- Drawing methods ---
 
-    /// Returns the cached mesh id for `shape`, building the mesh on first use only.
-    fn mesh_id_for(&mut self, shape: &Shape) -> u64 {
-        if let Some((id, _)) = self.mesh_cache.get(shape) {
-            return *id;
-        }
-        let id = self.mesh_cache.len() as u64;
-        self.mesh_cache.insert(shape.clone(), (id, shape.build()));
-        id
-    }
 
     /// Add an instance with the given shape and properties to the current batch.
     /// Used internally by `RetainedWorld` to replay retained slots.
     pub fn add_instance(&mut self, shape: &Shape, mut properties: InstanceProperties) {
-        let mesh_id = self.mesh_id_for(shape);
-
-        let blend_mode = Self::blend_mode_from_flags(properties.flags);
-        let key = BatchKey {
-            mesh_id,
-            blend_mode,
-            render_state: self.render_state,
-        };
-
         let transform = InstanceTransform::from_trs(self.position, self.rotation, self.scale);
 
         // Gradients span the instance: carry its half-extent (world units) to the shader in
@@ -517,12 +589,14 @@ impl BatchRecorder {
         properties.appearance = appearance.to_vec4();
         self.pending_appearance = AppearanceSnapshot::static_appearance();
 
-        let mesh_cache = &self.mesh_cache;
-        let batch = self
-            .batches
-            .entry(key)
-            .or_insert_with(|| Batch::new(mesh_cache[shape].1.clone()));
-        batch.push(transform, properties);
+        place_instance(
+            &mut self.batches,
+            &mut self.mesh_cache,
+            shape,
+            self.render_state,
+            transform,
+            properties,
+        );
     }
 
     fn blend_mode_from_flags(flags: Vec4) -> BlendMode {
@@ -933,6 +1007,59 @@ mod tests {
     use super::*;
 
     #[test]
+    fn instance_data_matches_the_vertex_layout_stride() {
+        // Both instanced pipelines declare this stride in their vertex layouts.
+        const VERTEX_LAYOUT_STRIDE: u64 = 176;
+        let gpu_size = <InstanceData as ShaderType>::min_size().get();
+        assert_eq!(gpu_size, VERTEX_LAYOUT_STRIDE);
+        assert_eq!(
+            gpu_size,
+            <InstanceTransform as ShaderType>::min_size().get()
+                + <InstanceProperties as ShaderType>::min_size().get()
+        );
+        assert_eq!(std::mem::size_of::<InstanceData>() as u64, gpu_size);
+    }
+
+    #[test]
+    fn recorder_and_group_instances_agree() {
+        let records = grouping_tests::sample_records(&[(0, 0, 0), (0, 0, 0), (1, 0, 0), (0, 1, 0)]);
+        let mut recorder = BatchRecorder::new();
+        recorder.begin();
+        for r in &records {
+            recorder.set_render_state(r.render_state);
+            recorder.add_instance(&r.shape, r.properties);
+        }
+        recorder.end();
+        let mut from_recorder: Vec<usize> = recorder.batches.values().map(|b| b.count).collect();
+        let mut from_function: Vec<usize> =
+            group_instances(&records).iter().map(|(_, b)| b.count).collect();
+        from_recorder.sort_unstable();
+        from_function.sort_unstable();
+        assert_eq!(from_recorder, from_function);
+        assert_eq!(from_function, vec![1, 1, 2]);
+    }
+
+    #[test]
+    fn instance_properties_from_style_keeps_srgb_colors() {
+        let style = Style::dual_directional(
+            Color::srgb(1.0, 0.5, 0.25),
+            Color::srgb(0.0, 0.5, 1.0),
+            Vec3::X,
+        );
+        let props = InstanceProperties::from(&style);
+        assert!((props.color.x - 1.0).abs() < 1e-4);
+        assert!((props.color.y - 0.5).abs() < 1e-4);
+        assert!((props.color.z - 0.25).abs() < 1e-4);
+        assert!((props.secondary_color.z - 1.0).abs() < 1e-4);
+        assert_eq!(props.flags.x, 1.0, "dual directional colour mode");
+        assert_eq!(props.direction.x, 1.0);
+        assert_eq!(
+            InstanceProperties::from_style_descriptor(&style).color.y,
+            props.color.y
+        );
+    }
+
+    #[test]
     fn batch_key_equality() {
         let key1 = BatchKey {
             mesh_id: 42,
@@ -1137,4 +1264,112 @@ mod tests {
     }
 
     use bevy::render::mesh::PrimitiveTopology;
+}
+
+#[cfg(test)]
+mod grouping_tests {
+    use super::*;
+    use proptest::prelude::*;
+    use std::collections::HashSet;
+
+    /// Distinct blend modes, indexed by the second element of a sample tuple.
+    const BLENDS: [BlendMode; 3] = [
+        BlendMode::Opaque,
+        BlendMode::Transparent,
+        BlendMode::Additive,
+    ];
+
+    /// Builds one record per `(shape, blend, layer)` tuple. Equal tuples are instances that
+    /// must share a batch; each record sits at `x = its position in the input`.
+    pub(super) fn sample_records(samples: &[(usize, usize, i32)]) -> Vec<InstanceRecord> {
+        samples
+            .iter()
+            .enumerate()
+            .map(|(i, &(shape, blend, layer))| InstanceRecord {
+                shape: Shape::sphere(0.5 + shape as f32, ShapeDetail::Low),
+                render_state: RenderState {
+                    layer,
+                    ..RenderState::default()
+                },
+                transform: InstanceTransform::from_trs(
+                    Vec3::new(i as f32, 0.0, 0.0),
+                    Quat::IDENTITY,
+                    Vec3::ONE,
+                ),
+                properties: InstanceProperties::from_style(
+                    [1.0; 4],
+                    [1.0; 4],
+                    [0.0, 1.0, 0.0, 0.0],
+                    ColorMode::Single,
+                    BLENDS[blend].clone(),
+                    MixSpace::default(),
+                    None,
+                ),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn no_instances_make_no_batches() {
+        assert!(group_instances(&[]).is_empty());
+    }
+
+    #[test]
+    fn one_instance_makes_one_batch() {
+        let batches = group_instances(&sample_records(&[(0, 0, 0)]));
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].1.count, 1);
+    }
+
+    #[test]
+    fn identical_instances_share_one_batch_in_input_order() {
+        let batches = group_instances(&sample_records(&[(0, 0, 0); 40]));
+        assert_eq!(batches.len(), 1);
+        let batch = &batches[0].1;
+        assert_eq!(batch.count, 40);
+        for (i, transform) in batch.transforms.iter().enumerate() {
+            assert_eq!(transform.col3.x, i as f32);
+        }
+    }
+
+    #[test]
+    fn instances_that_differ_in_shape_blend_or_layer_never_share_a_batch() {
+        let samples = [(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1), (2, 2, -1)];
+        let batches = group_instances(&sample_records(&samples));
+        assert_eq!(batches.len(), samples.len());
+        assert!(batches.iter().all(|(_, b)| b.count == 1));
+    }
+
+    proptest! {
+        #[test]
+        fn grouping_matches_the_distinct_keys(
+            samples in prop::collection::vec((0usize..3, 0usize..3, 0i32..3), 0..60)
+        ) {
+            let batches = group_instances(&sample_records(&samples));
+
+            let mut expected: Vec<usize> = {
+                let distinct: HashSet<_> = samples.iter().copied().collect();
+                distinct
+                    .iter()
+                    .map(|key| samples.iter().filter(|s| *s == key).count())
+                    .collect()
+            };
+            let mut actual: Vec<usize> = batches.iter().map(|(_, b)| b.count).collect();
+            expected.sort_unstable();
+            actual.sort_unstable();
+            prop_assert_eq!(actual, expected);
+
+            for (key, batch) in &batches {
+                prop_assert_eq!(batch.transforms.len(), batch.count);
+                prop_assert_eq!(batch.properties.len(), batch.count);
+                prop_assert_eq!(batch.deformations.len(), batch.count);
+                let layer = key.render_state.layer;
+                prop_assert!((0..3).contains(&layer));
+                prop_assert!(BLENDS.contains(&key.blend_mode));
+                // Within a batch, instances keep the order they were given in.
+                let xs: Vec<f32> = batch.transforms.iter().map(|t| t.col3.x).collect();
+                prop_assert!(xs.windows(2).all(|w| w[0] < w[1]));
+            }
+        }
+    }
 }

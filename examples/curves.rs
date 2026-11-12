@@ -97,7 +97,7 @@ fn setup(mut commands: Commands, meshes: ResMut<Assets<Mesh>>) {
     // Camera - angled view that fills the frame
     commands.spawn((
         Camera3d::default(),
-        Transform::from_xyz(0.0, 9.5, 13.0).looking_at(Vec3::new(0.0, 1.2, 0.0), Vec3::Y),
+        Transform::from_xyz(0.0, 8.5, 12.0).looking_at(Vec3::new(0.0, 2.2, 0.5), Vec3::Y),
     ));
 
     let mut recorder = BatchRecorder::new();
@@ -106,7 +106,7 @@ fn setup(mut commands: Commands, meshes: ResMut<Assets<Mesh>>) {
     // Ground slab
     recorder.set_position(Vec3::new(0.0, -0.01, 0.0));
     recorder.cuboid(
-        Vec3::new(44.0, 0.02, 44.0),
+        Vec3::new(120.0, 0.02, 120.0),
         0.0,
         ShapeDetail::Low,
         [0.17, 0.16, 0.22, 1.0],
@@ -222,7 +222,7 @@ fn spawn_label(commands: &mut Commands, text: &str, position: Vec3) {
             position_type: PositionType::Absolute,
             left: Val::Px(0.0),
             top: Val::Px(0.0),
-            width: Val::Px(150.0),
+            width: Val::Px(200.0),
             height: Val::Px(24.0),
             justify_content: JustifyContent::Center,
             align_items: AlignItems::Center,

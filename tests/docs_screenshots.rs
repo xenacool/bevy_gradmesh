@@ -13,9 +13,13 @@
 //!
 //! To refresh pictures run `make screenshots`, or `make screenshot-<example>` for one.
 
-use std::collections::BTreeSet;
-use std::fs;
+use std::collections::{BTreeSet, HashSet};
+use std::fs::{self, File};
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
+
+use bevy::asset::RenderAssetUsages;
+use bevy::image::{CompressedImageFormats, Image, ImageSampler, ImageType};
 
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -62,74 +66,51 @@ fn picture_of(example: &str, animated: bool) -> String {
     format!("screenshots/screenshot_{example}.{}", if animated { "gif" } else { "png" })
 }
 
-fn is_png(bytes: &[u8]) -> bool {
-    bytes.starts_with(b"\x89PNG\r\n\x1a\n")
+/// Decodes a PNG file the way Bevy would load it.
+fn decode_png(path: &Path) -> Image {
+    let bytes = fs::read(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    Image::from_buffer(
+        &bytes,
+        ImageType::Extension("png"),
+        CompressedImageFormats::NONE,
+        true,
+        ImageSampler::default(),
+        RenderAssetUsages::default(),
+    )
+    .unwrap_or_else(|e| panic!("{} is not a decodable PNG: {e}", path.display()))
 }
 
-fn is_gif(bytes: &[u8]) -> bool {
-    bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a")
-}
-
-/// Number of frames of an animated GIF, or `None` if it is not animated: the number of
-/// Graphic Control Extension blocks (0x21 0xF9) plus the initial image.
-fn gif_frames(bytes: &[u8]) -> Option<usize> {
-    if !is_gif(bytes) {
-        return None;
-    }
-    let mut frames = 1;
-    // Logical screen descriptor: width(2) + height(2) + packed(1) + bg(1) + aspect(1) = 7 bytes
-    if bytes.len() < 13 {
-        return Some(frames);
-    }
-    let packed = bytes[10]; // 6 (header) + 4 (width/height)
-    let mut at = 11; // after packed byte
-    // Skip global color table if present
-    if (packed & 0x80) != 0 {
-        let gct_size = ((packed & 0x07) + 1) as u32;
-        at += (3 * (1 << gct_size)) as usize;
-    }
-    // Scan for blocks. Some GIF encoders (e.g. ffmpeg) leave stray bytes before the
-    // first valid block, so skip unknown bytes instead of aborting.
-    while at < bytes.len() {
-        if bytes[at] == 0x2C {
-            // Image descriptor: skip to next block
-            at += 1;
-            if at + 9 > bytes.len() { break; }
-            at += 9; // image descriptor fields
-            // Skip image data (LZW min code size + data blocks)
-            if at >= bytes.len() { break; }
-            at += 1; // LZW min code size
-            loop {
-                if at >= bytes.len() { break; }
-                let block_size = bytes[at] as usize;
-                at += 1 + block_size;
-                if block_size == 0 { break; }
-            }
-        } else if bytes[at] == 0x21 {
-            // Extension
-            at += 1;
-            if at >= bytes.len() { break; }
-            let ext_label = bytes[at];
-            at += 1;
-            if ext_label == 0xF9 {
-                // Graphic Control Extension = new frame
-                frames += 1;
-            }
-            // Skip extension blocks
-            loop {
-                if at >= bytes.len() { break; }
-                let block_size = bytes[at] as usize;
-                at += 1 + block_size;
-                if block_size == 0 { break; }
-            }
-        } else if bytes[at] == 0x3B {
-            // Trailer
-            break;
-        } else {
-            at += 1; // skip unknown bytes (some encoders leave stray data)
+/// How many different colours the picture has on a 32 x 32 grid of sample points.
+fn distinct_sampled_colours(image: &Image) -> usize {
+    const GRID: u32 = 32;
+    let mut colours = HashSet::new();
+    for gy in 0..GRID {
+        for gx in 0..GRID {
+            let x = gx * image.width() / GRID;
+            let y = gy * image.height() / GRID;
+            let colour = image.get_color_at(x, y).expect("sample point is inside the image");
+            let srgba = colour.to_srgba();
+            colours.insert([srgba.red, srgba.green, srgba.blue].map(|c| (c * 255.0).round() as u8));
         }
     }
-    Some(frames)
+    colours.len()
+}
+
+/// Number of frames in a GIF, counted by decoding every one of them.
+fn gif_frame_count(path: &Path) -> usize {
+    let file = File::open(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let mut decoder = gif::DecodeOptions::new()
+        .read_info(BufReader::new(file))
+        .unwrap_or_else(|e| panic!("{} is not a decodable GIF: {e}", path.display()));
+    let mut frames = 0;
+    while decoder
+        .read_next_frame()
+        .unwrap_or_else(|e| panic!("{}: frame {frames} is broken: {e}", path.display()))
+        .is_some()
+    {
+        frames += 1;
+    }
+    frames
 }
 
 #[test]
@@ -191,9 +172,7 @@ fn animations_are_animated_gifs_with_many_frames() {
         if !full.exists() {
             continue;
         }
-        let bytes = fs::read(&full).unwrap_or_else(|e| panic!("{path}: {e}"));
-        assert!(is_gif(&bytes), "{path} is not a GIF");
-        let frames = gif_frames(&bytes).unwrap_or_else(|| panic!("{path} is a still GIF, not an animation"));
+        let frames = gif_frame_count(&full);
         assert!(frames >= 30, "{path} has only {frames} frames, a second of animation is 30");
     }
 }
@@ -210,9 +189,8 @@ fn stills_are_pngs_that_are_not_blank() {
         if !full.exists() {
             continue;
         }
-        let bytes = fs::read(&full).unwrap_or_else(|e| panic!("{path}: {e}"));
-        assert!(is_png(&bytes), "{path} is not a PNG");
-        // A capture of a window that never drew compresses to almost nothing.
-        assert!(bytes.len() > 20_000, "{path} is only {} bytes: was anything drawn?", bytes.len());
+        // A capture of a window that never drew is one flat colour.
+        let colours = distinct_sampled_colours(&decode_png(&full));
+        assert!(colours > 1, "{path} has a single colour: was anything drawn?");
     }
 }

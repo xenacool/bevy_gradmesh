@@ -6,9 +6,9 @@
 //!
 //! # Architecture
 //!
-//! 1. **GPU Buffers**: Each batch has two storage buffers - one for transforms
-//!    (`InstanceTransform`, 64 bytes per instance) and one for properties
-//!    (`InstanceProperties`, 80 bytes per instance).
+//! 1. **GPU Buffers**: Each batch has one instance vertex buffer holding an
+//!    [`InstanceData`] per instance: the transform (`InstanceTransform`, 64 bytes)
+//!    followed by the properties (`InstanceProperties`, 112 bytes), 176 bytes in all.
 //! 2. **Custom Shader**: `instanced.wesl` reads per-instance attributes and
 //!    computes world position and gradient shading per instance.
 //! 3. **Render Phase Items**: Batches are queued as `GradMeshBatchItem` in the
@@ -17,19 +17,22 @@
 //!    and issues `draw_indexed(instance_count, 1, ...)` for instanced rendering.
 
 use bevy::ecs::prelude::*;
+use bevy::render::render_resource::{BufferUsages, BufferVec};
+use bevy::render::renderer::{RenderDevice, RenderQueue};
 
-use crate::batch::{InstanceProperties, InstanceTransform};
+use crate::batch::{InstanceData, InstanceProperties, InstanceTransform};
 use crate::deformation::DeformationParams;
 
 // --- GPU Buffer Data ---
 
-/// CPU-side buffer data for a single batch, ready for GPU upload.
+/// CPU-side data for a single batch, ready for GPU upload.
+#[doc(hidden)]
 #[derive(Debug, Clone)]
 pub struct InstancedBufferData {
-    /// Flattened transform data (64 bytes per instance).
-    pub transforms: Vec<u8>,
-    /// Flattened property data (96 bytes per instance, includes deformation).
-    pub properties: Vec<u8>,
+    /// One transform per instance.
+    pub transforms: Vec<InstanceTransform>,
+    /// One set of properties per instance, with the deformation filled in.
+    pub properties: Vec<InstanceProperties>,
     /// Number of instances.
     pub instance_count: u32,
 }
@@ -46,45 +49,78 @@ impl InstancedBufferData {
             .min(properties.len())
             .min(deformations.len());
 
-        // Flatten transforms
-        let transforms_bytes = if instance_count > 0 {
-            let ptr = transforms.as_ptr();
-            unsafe {
-                std::slice::from_raw_parts(
-                    ptr as *const u8,
-                    instance_count * std::mem::size_of::<InstanceTransform>(),
-                )
-            }
-            .to_vec()
-        } else {
-            Vec::new()
-        };
-
-        // Build properties with deformation encoded in the deformation field
-        let properties_bytes = if instance_count > 0 {
-            let mut buf =
-                Vec::with_capacity(instance_count * std::mem::size_of::<InstanceProperties>());
-            for i in 0..instance_count {
-                let mut prop = properties[i];
-                prop.deformation = deformations[i].to_vec4();
-                buf.extend_from_slice(unsafe {
-                    std::slice::from_raw_parts(
-                        &prop as *const InstanceProperties as *const u8,
-                        std::mem::size_of::<InstanceProperties>(),
-                    )
-                });
-            }
-            buf
-        } else {
-            Vec::new()
-        };
+        let properties = properties
+            .iter()
+            .zip(deformations)
+            .take(instance_count)
+            .map(|(properties, deformation)| InstanceProperties {
+                deformation: deformation.to_vec4(),
+                ..*properties
+            })
+            .collect();
 
         Self {
-            transforms: transforms_bytes,
-            properties: properties_bytes,
+            transforms: transforms[..instance_count].to_vec(),
+            properties,
             instance_count: instance_count as u32,
         }
     }
+}
+
+// --- GPU upload ---
+
+/// The instance vertex buffer of one batch: an [`InstanceData`] per instance.
+///
+/// Bevy's `BufferVec` lays each record out with encase, owns the GPU buffer and grows it
+/// when a batch gets bigger.
+pub(crate) type InstanceBuffer = BufferVec<InstanceData>;
+
+/// An empty instance buffer that is bound as a vertex buffer.
+pub(crate) fn new_instance_buffer(label: &str) -> InstanceBuffer {
+    let mut buffer = InstanceBuffer::new(BufferUsages::VERTEX);
+    buffer.set_label(Some(label));
+    buffer
+}
+
+/// Writes a batch's instances into `buffer` and queues the GPU upload.
+///
+/// Counts the upload in `stats`: a first allocation, a reallocation when the batch grew
+/// past the buffer's capacity, and the bytes written. Uses as many instances as both
+/// slices hold, never more than `instance_count`.
+pub(crate) fn upload_instances(
+    buffer: &mut InstanceBuffer,
+    transforms: &[InstanceTransform],
+    properties: &[InstanceProperties],
+    instance_count: u32,
+    device: &RenderDevice,
+    queue: &RenderQueue,
+    stats: &mut InstancedStats,
+) {
+    let count = transforms
+        .len()
+        .min(properties.len())
+        .min(instance_count as usize);
+
+    let had_buffer = buffer.buffer().is_some();
+    let capacity_before = buffer.capacity();
+
+    buffer.clear();
+    buffer.reserve_internal(count);
+    for (transform, properties) in transforms.iter().zip(properties).take(count) {
+        buffer.push(InstanceData {
+            transform: *transform,
+            properties: *properties,
+        });
+    }
+    buffer.write_buffer(device, queue);
+
+    if !had_buffer {
+        stats.buffer_allocations += 1;
+    } else if buffer.capacity() > capacity_before {
+        stats.buffer_reallocations += 1;
+    }
+    stats.dirty_batch_count += 1;
+    stats.gpu_upload_bytes += (count * std::mem::size_of::<InstanceData>()) as u64;
 }
 
 // --- Statistics ---

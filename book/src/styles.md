@@ -83,7 +83,7 @@ fn radial_material() -> GradMeshMaterial {
 
 ## Blend Modes
 
-*Colour modes, blend modes, dash patterns and style presets. Blends and solids use the standalone pipeline and dashed rims are `Mesh2d`, so the example runs without PBR. Run `cargo run --example styles` to reproduce it.*
+*Colour modes, blend modes, dash patterns and style presets. Each blend-mode shape sits on a slab that is light on one half and dark on the other, so you can see how it blends with what is behind it. The screenshot is lit by the PBR material; the blend and colour modes themselves also work on the standalone, `Mesh2d` and SDF 2D backends. Run `cargo run --example styles` to reproduce it.*
 
 ### Opaque
 ```rust
@@ -167,7 +167,7 @@ fn custom_style(my_shader_handle: Handle<Shader>) -> Style {
 
 ## PBR Properties
 
-All materials support Bevy's PBR properties:
+Materials built with `Style::build_material` (the `pbr` feature) extend Bevy's `StandardMaterial`, so they support its PBR properties. The instanced, standalone, `Mesh2d` and SDF 2D backends have no lighting model and ignore them:
 
 ```rust
 # use bevy::prelude::*;

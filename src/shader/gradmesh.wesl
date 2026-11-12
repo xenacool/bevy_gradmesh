@@ -269,37 +269,31 @@ fn angular_progress(uv: vec2<f32>) -> f32 {
 }
 
 /// Rectangle perimeter progress (for cuboid/rectangle shapes).
-/// Traces the actual perimeter centerline: right edge -> top -> left -> bottom.
+/// Traces the outline as one continuous loop: right edge -> top -> left -> bottom.
 fn rectangle_perimeter_progress(uv: vec2<f32>) -> f32 {
+    // One continuous loop around the outline, so dashes never restart at a corner:
+    // right edge (upward) -> top (leftward) -> left (downward) -> bottom (rightward).
+    // Each edge covers a quarter of the loop; `count` dashes span the whole outline.
     let p = uv * 2.0 - 1.0;  // Map UV to [-1, 1]
-    let abs_p = abs(p);
-    // Determine which edge the UV is closest to
     let dist_right = abs(p.x - 1.0);
     let dist_left = abs(p.x + 1.0);
     let dist_top = abs(p.y - 1.0);
     let dist_bottom = abs(p.y + 1.0);
-    
-    // Find minimum distance to any edge
+
     let min_h = min(dist_right, dist_left);
     let min_v = min(dist_top, dist_bottom);
-    
+
     if (min_h < min_v) {
-        // Closer to left/right edge - progress varies with Y
         if (dist_right < dist_left) {
-            // Right edge: progress increases upward
-            return fract(p.y * 0.5 + 0.75);
+            return 0.25 * (p.y * 0.5 + 0.5);
         } else {
-            // Left edge: progress increases downward
-            return fract(-p.y * 0.5 + 0.25);
+            return 0.5 + 0.25 * (0.5 - p.y * 0.5);
         }
     } else {
-        // Closer to top/bottom edge - progress varies with X
         if (dist_top < dist_bottom) {
-            // Top edge: progress increases rightward
-            return fract(p.x * 0.5 + 0.5);
+            return 0.25 + 0.25 * (0.5 - p.x * 0.5);
         } else {
-            // Bottom edge: progress increases leftward
-            return fract(-p.x * 0.5);
+            return 0.75 + 0.25 * (p.x * 0.5 + 0.5);
         }
     }
 }

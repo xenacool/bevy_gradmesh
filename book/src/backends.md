@@ -44,6 +44,13 @@ Bevy's `PbrPlugin` disabled).
 `Style::build_2d()` (a `GradMeshMaterial2d`) and `Camera2d`. Every shape kind
 works, but each distinct parameter set is a distinct mesh.
 
+### Solids and `build_2d`
+
+`Shape::build_2d()` does not reject solids: a sphere or cuboid comes back as its
+ordinary mesh, which is not a flat drawing of it. To have the compiler check that a
+shape is flat, call `shape.as_flat()?.build_2d()`; `as_flat()` returns `Err(NotFlat)`
+for solids, tubes and meshes.
+
 ## SDF 2D
 
 `SdfMaterial2d` draws a shape from a signed distance field on one shared quad

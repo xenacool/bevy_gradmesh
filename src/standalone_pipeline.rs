@@ -60,7 +60,7 @@ use bevy::render::{Render, RenderApp, RenderStartup, RenderSystems};
 use crate::batch::{InstanceProperties, InstanceTransform};
 use crate::culling::{self, AABB};
 use crate::lod::LodConfig;
-use crate::render_pipeline::InstancedStats;
+use crate::render_pipeline::{InstanceBuffer, InstancedStats, new_instance_buffer, upload_instances};
 
 // --- Extracted Batch Data ---
 
@@ -72,10 +72,10 @@ pub struct StandaloneBatchData {
     pub mesh_id: AssetId<Mesh>,
     /// Number of instances.
     pub instance_count: u32,
-    /// Flattened transform data for GPU upload.
-    pub transforms: Vec<u8>,
-    /// Flattened property data for GPU upload.
-    pub properties: Vec<u8>,
+    /// One transform per instance.
+    pub transforms: Vec<InstanceTransform>,
+    /// One set of properties per instance.
+    pub properties: Vec<InstanceProperties>,
     /// Whether this batch needs GPU upload this frame.
     pub dirty: bool,
     /// Mesh AABB in local space for frustum culling.
@@ -89,14 +89,16 @@ pub struct StandaloneBatchData {
 /// Only the asset id travels to the render world, so without this strong handle the mesh is
 /// freed as soon as `render_standalone_batches` returns and a batch that is spawned once
 /// would never be drawn.
+#[doc(hidden)]
 #[derive(Component)]
 pub struct StandaloneMeshHandle(#[allow(dead_code)] pub Handle<Mesh>);
 
 /// GPU buffers for a single standalone instanced batch.
+#[doc(hidden)]
 #[derive(Component)]
 pub struct StandaloneGpuBuffers {
-    /// Combined vertex buffer containing both transforms and properties.
-    buffer: Buffer,
+    /// Vertex buffer with one transform-plus-properties record per instance.
+    buffer: InstanceBuffer,
     /// Number of instances.
     instance_count: u32,
 }
@@ -104,6 +106,7 @@ pub struct StandaloneGpuBuffers {
 // --- Pipeline ---
 
 /// The standalone pipeline for GradMesh rendering (no PBR).
+#[doc(hidden)]
 #[derive(Resource, Clone)]
 pub struct StandalonePipeline {
     /// Layout of the camera bind group (group 0).
@@ -129,14 +132,17 @@ impl StandalonePipeline {
 }
 
 /// Camera bind group shared by every standalone batch.
+#[doc(hidden)]
 #[derive(Resource)]
 pub struct StandaloneViewBindGroup(BindGroup);
 
 /// Specialized pipelines cache for standalone rendering.
+#[doc(hidden)]
 pub type StandalonePipelineCache = SpecializedMeshPipelines<StandalonePipeline>;
 
 /// Pipeline key - depends only on view state and mesh topology, never on
 /// material, so all standalone batches on a view share the same pipeline.
+#[doc(hidden)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct StandalonePipelineKey {
     /// MSAA sample count of the view.
@@ -299,6 +305,7 @@ impl SpecializedMeshPipeline for StandalonePipeline {
 // --- Draw Command ---
 
 /// The draw command tuple for standalone batches.
+#[doc(hidden)]
 pub type DrawStandaloneBatch = (
     SetItemPipeline,
     SetStandaloneViewBindGroup<0>,
@@ -331,6 +338,7 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetStandaloneViewBindGro
 }
 
 /// Implements the actual draw call for standalone batches.
+#[doc(hidden)]
 pub struct DrawStandaloneBatchImpl;
 
 impl<P: PhaseItem> RenderCommand<P> for DrawStandaloneBatchImpl {
@@ -365,7 +373,10 @@ impl<P: PhaseItem> RenderCommand<P> for DrawStandaloneBatchImpl {
         pass.set_vertex_buffer(0, vertex_buffer_slice.buffer.slice(..));
 
         // Bind the instanced data buffer at location 1
-        pass.set_vertex_buffer(1, gpu_buffers.buffer.slice(..));
+        let Some(instance_buffer) = gpu_buffers.buffer.buffer() else {
+            return RenderCommandResult::Skip;
+        };
+        pass.set_vertex_buffer(1, instance_buffer.slice(..));
 
         match &gpu_mesh.buffer_info {
             RenderMeshBufferInfo::Indexed {
@@ -410,16 +421,16 @@ fn prepare_standalone_buffers(
             continue;
         }
 
-        let combined = build_combined_buffer(batch_data);
-        let buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
-            label: Some("standalone instanced batch data buffer"),
-            contents: bytemuck::cast_slice(&combined),
-            usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
-        });
-
-        stats.buffer_allocations += 1;
-        stats.dirty_batch_count += 1;
-        stats.gpu_upload_bytes += combined.len() as u64;
+        let mut buffer = new_instance_buffer("standalone instanced batch data buffer");
+        upload_instances(
+            &mut buffer,
+            &batch_data.transforms,
+            &batch_data.properties,
+            batch_data.instance_count,
+            &render_device,
+            &render_queue,
+            &mut stats,
+        );
         commands.entity(entity).insert(StandaloneGpuBuffers {
             buffer,
             instance_count: batch_data.instance_count,
@@ -431,47 +442,19 @@ fn prepare_standalone_buffers(
             continue;
         }
 
-        let combined = build_combined_buffer(batch_data);
-        // A batch that grew would write past the end of its buffer, so it gets
-        // a new one; the draw call always uses the batch's current count.
-        if combined.len() as u64 > gpu_buffers.buffer.size() {
-            gpu_buffers.buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
-                label: Some("standalone instanced batch data buffer"),
-                contents: bytemuck::cast_slice(&combined),
-                usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
-            });
-            stats.buffer_reallocations += 1;
-        } else {
-            render_queue.write_buffer(&gpu_buffers.buffer, 0, bytemuck::cast_slice(&combined));
-        }
+        // The buffer vector grows its GPU buffer when the batch got bigger; the draw call
+        // always uses the batch's current count.
+        upload_instances(
+            &mut gpu_buffers.buffer,
+            &batch_data.transforms,
+            &batch_data.properties,
+            batch_data.instance_count,
+            &render_device,
+            &render_queue,
+            &mut stats,
+        );
         gpu_buffers.instance_count = batch_data.instance_count;
-        stats.dirty_batch_count += 1;
-        stats.gpu_upload_bytes += combined.len() as u64;
     }
-}
-
-/// Build the interleaved transform+property buffer for a standalone batch.
-fn build_combined_buffer(batch_data: &StandaloneBatchData) -> Vec<u8> {
-    let transform_stride = size_of::<InstanceTransform>();
-    let property_stride = size_of::<InstanceProperties>();
-    let instance_stride = transform_stride + property_stride;
-
-    let total_size = instance_stride * batch_data.instance_count as usize;
-    let mut combined = Vec::with_capacity(total_size);
-
-    for i in 0..batch_data.instance_count as usize {
-        let t_start = i * transform_stride;
-        let p_start = i * property_stride;
-
-        if t_start + transform_stride <= batch_data.transforms.len() {
-            combined.extend_from_slice(&batch_data.transforms[t_start..t_start + transform_stride]);
-        }
-        if p_start + property_stride <= batch_data.properties.len() {
-            combined.extend_from_slice(&batch_data.properties[p_start..p_start + property_stride]);
-        }
-    }
-
-    combined
 }
 
 // --- Queue System ---
@@ -577,28 +560,17 @@ fn queue_standalone_batches(
 
 /// Parse transform data from StandaloneBatchData.
 fn parse_transforms(batch_data: &StandaloneBatchData) -> Vec<culling::InstanceTransform> {
-    let transform_stride = std::mem::size_of::<InstanceTransform>();
-    let mut transforms = Vec::with_capacity(batch_data.instance_count as usize);
-
-    for i in 0..batch_data.instance_count as usize {
-        let start = i * transform_stride;
-        if start + transform_stride > batch_data.transforms.len() {
-            break;
-        }
-
-        let bytes = &batch_data.transforms[start..start + transform_stride];
-        let values: [f32; 16] =
-            bytemuck::pod_read_unaligned(&bytes[..std::mem::size_of::<[f32; 16]>()]);
-
-        transforms.push(culling::InstanceTransform {
-            col0: [values[0], values[1], values[2], values[3]],
-            col1: [values[4], values[5], values[6], values[7]],
-            col2: [values[8], values[9], values[10], values[11]],
-            col3: [values[12], values[13], values[14], values[15]],
-        });
-    }
-
-    transforms
+    batch_data
+        .transforms
+        .iter()
+        .take(batch_data.instance_count as usize)
+        .map(|t| culling::InstanceTransform {
+            col0: [t.col0.x, t.col0.y, t.col0.z, t.col0.w],
+            col1: [t.col1.x, t.col1.y, t.col1.z, t.col1.w],
+            col2: [t.col2.x, t.col2.y, t.col2.z, t.col2.w],
+            col3: [t.col3.x, t.col3.y, t.col3.z, t.col3.w],
+        })
+        .collect()
 }
 
 // --- Plugin ---
@@ -619,7 +591,12 @@ impl Plugin for StandaloneRenderPlugin {
             app.add_plugins(crate::render_pipeline::InstancedStatsPlugin);
         }
 
-        app.sub_app_mut(RenderApp)
+        // Without a render sub-app (a headless app or a test) there is nothing to draw with,
+        // so only the main-world side above is registered.
+        let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
+            return;
+        };
+        render_app
             .add_render_command::<Opaque3d, DrawStandaloneBatch>()
             .init_resource::<StandalonePipelineCache>()
             // Also initialised by `InstancedRenderPlugin`; `init_resource` is a no-op

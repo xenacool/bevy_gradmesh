@@ -1,6 +1,6 @@
 [package]
 name = "bevy_gradmesh"
-version = "0.3.7"
+version = "0.3.8"
 authors = ["Jessica Collins (https://github.com/xenacool)"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
@@ -8,11 +8,6 @@ description = "Procedural shapes, mesh generation and gradient materials for Bev
 repository = "https://github.com/xenacool/bevy_gradmesh"
 readme = "README.md"
 exclude = ["screenshots/", "reference/", "target/", "Cargo.lock", "Makefile", "book/"]
-
-[profile.dev]
-# Reduce codegen units to speed up incremental compilation and reduce memory usage.
-# Default is the number of CPU cores (16), which increases linker memory significantly.
-codegen-units = 8
 
 [profile.release]
 opt-level = "z"
@@ -40,12 +35,12 @@ pbr = ["bevy/bevy_pbr"]
 bevy = { version = "0.20", default-features = false, features = ["bevy_render", "bevy_sprite_render", "bevy_log"] }
 bevy_asset = "0.20"
 bevy_material = "0.20"
-bytemuck = "1.25"
 
 # Examples need UI, text, the default font, debug overlays, tonemapping LUT textures and PNG
 # support, none of which the library requires. Bevy's default features cover all of them.
 [dev-dependencies]
 bevy = { version = "0.20", features = ["tonemapping_luts", "png"] }
+gif = "0.14.2"
 proptest = "1.12"
 
 # Examples marked `required-features = ["pbr"]` draw lit 3D shapes with `GradMeshMaterial` or the

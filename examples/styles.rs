@@ -54,6 +54,11 @@ fn main() {
 #[derive(Component)]
 struct WorldLabel(Vec3);
 
+/// Labels float this far above a shape's centre, clear of its top even when it is tilted.
+const LABEL_LIFT: f32 = 1.15;
+/// Wide enough that the longest label ("Dual Radial (OKLAB)") stays on one line.
+const LABEL_WIDTH: f32 = 200.0;
+
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<bevy::render::mesh::Mesh>>,
@@ -87,6 +92,12 @@ fn setup(
         Transform::from_translation(Vec3::new(0.0, -0.01, 0.0)),
     ));
 
+    // Blend modes only show against something to blend with, so each of them sits on a slab
+    // that is light on one half and dark on the other.
+    let light_half = meshes.add(Cuboid::new(1.3, 0.04, 2.2));
+    let light_mat = materials.add(opaque(0.92, 0.90, 0.84));
+    let dark_mat = materials.add(opaque(0.05, 0.05, 0.08));
+
     // Pre-built meshes for varied shapes
     let sphere = meshes.add(Shape::sphere(0.55, ShapeDetail::High).build());
     let disc = meshes.add(Shape::disc(0.55, ShapeDetail::High).build());
@@ -104,6 +115,24 @@ fn setup(
     let z1 = -row_spacing * 0.5;
     let z2 = row_spacing * 0.5;
     let z3 = row_spacing * 1.5;
+
+    for &x in &r2_blend_xs(col_spacing) {
+        for (dx, mat) in [(-0.65, &light_mat), (0.65, &dark_mat)] {
+            commands.spawn((
+                Mesh3d(light_half.clone()),
+                MeshMaterial3d(mat.clone()),
+                Transform::from_translation(Vec3::new(x + dx, 0.02, z1)),
+            ));
+        }
+    }
+    // The Blush preset is transparent as well.
+    for (dx, mat) in [(-0.65, &light_mat), (0.65, &dark_mat)] {
+        commands.spawn((
+            Mesh3d(light_half.clone()),
+            MeshMaterial3d(mat.clone()),
+            Transform::from_translation(Vec3::new(col_spacing * -0.5 + dx, 0.02, z3)),
+        ));
+    }
 
     // --- Row 1: Color Modes ---
     let r1_xs = [
@@ -130,8 +159,8 @@ fn setup(
         &mut materials,
         &sphere,
         Style::dual_directional(
-            Color::srgb(0.85, 0.35, 0.55),
-            Color::srgb(1.0, 0.94, 0.6),
+            Color::srgb(0.1, 0.3, 0.95),
+            Color::srgb(1.0, 0.85, 0.1),
             Vec3::Y,
         )
         .with_mix_space(MixSpace::Srgb),
@@ -145,8 +174,8 @@ fn setup(
         &mut materials,
         &sphere,
         Style::dual_directional(
-            Color::srgb(0.85, 0.35, 0.55),
-            Color::srgb(1.0, 0.94, 0.6),
+            Color::srgb(0.1, 0.3, 0.95),
+            Color::srgb(1.0, 0.85, 0.1),
             Vec3::Y,
         ),
         Vec3::new(r1_xs[2], origin_y, z0),
@@ -217,7 +246,7 @@ fn setup(
     spawn_label(
         &mut commands,
         "Additive",
-        Vec3::new(r2_xs[2], origin_y + 0.8, z1),
+        Vec3::new(r2_xs[2], origin_y + LABEL_LIFT, z1),
     );
 
     // Multiplicative
@@ -340,7 +369,7 @@ fn setup(
         &mut commands,
         &mut materials,
         &sphere,
-        Style::dual_directional_up(Color::srgb(0.1, 0.07, 0.05), Color::srgb(0.2, 0.14, 0.1)),
+        Style::dual_directional_up(Color::srgb(0.30, 0.18, 0.10), Color::srgb(0.58, 0.38, 0.22)),
         Vec3::new(r4_xs[1], origin_y, z3),
         "Hair",
     );
@@ -390,6 +419,11 @@ fn setup(
     );
 }
 
+/// X positions of the blend-mode row.
+fn r2_blend_xs(col_spacing: f32) -> [f32; 6] {
+    [-2.5, -1.5, -0.5, 0.5, 1.5, 2.5].map(|k| col_spacing * k)
+}
+
 fn add_shape(
     commands: &mut Commands,
     materials: &mut Assets<GradMeshMaterial>,
@@ -404,7 +438,7 @@ fn add_shape(
         MeshMaterial3d(mat),
         Transform::from_translation(position),
     ));
-    spawn_label(commands, label, position + Vec3::new(0.0, 0.8, 0.0));
+    spawn_label(commands, label, position + Vec3::new(0.0, LABEL_LIFT, 0.0));
 }
 
 fn add_shape_tilted(
@@ -421,7 +455,7 @@ fn add_shape_tilted(
         MeshMaterial3d(mat),
         Transform::from_translation(position).with_rotation(Quat::from_axis_angle(Vec3::X, -0.3)),
     ));
-    spawn_label(commands, label, position + Vec3::new(0.0, 0.8, 0.0));
+    spawn_label(commands, label, position + Vec3::new(0.0, LABEL_LIFT, 0.0));
 }
 
 fn spawn_label(commands: &mut Commands, text: &str, position: Vec3) {
@@ -436,7 +470,7 @@ fn spawn_label(commands: &mut Commands, text: &str, position: Vec3) {
             position_type: PositionType::Absolute,
             left: Val::Px(0.0),
             top: Val::Px(0.0),
-            width: Val::Px(120.0),
+            width: Val::Px(LABEL_WIDTH),
             height: Val::Px(20.0),
             justify_content: JustifyContent::Center,
             align_items: AlignItems::Center,
@@ -455,7 +489,7 @@ fn position_labels(
     };
     for (label, mut node) in &mut labels {
         if let Ok(viewport) = camera.world_to_viewport(camera_transform, label.0) {
-            node.left = Val::Px(viewport.x - 60.0);
+            node.left = Val::Px(viewport.x - LABEL_WIDTH / 2.0);
             node.top = Val::Px(viewport.y - 10.0);
             node.display = Display::Flex;
         } else {

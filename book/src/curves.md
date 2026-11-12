@@ -56,7 +56,7 @@ fn animate_curve(
 }
 ```
 
-*Bezier curves of every degree and a 3D helix, drawn as tubes by the standalone pipeline without PBR. The standalone gradient is fixed to the world axis, so tubes far from the origin show only part of their blend. Run `cargo run --example curves` to reproduce it.*
+*Bezier curves of every degree and a 3D helix, drawn as tubes by the standalone pipeline without PBR. The standalone gradient is measured from each tube's own origin along the world axis, so every tube shows its full blend wherever it sits. Run `cargo run --example curves` to reproduce it.*
 
 ## 3D Polylines
 

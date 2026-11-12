@@ -13,9 +13,7 @@ use bevy_material::AlphaMode;
 
 #[cfg(feature = "pbr")]
 use crate::material::{
-    GradMeshMaterial, additive, color_burn, color_dodge, darken, dashed, dither, dual_directional,
-    dual_radial, dual_radial_alpha, lighten, linear_burn, multiplicative, opaque, screen,
-    subtractive, transparent, with_mix_space,
+    GradMeshMaterial, GradMeshExtension, presets,
 };
 use crate::mix_space::MixSpace;
 
@@ -841,6 +839,16 @@ impl Style {
         self
     }
 
+    /// Overrides the blend mode.
+    ///
+    /// Use this to switch an opaque style to additive, multiplicative, screen,
+    /// or any other blend mode without changing the colour or gradient settings.
+    #[must_use]
+    pub fn with_blend_mode(mut self, blend_mode: BlendMode) -> Self {
+        self.blend_mode = blend_mode;
+        self
+    }
+
     /// Returns true if the built material blends with what is behind it.
     pub fn is_translucent(&self) -> bool {
         match self.blend_mode {
@@ -1216,6 +1224,8 @@ impl Style {
         if let Some(emissive) = self.emissive {
             material.base.emissive = emissive;
         }
+        // Encode mix space in flags.w
+        material.extension.uniforms.flags.w = self.space.gpu_code();
         material
     }
 
@@ -1334,6 +1344,8 @@ impl Style {
 
     #[cfg(feature = "pbr")]
     fn build_base(&self) -> GradMeshMaterial {
+        use bevy::pbr::StandardMaterial;
+
         // Extract color components using to_srgba() which handles all Color variants
         let srgba = self.color.to_srgba();
         let (r, g, b, a) = (srgba.red, srgba.green, srgba.blue, srgba.alpha);
@@ -1342,43 +1354,39 @@ impl Style {
             (s.red, s.green, s.blue, s.alpha)
         });
 
-        // Build based on color mode and blend mode
-        let base_material = match self.color_mode {
-            ColorMode::DualDirectional => with_mix_space(
-                dual_directional(
-                    [r, g, b],
-                    [sr, sg, sb],
-                    [self.direction.x, self.direction.y, self.direction.z],
-                ),
-                self.space,
+        // Build uniforms based on color mode and blend mode
+        let uniforms = match self.color_mode {
+            ColorMode::DualDirectional => presets::dual_directional(
+                [r, g, b],
+                [sr, sg, sb],
+                [self.direction.x, self.direction.y, self.direction.z],
             ),
-            ColorMode::DualRadial => with_mix_space(
+            ColorMode::DualRadial => {
                 if a < 1.0 || sa < 1.0 {
-                    dual_radial_alpha([r, g, b, a], [sr, sg, sb, sa])
+                    presets::dual_radial_alpha([r, g, b, a], [sr, sg, sb, sa])
                 } else {
-                    dual_radial([r, g, b], [sr, sg, sb])
-                },
-                self.space,
-            ),
+                    presets::dual_radial([r, g, b], [sr, sg, sb])
+                }
+            }
             ColorMode::Single | ColorMode::HeightBands => match &self.blend_mode {
-                BlendMode::Opaque => opaque(r, g, b),
-                BlendMode::Transparent => transparent(r, g, b, a),
-                BlendMode::Additive => additive(r, g, b),
-                BlendMode::Multiplicative => multiplicative(r, g, b),
-                BlendMode::Screen => screen(r, g, b),
-                BlendMode::Dither => dither(r, g, b, a),
-                BlendMode::Subtractive => subtractive(r, g, b),
-                BlendMode::Lighten => lighten(r, g, b),
-                BlendMode::ColorDodge => color_dodge(r, g, b),
-                BlendMode::LinearBurn => linear_burn(r, g, b),
-                BlendMode::ColorBurn => color_burn(r, g, b),
-                BlendMode::Darken => darken(r, g, b),
-                BlendMode::Custom(_) => opaque(r, g, b),
+                BlendMode::Opaque => presets::opaque(r, g, b),
+                BlendMode::Transparent => presets::transparent(r, g, b, a),
+                BlendMode::Additive => presets::additive(r, g, b),
+                BlendMode::Multiplicative => presets::multiplicative(r, g, b),
+                BlendMode::Screen => presets::screen(r, g, b),
+                BlendMode::Dither => presets::dither(r, g, b, a),
+                BlendMode::Subtractive => presets::subtractive(r, g, b),
+                BlendMode::Lighten => presets::lighten(r, g, b),
+                BlendMode::ColorDodge => presets::color_dodge(r, g, b),
+                BlendMode::LinearBurn => presets::linear_burn(r, g, b),
+                BlendMode::ColorBurn => presets::color_burn(r, g, b),
+                BlendMode::Darken => presets::darken(r, g, b),
+                BlendMode::Custom(_) => presets::opaque(r, g, b),
             },
         };
 
         // Apply dash pattern if set
-        if let Some(ref dash) = self.dash {
+        let uniforms = if let Some(ref dash) = self.dash {
             if dash.is_enabled() {
                 let dash_type_code = match dash.style {
                     DashType::Normal => 0,
@@ -1390,21 +1398,105 @@ impl Style {
                     ShapeType::Disc => 1,
                     ShapeType::Rectangle => 2,
                 };
-                return dashed(
-                    r,
-                    g,
-                    b,
-                    dash.count,
-                    dash.spacing,
-                    dash.offset,
-                    dash_type_code,
-                    dash.modifier,
-                    shape_type_code,
-                );
+                presets::dashed(
+                    r, g, b,
+                    dash.count, dash.spacing, dash.offset,
+                    dash_type_code, dash.modifier, shape_type_code,
+                )
+            } else {
+                uniforms
             }
+        } else {
+            uniforms
+        };
+
+        // Build StandardMaterial base
+        let mut base = StandardMaterial {
+            base_color: bevy::color::Color::srgba(r, g, b, a).into(),
+            perceptual_roughness: self.perceptual_roughness.unwrap_or(0.7),
+            cull_mode: None,
+            ..StandardMaterial::default()
+        };
+
+        // Additive mode sets emissive glow
+        if let BlendMode::Additive = &self.blend_mode {
+            base.perceptual_roughness = 0.3;
+            base.emissive = bevy::color::LinearRgba::rgb(r, g, b) * 2.5;
         }
 
-        base_material
+        // Dual radial uses lower roughness
+        if self.color_mode == ColorMode::DualRadial {
+            base.perceptual_roughness = 0.3;
+        }
+
+        // Translucent materials use alpha blending
+        if self.is_translucent() {
+            base.alpha_mode = AlphaMode::Blend;
+        }
+
+        GradMeshMaterial {
+            base,
+            extension: GradMeshExtension { uniforms },
+        }
+    }
+}
+
+/// The shader uniforms of a style, without any `bevy_pbr` types. Same as [`Style::build_uniforms`].
+impl From<&Style> for crate::material::GradMeshUniformBuffer {
+    fn from(style: &Style) -> Self {
+        style.build_uniforms()
+    }
+}
+
+/// The PBR material of a style. Same as [`Style::build`].
+#[cfg(feature = "pbr")]
+impl From<&Style> for GradMeshMaterial {
+    fn from(style: &Style) -> Self {
+        style.build()
+    }
+}
+
+#[cfg(test)]
+mod conversion_tests {
+    use super::*;
+    use crate::material::{GradMeshUniformBuffer, Vec4, presets};
+
+    #[test]
+    fn a_style_converts_to_the_uniforms_of_the_matching_preset() {
+        let colour = Color::srgb(0.2, 0.4, 0.6);
+        let opaque = GradMeshUniformBuffer::from(&Style::opaque(colour));
+        let preset = presets::opaque(0.2, 0.4, 0.6);
+        assert_eq!(opaque.color, preset.color);
+        assert_eq!(opaque.flags, preset.flags);
+
+        let radial = GradMeshUniformBuffer::from(&Style::dual_radial(
+            Color::srgb(0.1, 0.2, 0.3),
+            Color::srgb(0.9, 0.8, 0.7),
+        ));
+        assert_eq!(radial.flags.x, 2.0, "dual radial colour mode");
+        assert_eq!(radial.secondary_color, Vec4::new(0.9, 0.8, 0.7, 1.0));
+    }
+
+    #[test]
+    fn the_conversion_is_build_uniforms() {
+        let style = Style::dual_directional(Color::srgb(1.0, 0.0, 0.0), Color::WHITE, Vec3::X)
+            .with_dash(Dash::fixed(6, 0.3));
+        let converted = GradMeshUniformBuffer::from(&style);
+        let built = style.build_uniforms();
+        assert_eq!(converted.color, built.color);
+        assert_eq!(converted.direction, built.direction);
+        assert_eq!(converted.flags, built.flags);
+        assert_eq!(converted.dash, built.dash);
+    }
+
+    #[cfg(feature = "pbr")]
+    #[test]
+    fn a_style_converts_to_the_pbr_material_it_builds() {
+        let style = Style::transparent(Color::srgba(0.3, 0.6, 0.9, 0.5));
+        let material = GradMeshMaterial::from(&style);
+        let built = style.build();
+        assert_eq!(material.extension.uniforms.color, built.extension.uniforms.color);
+        assert_eq!(material.base.alpha_mode, built.base.alpha_mode);
     }
 }
 

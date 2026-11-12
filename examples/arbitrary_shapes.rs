@@ -201,12 +201,14 @@ fn setup(
     );
     spawn_label(&mut commands, "Thin Ring", Vec3::new(0.0, 2.9, 0.0));
 
-    // Wedge (quarter circle)
+    // Wedge (quarter circle). The wedge is built around the circle's centre, so its visible
+    // quarter lies in +X/+Y; shift it back by half its radius to centre it in its cell.
+    let wedge_radius = 0.8;
     piece(
         &mut commands,
-        Shape::wedge(0.45, std::f32::consts::FRAC_PI_2, ShapeDetail::High),
+        Shape::wedge(wedge_radius, std::f32::consts::FRAC_PI_2, ShapeDetail::High),
         [1.0, 0.6, 0.2],
-        Vec2::new(3.0, 2.2),
+        Vec2::new(3.0 - wedge_radius * 0.45, 2.2 - wedge_radius * 0.45),
     );
     spawn_label(&mut commands, "Quarter Wedge", Vec3::new(3.0, 2.9, 0.0));
 
@@ -229,33 +231,33 @@ fn setup(
     );
     spawn_label(&mut commands, "Inverted", Vec3::new(0.0, 4.6, 0.0));
 
-    // Barrel shape (narrow middle via two tapered cylinders)
+    // Barrel: one polygon that bulges in the middle, so there is no seam to see
+    let barrel = vec![
+        Vec2::new(-0.25, -0.35),
+        Vec2::new(0.25, -0.35),
+        Vec2::new(0.35, 0.0),
+        Vec2::new(0.25, 0.35),
+        Vec2::new(-0.25, 0.35),
+        Vec2::new(-0.35, 0.0),
+    ];
     piece(
         &mut commands,
-        profile(0.35, 0.25, 0.35),
+        Shape::arbitrary_polygon(barrel, ShapeDetail::Minimal),
         [0.6, 0.4, 0.2],
-        Vec2::new(3.0, 4.0),
-    );
-    piece(
-        &mut commands,
-        profile(0.25, 0.35, 0.35),
-        [0.6, 0.4, 0.2],
-        Vec2::new(3.0, 3.65),
+        Vec2::new(3.0, 3.9),
     );
     spawn_label(&mut commands, "Barrel", Vec3::new(3.0, 4.6, 0.0));
 
     // --- Row 4: Arbitrary Polygons (y = 5.6) ---
     // Arrow shape
     let arrow_verts = vec![
-        Vec2::new(0.0, 0.5),   // tip
-        Vec2::new(0.15, 0.15), // inner right
-        Vec2::new(0.4, 0.15),  // right wing
-        Vec2::new(0.2, 0.0),   // inner notch
-        Vec2::new(0.2, -0.5),  // tail
-        Vec2::new(-0.2, -0.5), // tail
-        Vec2::new(-0.2, 0.0),  // inner notch
-        Vec2::new(-0.4, 0.15), // left wing
-        Vec2::new(-0.15, 0.15),// inner left
+        Vec2::new(0.0, 0.5),    // tip
+        Vec2::new(0.4, 0.0),    // right barb
+        Vec2::new(0.15, 0.0),   // shaft, top right
+        Vec2::new(0.15, -0.5),  // shaft, bottom right
+        Vec2::new(-0.15, -0.5), // shaft, bottom left
+        Vec2::new(-0.15, 0.0),  // shaft, top left
+        Vec2::new(-0.4, 0.0),   // left barb
     ];
     piece(
         &mut commands,

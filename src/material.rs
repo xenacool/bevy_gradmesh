@@ -426,7 +426,7 @@ mod pbr_material {
     };
     use bevy::render::render_resource::{RenderPipelineDescriptor, SpecializedMeshPipelineError};
     use bevy::shader::ShaderRef;
-    use bevy_material::AlphaMode;
+    use crate::style::{BlendMode, Dash, DashType, ShapeType, Style};
 
     fn gradmesh_shader_ref() -> ShaderRef {
         ShaderRef::Path(
@@ -490,51 +490,23 @@ mod pbr_material {
 
     /// Creates a flat opaque GradMeshMaterial with a single color.
     pub fn opaque(r: f32, g: f32, b: f32) -> GradMeshMaterial {
-        GradMeshMaterial {
-            base: StandardMaterial {
-                base_color: Color::srgb(r, g, b).into(),
-                perceptual_roughness: 0.7,
-                cull_mode: None,
-                ..StandardMaterial::default()
-            },
-            extension: GradMeshExtension {
-                uniforms: presets::opaque(r, g, b),
-            },
-        }
+        Style::opaque(Color::srgb(r, g, b)).build()
     }
 
     /// Creates a transparent GradMeshMaterial with alpha.
     pub fn transparent(r: f32, g: f32, b: f32, alpha: f32) -> GradMeshMaterial {
-        GradMeshMaterial {
-            base: StandardMaterial {
-                base_color: Color::srgba(r, g, b, alpha).into(),
-                perceptual_roughness: 0.7,
-                cull_mode: None,
-                alpha_mode: AlphaMode::Blend,
-                ..StandardMaterial::default()
-            },
-            extension: GradMeshExtension {
-                uniforms: presets::transparent(r, g, b, alpha),
-            },
-        }
+        Style::transparent(Color::srgba(r, g, b, alpha)).build()
     }
 
     /// Creates an additive (emissive) GradMeshMaterial.
     pub fn additive(r: f32, g: f32, b: f32) -> GradMeshMaterial {
-        GradMeshMaterial {
-            base: StandardMaterial {
-                base_color: Color::srgb(r, g, b).into(),
-                perceptual_roughness: 0.3,
-                // Values around 2-3 stay coloured under the default tone mapper; much
-                // higher values saturate to pure white.
-                emissive: bevy::color::LinearRgba::rgb(r, g, b) * 2.5,
-                cull_mode: None,
-                ..StandardMaterial::default()
-            },
-            extension: GradMeshExtension {
-                uniforms: presets::additive(r, g, b),
-            },
-        }
+        // Values around 2-3 stay coloured under the default tone mapper; much
+        // higher values saturate to pure white.
+        Style::opaque(Color::srgb(r, g, b))
+            .with_blend_mode(BlendMode::Additive)
+            .with_perceptual_roughness(0.3)
+            .with_emissive(bevy::color::LinearRgba::rgb(r, g, b) * 2.5)
+            .build()
     }
 
     /// Creates a dual-directional gradient GradMeshMaterial.
@@ -547,186 +519,97 @@ mod pbr_material {
         light: [f32; 3],
         direction: [f32; 3],
     ) -> GradMeshMaterial {
-        GradMeshMaterial {
-            base: StandardMaterial {
-                base_color: Color::srgb(dark[0], dark[1], dark[2]).into(),
-                perceptual_roughness: 0.7,
-                cull_mode: None,
-                ..StandardMaterial::default()
-            },
-            extension: GradMeshExtension {
-                uniforms: presets::dual_directional(dark, light, direction),
-            },
-        }
+        Style::dual_directional(
+            Color::srgb(dark[0], dark[1], dark[2]),
+            Color::srgb(light[0], light[1], light[2]),
+            Vec3::new(direction[0], direction[1], direction[2]),
+        )
+        .build()
     }
 
     /// Creates a dual-radial gradient GradMeshMaterial (inner/outer color blend).
     pub fn dual_radial(inner: [f32; 3], outer: [f32; 3]) -> GradMeshMaterial {
-        GradMeshMaterial {
-            base: StandardMaterial {
-                base_color: Color::srgb(inner[0], inner[1], inner[2]).into(),
-                perceptual_roughness: 0.3,
-                cull_mode: None,
-                ..StandardMaterial::default()
-            },
-            extension: GradMeshExtension {
-                uniforms: presets::dual_radial(inner, outer),
-            },
-        }
+        Style::dual_radial(
+            Color::srgb(inner[0], inner[1], inner[2]),
+            Color::srgb(outer[0], outer[1], outer[2]),
+        )
+        .with_perceptual_roughness(0.3)
+        .build()
     }
 
     /// Creates a dual-radial gradient GradMeshMaterial with alpha on both colours.
     ///
     /// `inner` and `outer` are `[r, g, b, a]`; the material alpha-blends.
     pub fn dual_radial_alpha(inner: [f32; 4], outer: [f32; 4]) -> GradMeshMaterial {
-        GradMeshMaterial {
-            base: StandardMaterial {
-                base_color: Color::srgba(inner[0], inner[1], inner[2], inner[3]).into(),
-                perceptual_roughness: 0.3,
-                cull_mode: None,
-                alpha_mode: AlphaMode::Blend,
-                ..StandardMaterial::default()
-            },
-            extension: GradMeshExtension {
-                uniforms: presets::dual_radial_alpha(inner, outer),
-            },
-        }
+        Style::dual_radial(
+            Color::srgba(inner[0], inner[1], inner[2], inner[3]),
+            Color::srgba(outer[0], outer[1], outer[2], outer[3]),
+        )
+        .with_perceptual_roughness(0.3)
+        .build()
     }
 
     /// Creates a multiplicative blend GradMeshMaterial (darkens the result).
     pub fn multiplicative(r: f32, g: f32, b: f32) -> GradMeshMaterial {
-        GradMeshMaterial {
-            base: StandardMaterial {
-                base_color: Color::srgb(r, g, b).into(),
-                perceptual_roughness: 0.7,
-                cull_mode: None,
-                ..StandardMaterial::default()
-            },
-            extension: GradMeshExtension {
-                uniforms: presets::multiplicative(r, g, b),
-            },
-        }
+        Style::opaque(Color::srgb(r, g, b))
+            .with_blend_mode(BlendMode::Multiplicative)
+            .build()
     }
 
     /// Creates a screen blend GradMeshMaterial (lightens the result).
     pub fn screen(r: f32, g: f32, b: f32) -> GradMeshMaterial {
-        GradMeshMaterial {
-            base: StandardMaterial {
-                base_color: Color::srgb(r, g, b).into(),
-                perceptual_roughness: 0.7,
-                cull_mode: None,
-                ..StandardMaterial::default()
-            },
-            extension: GradMeshExtension {
-                uniforms: presets::screen(r, g, b),
-            },
-        }
+        Style::opaque(Color::srgb(r, g, b))
+            .with_blend_mode(BlendMode::Screen)
+            .build()
     }
 
     /// Creates a dither blend GradMeshMaterial (alpha-to-coverage via Bayer matrix).
     pub fn dither(r: f32, g: f32, b: f32, alpha: f32) -> GradMeshMaterial {
-        GradMeshMaterial {
-            base: StandardMaterial {
-                base_color: Color::srgba(r, g, b, alpha).into(),
-                perceptual_roughness: 0.7,
-                cull_mode: None,
-                alpha_mode: AlphaMode::Blend,
-                ..StandardMaterial::default()
-            },
-            extension: GradMeshExtension {
-                uniforms: presets::dither(r, g, b, alpha),
-            },
-        }
+        Style::opaque(Color::srgba(r, g, b, alpha))
+            .with_blend_mode(BlendMode::Dither)
+            .build()
     }
 
     /// Creates a subtractive blend GradMeshMaterial (subtracts color from background).
     pub fn subtractive(r: f32, g: f32, b: f32) -> GradMeshMaterial {
-        GradMeshMaterial {
-            base: StandardMaterial {
-                base_color: Color::srgb(r, g, b).into(),
-                perceptual_roughness: 0.7,
-                cull_mode: None,
-                ..StandardMaterial::default()
-            },
-            extension: GradMeshExtension {
-                uniforms: presets::subtractive(r, g, b),
-            },
-        }
+        Style::opaque(Color::srgb(r, g, b))
+            .with_blend_mode(BlendMode::Subtractive)
+            .build()
     }
 
     /// Creates a lighten blend GradMeshMaterial (takes maximum of source and destination).
     pub fn lighten(r: f32, g: f32, b: f32) -> GradMeshMaterial {
-        GradMeshMaterial {
-            base: StandardMaterial {
-                base_color: Color::srgb(r, g, b).into(),
-                perceptual_roughness: 0.7,
-                cull_mode: None,
-                ..StandardMaterial::default()
-            },
-            extension: GradMeshExtension {
-                uniforms: presets::lighten(r, g, b),
-            },
-        }
+        Style::opaque(Color::srgb(r, g, b))
+            .with_blend_mode(BlendMode::Lighten)
+            .build()
     }
 
     /// Creates a color dodge blend GradMeshMaterial (brightens destination by source).
     pub fn color_dodge(r: f32, g: f32, b: f32) -> GradMeshMaterial {
-        GradMeshMaterial {
-            base: StandardMaterial {
-                base_color: Color::srgb(r, g, b).into(),
-                perceptual_roughness: 0.7,
-                cull_mode: None,
-                ..StandardMaterial::default()
-            },
-            extension: GradMeshExtension {
-                uniforms: presets::color_dodge(r, g, b),
-            },
-        }
+        Style::opaque(Color::srgb(r, g, b))
+            .with_blend_mode(BlendMode::ColorDodge)
+            .build()
     }
 
     /// Creates a linear burn blend GradMeshMaterial (darkens destination by source).
     pub fn linear_burn(r: f32, g: f32, b: f32) -> GradMeshMaterial {
-        GradMeshMaterial {
-            base: StandardMaterial {
-                base_color: Color::srgb(r, g, b).into(),
-                perceptual_roughness: 0.7,
-                cull_mode: None,
-                ..StandardMaterial::default()
-            },
-            extension: GradMeshExtension {
-                uniforms: presets::linear_burn(r, g, b),
-            },
-        }
+        Style::opaque(Color::srgb(r, g, b))
+            .with_blend_mode(BlendMode::LinearBurn)
+            .build()
     }
 
     /// Creates a color burn blend GradMeshMaterial (deepens destination by source).
     pub fn color_burn(r: f32, g: f32, b: f32) -> GradMeshMaterial {
-        GradMeshMaterial {
-            base: StandardMaterial {
-                base_color: Color::srgb(r, g, b).into(),
-                perceptual_roughness: 0.7,
-                cull_mode: None,
-                ..StandardMaterial::default()
-            },
-            extension: GradMeshExtension {
-                uniforms: presets::color_burn(r, g, b),
-            },
-        }
+        Style::opaque(Color::srgb(r, g, b))
+            .with_blend_mode(BlendMode::ColorBurn)
+            .build()
     }
 
     /// Creates a darken blend GradMeshMaterial (takes minimum of source and destination).
     pub fn darken(r: f32, g: f32, b: f32) -> GradMeshMaterial {
-        GradMeshMaterial {
-            base: StandardMaterial {
-                base_color: Color::srgb(r, g, b).into(),
-                perceptual_roughness: 0.7,
-                cull_mode: None,
-                ..StandardMaterial::default()
-            },
-            extension: GradMeshExtension {
-                uniforms: presets::darken(r, g, b),
-            },
-        }
+        Style::opaque(Color::srgb(r, g, b))
+            .with_blend_mode(BlendMode::Darken)
+            .build()
     }
 
     /// Creates a GradMeshMaterial with dash pattern.
@@ -746,19 +629,26 @@ mod pbr_material {
         modifier: f32,
         shape_type: u32,
     ) -> GradMeshMaterial {
-        GradMeshMaterial {
-            base: StandardMaterial {
-                base_color: Color::srgb(r, g, b).into(),
-                perceptual_roughness: 0.7,
-                cull_mode: None,
-                ..StandardMaterial::default()
-            },
-            extension: GradMeshExtension {
-                uniforms: presets::dashed(
-                    r, g, b, dash_count, spacing, offset, dash_type, modifier, shape_type,
-                ),
-            },
-        }
+        let dash_style = match dash_type {
+            1 => DashType::Chevron,
+            2 => DashType::Rounded,
+            _ => DashType::Normal,
+        };
+        let shape = match shape_type {
+            1 => ShapeType::Disc,
+            2 => ShapeType::Rectangle,
+            _ => ShapeType::Generic,
+        };
+        Style::opaque(Color::srgb(r, g, b))
+            .with_dash(Dash {
+                count: dash_count,
+                spacing,
+                offset,
+                style: dash_style,
+                modifier,
+            })
+            .with_shape_type(shape)
+            .build()
     }
 
     /// Creates a `StandardMaterial` from a `GradMeshUniform` descriptor (fallback for non-shader use).

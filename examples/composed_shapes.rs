@@ -64,15 +64,15 @@ fn setup(
     ));
     commands.spawn((
         DirectionalLight {
-            illuminance: 14_000.0,
+            illuminance: 16_000.0,
             shadow_maps_enabled: true,
             ..default()
         },
-        Transform::from_xyz(5.0, 9.0, 6.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
+        Transform::from_xyz(8.0, 6.0, 5.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
     ));
     commands.insert_resource(GlobalAmbientLight {
         color: Color::srgb(0.65, 0.65, 0.8),
-        brightness: 350.0,
+        brightness: 180.0,
         affects_lightmapped_meshes: false,
     });
 
@@ -95,8 +95,8 @@ fn setup(
     // Ground.
     piece(
         &mut commands,
-        &Shape::cuboid(Vec3::new(18.0, 0.2, 9.0), 0.0, d),
-        &Style::shaded(Color::srgb(0.62, 0.78, 0.58), 0.6).with_perceptual_roughness(0.95),
+        &Shape::cuboid(Vec3::new(80.0, 0.2, 40.0), 0.0, d),
+        &Style::shaded(Color::srgb(0.30, 0.46, 0.28), 0.6).with_perceptual_roughness(0.95),
         Transform::from_xyz(0.0, -0.1, 0.0),
         true,
     );
@@ -222,7 +222,7 @@ fn setup(
     // two chunks agree on colour at their shared edge.
     let terrain_style = Style::opaque(Color::WHITE)
         .with_height_bands(&[
-            (-1.0, Color::srgb(0.30, 0.55, 0.25)),
+            (-1.0, Color::srgb(0.45, 0.78, 0.32)),
             (0.7, Color::srgb(0.50, 0.46, 0.42)),
             (0.98, Color::srgb(0.95, 0.96, 1.0)),
         ])
@@ -243,7 +243,7 @@ fn setup(
         &mut commands,
         &Shape::cuboid(Vec3::new(1.4, 1.4, 1.4), 0.2, d),
         &ghost_style,
-        Transform::from_xyz(3.0, 0.7, 3.2),
+        Transform::from_xyz(1.0, 0.7, 4.6),
         ghost_style.casts_shadows(),
     );
 }

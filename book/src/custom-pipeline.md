@@ -89,4 +89,4 @@ fn render(mut commands: Commands, meshes: ResMut<Assets<Mesh>>) {
 - No PBR lighting or shadows
 - No deferred rendering support
 - No meshlet support
-- Gradient shading computed in world space (not object space)
+- Gradients use world-space axes but are measured from each instance's origin and scaled to the shape's extent (`direction.w`, filled in by `BatchRecorder`), so every shape shows its full blend wherever it sits. Hand-built `InstanceProperties` with `direction.w = 0` are treated as a unit shape
