@@ -52,38 +52,6 @@ or the [API reference on docs.rs](https://docs.rs/bevy_gradmesh).
 
 All example screenshots are packaged in a zip archive attached to each [GitHub Release](https://github.com/xenacool/bevy_gradmesh/releases). Download the latest `screenshots-v*.zip` for still PNGs and animated GIFs.
 
-### Examples
-
-**PBR (requires `--features pbr`):**
-
-- `shapes` — Procedural primitives at every detail level, shaded by dual-directional gradients
-- `styles` — Colour modes, blend modes, dash patterns and style presets
-- `pbr_effects` — Transparency, emissive glow, metallic surfaces, and combined effects
-- `character_creator` — Character parts built from gradient-shaded primitives
-- `immediate` — Per-frame animated particles, push/pop state stacking, billboarding, and line drawing
-- `retained` — Persistent shapes updated each frame via handles without recreating entities
-- `instanced` — 500 spheres rendered in a single GPU batch via `BatchRecorder`
-- `sweep` — Profiles swept along 3D paths: a wall with an arched gate and windows, a kerbed road, and a tapering pipe on a helix
-- `road` — Banked road using `Shape::sweep_frames` with width and roll channels
-- `terrain` — Heightfield chunks with shared edge normals, relative height bands, and hole edges
-- `deformation` — Vertex shader animations: wobble, pulse, and morph effects
-- `appearance` — Per-instance colour animation: static, pulse, cycle, and gradient shift
-- `lerp` — Shape morphing: disc↔star, rect↔ring, polygon↔disc_rim, ring↔disc, disc_rim↔rect, and wedge↔disc
-- `lerp_2d` — SDF 2D parameter morphs: disc size, rect corners, ellipse rim, arc span, polygon sides, and star ratio
-- `composed_shapes` — Compound tower, wall, cobbles, torch, gem and heightfield terrain
-
-**PBR-free (run with `--no-default-features`):**
-
-- `mix_spaces` — The same gradient in each `MixSpace` (OKLAB, OKLCH, linear RGB, sRGB)
-- `curves` — Bezier curves of every degree and a 3D helix as smooth tubes
-- `polyline` — Flat 2D polylines with gradient colors, drawn as `Mesh2d`
-- `arbitrary_shapes` — Custom polygons, stars, rings, wedges, tapered cylinder profiles, and a jigsaw piece
-- `gradient_2d` — `Camera2d` and `Mesh2d` with gradient cards, a radial disc, a pulsing star, a dashed ring and a polygon with a hole
-- `sdf_2d` — One shared unit quad mesh: filled discs, ellipses, rounded rectangles, rims, animated partial arcs, radial and angular gradients
-- `sdf_dash_gallery` — Dashed rim outlines comparing `Off`, `Tiling`, `EndToEnd` and count-based snap modes
-- `standalone` — Gradient shapes drawn without any PBR material or lights
-
-Run any example with `cargo run --example <name>` (add `--no-default-features` for the PBR-free ones listed above).
 
 ## License
 
