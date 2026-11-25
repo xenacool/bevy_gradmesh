@@ -19,6 +19,8 @@ fn log_culling(stats: Res<InstancedStats>) {
 }
 ```
 
+*Live frustum culling and `InstancedStats` counts as the camera glides and pans across a batched field. Run `cargo run --example lod_and_culling` to reproduce it.*
+
 ## Mesh Caching
 
 The `MeshCache` resource avoids regenerating identical geometry:

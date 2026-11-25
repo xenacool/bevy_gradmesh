@@ -25,6 +25,8 @@ fn curve_mesh() -> Mesh {
 - **Quadratic** (3 control points): Single curve
 - **Cubic** (4+ control points): Complex S-curves
 
+*Bezier curves of every degree and a 3D helix, drawn as tubes by the standalone pipeline without PBR. The standalone gradient is measured from each tube's own origin along the world axis, so every tube shows its full blend wherever it sits. Run `cargo run --example curves` to reproduce it.*
+
 ### Animated Curves
 
 Update control points each frame for animated paths:
@@ -55,8 +57,6 @@ fn animate_curve(
     }
 }
 ```
-
-*Bezier curves of every degree and a 3D helix, drawn as tubes by the standalone pipeline without PBR. The standalone gradient is measured from each tube's own origin along the world axis, so every tube shows its full blend wherever it sits. Run `cargo run --example curves` to reproduce it.*
 
 ## 3D Polylines
 
@@ -94,7 +94,9 @@ fn closed_polyline_mesh() -> Mesh {
 }
 ```
 
-*Flat 2D polylines drawn as `Mesh2d` without PBR: open, closed, thick and thin, with a gradient along each line. The example is 2D only; `Shape::polyline3d` (above) builds tubes for a 3D camera. Run `cargo run --example polyline` to reproduce it.*
+*Animated 3D `bezier_curve` and `catmull_rom_3d` tubes rebuilt in place each frame alongside open and closed `polyline3d` tubes. Run `cargo run --example animated_curves_3d` to reproduce it.*
+
+*Flat 2D polylines drawn as `Mesh2d` without PBR: open, closed, thick and thin, with a gradient along each line. Run `cargo run --example polyline` to reproduce it.*
 
 ## Use Cases
 

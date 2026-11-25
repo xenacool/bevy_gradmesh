@@ -69,7 +69,7 @@ Compounds are `Hash + Eq` and work with `MeshCache`.
 `Shape::lathe(profile, segments, detail)` revolves `(radius, height)` points around Y. Crisp corners stay
 crisp, gentle ones are smoothed, and open ends away from the axis get caps.
 
-*A compound tower, a wall with an arched opening, extruded cobbles, a torch, a gem and heightfield terrain, drawn unlit by the standalone pipeline (no PBR, so no emissive, metallic or ghost pieces). Run `cargo run --example composed_shapes` to reproduce it.*
+*A compound tower, a wall with an arched opening, extruded cobbles, an emissive torch, a metallic gem with rim glow, a translucent ghost preview with `NotShadowCaster`, and heightfield terrain. Run `cargo run --example composed_shapes` to reproduce it.*
 
 ## Sharing meshes and materials
 

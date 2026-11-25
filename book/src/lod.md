@@ -50,6 +50,8 @@ fn log_stats(stats: Res<InstancedStats>) {
 }
 ```
 
+*A receding field of batched spheres and capsules with `LodConfig` Bayer dither cross-fades, frustum culling, and live `InstancedStats` telemetry. Run `cargo run --example lod_and_culling` to reproduce it.*
+
 ## Performance
 
 LOD reduces GPU workload for distant objects automatically. The dither cross-fade adds minimal overhead during transitions, and hysteresis prevents rapid LOD switching.

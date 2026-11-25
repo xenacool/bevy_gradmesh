@@ -118,7 +118,7 @@ fn tapered_cylinder() -> Shape {
 ```
 A cone-frustum with flat top and bottom. When radii are equal, equivalent to a regular cylinder.
 
-*Every primitive at several detail levels, shaded by dual-directional gradients instead of lights. Solids go through the standalone pipeline and flat shapes are `Mesh2d` meshes, so it runs without PBR. Run `cargo run --example shapes` to reproduce it.*
+*Every 3D procedural primitive at multiple detail levels, shaded with dual-directional `GradMeshMaterial` gradients. Run `cargo run --example shapes` to reproduce it.*
 
 ## 2D Primitives
 
@@ -263,8 +263,6 @@ rim. Dashes are not supported on these kinds: a dashed rim draws solid.
 
 *Discs, ellipses, rounded rectangles, rims, arcs, polygons and stars on one shared quad. Run `cargo run --example sdf_2d` to reproduce it.*
 
-*Custom polygons with per-vertex colours, stars, rings, wedges and the side profiles of tapered cylinders (`Shape::as_flat` refuses the solid itself). Run `cargo run --example arbitrary_shapes` to reproduce it.*
-
 ### Arbitrary Polygon on the mesh backend
 ```rust
 # use bevy::prelude::*;
@@ -300,6 +298,8 @@ knobs and blanks, can be one single polygon instead of several simpler ones. Out
 empty mesh, and outlines that cross themselves have no well-defined fill. Supports optional per-vertex RGBA
 colors, which stay with their vertices.
 Use this form for outlines of more than 16 vertices, polygons with holes and per-vertex colours.
+
+*Custom polygons with per-vertex colours, stars, rings, wedges and the side profiles of tapered cylinders (`Shape::as_flat` refuses the solid itself). Run `cargo run --example arbitrary_shapes` to reproduce it.*
 
 ## Advanced Geometry
 

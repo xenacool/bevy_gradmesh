@@ -10,7 +10,8 @@ mod common;
 use bevy::prelude::*;
 use bevy::render::RenderPlugin;
 use bevy_gradmesh::{
-    Dash, GradMeshMaterial, GradMeshPlugin, MixSpace, Shape, ShapeDetail, ShapeType, Style, opaque,
+    BlendMode, Dash, GradMeshMaterial, GradMeshPlugin, MixSpace, Shape, ShapeDetail, ShapeType,
+    Style, opaque,
 };
 use common::screenshot::AutoScreenshotPlugin;
 
@@ -233,20 +234,13 @@ fn setup(
     );
 
     // Additive
-    let additive_mat = {
-        let mut mat = Style::opaque(Color::srgb(1.0, 0.9, 0.2)).build();
-        mat.base.emissive = Color::srgb(1.0, 0.9, 0.2).to_linear().into();
-        materials.add(mat)
-    };
-    commands.spawn((
-        Mesh3d(sphere.clone()),
-        MeshMaterial3d(additive_mat),
-        Transform::from_translation(Vec3::new(r2_xs[2], origin_y, z1)),
-    ));
-    spawn_label(
+    add_shape(
         &mut commands,
+        &mut materials,
+        &sphere,
+        Style::opaque(Color::srgb(1.0, 0.9, 0.2)).with_blend_mode(BlendMode::Additive),
+        Vec3::new(r2_xs[2], origin_y, z1),
         "Additive",
-        Vec3::new(r2_xs[2], origin_y + LABEL_LIFT, z1),
     );
 
     // Multiplicative

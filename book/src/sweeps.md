@@ -282,6 +282,8 @@ keeps at least half the length of the control polygon.
 `Err(Relaxed { best, radius })` when no curve that keeps enough length is gentle
 enough, so you can reject the design.
 
+*A pinched closed loop relaxed with `CatmullRomSpline::relaxed`, a marker following `BakedSpline::sample_at_distance`, and open capped and closed sweeps using `SweepOptions::with_twist`. Run `cargo run --example spline_relax_and_twist` to reproduce it.*
+
 ## Height bands
 
 ```rust
@@ -336,6 +338,8 @@ their shared edge with the absolute form, because each chunk has its own range.
 ellipse, regular polygon, star and arbitrary polygon) as outlines, and
 `SdfMaterial2d::lerp` blends two SDF shapes (a circle becomes a rectangle through
 its corner radius).
+
+*Morphing flat SDF shapes via `SdfMaterial2d::lerp` and `FlatShape::sdf_2d()`. Run `cargo run --example sdf_lerp --no-default-features` to reproduce it.*
 
 ## Materials and animated colours
 

@@ -149,6 +149,9 @@ impl Plugin for AutoScreenshotPlugin {
         }
 
         if self.animation_frames.is_some() {
+            if let Some(frames_dir) = animation_frame_path(&self.filename, 0).parent() {
+                let _ = std::fs::create_dir_all(frames_dir);
+            }
             app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f32(
                 1.0 / ANIMATION_FPS,
             )))

@@ -124,13 +124,13 @@ fn every_cited_picture_exists_and_has_the_format_of_its_extension() {
 
 #[test]
 fn every_example_has_a_picture_in_the_readme() {
-    // The README no longer links individual screenshot files. Instead it lists every example
-    // by name in the Screenshots section. Check that each Makefile example appears in the README.
-    let readme = read("README.md");
+    // The README delegates its example list to the book's gallery page.
+    // Check that each Makefile example appears in book/src/gallery.md.
+    let gallery = read("book/src/gallery.md");
     for example in makefile_list("EXAMPLES") {
         assert!(
-            readme.contains(&format!("`{example}`")),
-            "README.md does not mention example `{example}`"
+            gallery.contains(&format!("`{example}`")),
+            "book/src/gallery.md does not mention example `{example}`"
         );
     }
 }

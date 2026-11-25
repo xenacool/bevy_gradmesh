@@ -137,7 +137,7 @@ fn draw_frame(
 
 **Best for**: Large numbers of similar shapes (terrain, crowds, particles).
 
-*500 spheres drawn in one GPU batch with `BatchRecorder`. Run `cargo run --example instanced` to reproduce it.*
+*A triangular grid of 210 spheres drawn in one GPU batch with `BatchRecorder`. Run `cargo run --example instanced` to reproduce it.*
 
 ### Dirty Tracking
 

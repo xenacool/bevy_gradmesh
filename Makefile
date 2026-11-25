@@ -1,14 +1,19 @@
-EXAMPLES = shapes styles mix_spaces curves pbr_effects arbitrary_shapes composed_shapes sdf_dash_gallery sweep terrain road character_creator immediate polyline deformation retained gradient_2d sdf_2d standalone instanced appearance lerp lerp_2d
+EXAMPLES = hello_sphere shapes styles style_lerp mix_spaces curves animated_curves_3d pbr_effects arbitrary_shapes composed_shapes sdf_dash_gallery sdf_lerp sweep terrain road spline_relax_and_twist lod_and_culling character_creator immediate polyline deformation retained gradient_2d sdf_2d standalone instanced appearance lerp lerp_2d
 
 # Examples that change over time are recorded as animated GIF; the rest are still PNGs.
-STILLS = shapes styles mix_spaces curves pbr_effects arbitrary_shapes composed_shapes sdf_dash_gallery sweep terrain road
+STILLS = hello_sphere shapes styles mix_spaces curves pbr_effects arbitrary_shapes composed_shapes sdf_dash_gallery sweep terrain road
 # Animations are downscaled to keep each file well under a megabyte.
 ANIMATION_WIDTH = 480
-ANIMATIONS = character_creator immediate polyline deformation retained gradient_2d sdf_2d standalone instanced appearance lerp lerp_2d
+ANIMATIONS = style_lerp animated_curves_3d sdf_lerp spline_relax_and_twist lod_and_culling character_creator immediate polyline deformation retained gradient_2d sdf_2d standalone instanced appearance lerp lerp_2d
 
 # Examples that require the pbr feature (required-features in Cargo.toml).
 # The capture macros add --features pbr for these so screenshot capture doesn't fail.
 # Each gets a flag variable so exact matching works (findstring is substring-only).
+pbr_example_hello_sphere = 1
+pbr_example_lod_and_culling = 1
+pbr_example_animated_curves_3d = 1
+pbr_example_style_lerp = 1
+pbr_example_spline_relax_and_twist = 1
 pbr_example_character_creator = 1
 pbr_example_immediate = 1
 pbr_example_instanced = 1
@@ -93,6 +98,8 @@ screenshots:
 	cargo build --examples
 	@mkdir -p screenshots
 	@echo ""
+	$(call capture_screenshot,hello_sphere)
+	@echo ""
 	$(call capture_screenshot,shapes)
 	@echo ""
 	$(call capture_screenshot,styles)
@@ -114,6 +121,16 @@ screenshots:
 	$(call capture_screenshot,terrain)
 	@echo ""
 	$(call capture_screenshot,road)
+	@echo ""
+	$(call capture_animation,style_lerp)
+	@echo ""
+	$(call capture_animation,animated_curves_3d)
+	@echo ""
+	$(call capture_animation,sdf_lerp)
+	@echo ""
+	$(call capture_animation,spline_relax_and_twist)
+	@echo ""
+	$(call capture_animation,lod_and_culling)
 	@echo ""
 	$(call capture_animation,character_creator)
 	@echo ""

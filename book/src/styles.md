@@ -41,7 +41,9 @@ fn oklch_material() -> GradMeshMaterial {
 
 `Style` takes the same setting (`Style::with_mix_space`), and
 `MixSpace::mix` / `Style::lerp` blend on the CPU in the same space, so an
-animated blend matches the shader gradient. See `examples/mix_spaces.rs`.
+animated blend matches the shader gradient.
+
+*The same gradient compared across OKLAB, OKLCH, linear RGB and sRGB mix spaces. Run `cargo run --example mix_spaces` to reproduce it.*
 
 ## Blending Styles and Shapes
 
@@ -57,6 +59,8 @@ count by splitting their longest edges, the second is flipped to the first's
 winding and rotated to the start that moves points the least, and per-vertex
 colours blend along (a missing list counts as white). Open point lists such as
 polylines and curves of different lengths still snap to the nearer shape.
+
+*Animated `Style::lerp` transitions between matte and metallic gradients, noise and stripes, and directional and radial rim styles. Run `cargo run --example style_lerp` to reproduce it.*
 
 ## Reading Shape Bounds
 

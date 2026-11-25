@@ -1,6 +1,6 @@
 [package]
 name = "bevy_gradmesh"
-version = "0.3.9"
+version = "0.3.12"
 authors = ["Jessica Collins (https://github.com/xenacool)"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
@@ -151,3 +151,32 @@ required-features = ["pbr"]
 [[example]]
 name = "lerp_2d"
 path = "examples/lerp_2d.rs"
+
+[[example]]
+name = "hello_sphere"
+path = "examples/hello_sphere.rs"
+required-features = ["pbr"]
+
+[[example]]
+name = "lod_and_culling"
+path = "examples/lod_and_culling.rs"
+required-features = ["pbr"]
+
+[[example]]
+name = "animated_curves_3d"
+path = "examples/animated_curves_3d.rs"
+required-features = ["pbr"]
+
+[[example]]
+name = "style_lerp"
+path = "examples/style_lerp.rs"
+required-features = ["pbr"]
+
+[[example]]
+name = "sdf_lerp"
+path = "examples/sdf_lerp.rs"
+
+[[example]]
+name = "spline_relax_and_twist"
+path = "examples/spline_relax_and_twist.rs"
+required-features = ["pbr"]

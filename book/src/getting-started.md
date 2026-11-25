@@ -53,7 +53,7 @@ fn setup(
 }
 ```
 
-*Character parts built from gradient-shaded primitives. Run `cargo run --example character_creator` to reproduce it.*
+*A single dual-directional gradient sphere matching the starter snippet above. Run `cargo run --example hello_sphere` to reproduce it.*
 
 ## Understanding the API
 
@@ -73,9 +73,9 @@ PBR pipeline). Turn it off for PBR-free builds:
 bevy_gradmesh = { version = "0.3", default-features = false }
 ```
 
-These examples run without `pbr` (`cargo run --example <name> --no-default-features`): `styles`,
-`mix_spaces`, `curves`, `polyline`, `arbitrary_shapes`, `gradient_2d`, `sdf_2d`,
-`sdf_dash_gallery` and `standalone`. The others need `pbr`, which Cargo enables by default.
+These examples run without `pbr` (`cargo run --example <name> --no-default-features`): `mix_spaces`,
+`curves`, `polyline`, `arbitrary_shapes`, `gradient_2d`, `sdf_2d`, `sdf_dash_gallery`, `sdf_lerp`,
+`lerp_2d` and `standalone`. The others need `pbr`, which Cargo enables by default.
 
 ## Detail Levels
 

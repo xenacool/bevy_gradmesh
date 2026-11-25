@@ -116,6 +116,8 @@ dashes meet in a mitre. `Transform` scale must be `SdfMaterial2d::quad_scale()`.
 
 *Dashed rims compared across `Off`, `Tiling`, `EndToEnd` and count-based snap modes. Run `cargo run --example sdf_dash_gallery` to reproduce it.*
 
+*`FlatShape::sdf_2d()` conversion and `SdfMaterial2d::lerp` morphing discs into rounded rectangles, solid rims into dashed rims, stars and polygons on one shared quad. Run `cargo run --example sdf_lerp --no-default-features` to reproduce it.*
+
 ## Without PBR: the `pbr` feature and `for_mobile()`
 
 The crate has a `pbr` cargo feature that is on by default. It gates `material.rs`,
